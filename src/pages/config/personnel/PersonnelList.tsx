@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, CalendarOff, UserCog, Mail } from "lucide-react";
+import { Search, CalendarOff, UserCog, Mail, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { AbsenceModal } from "./AbsenceModal";
+import { EditUserModal } from "./EditUserModal";
 
 export default function PersonnelPage() {
   const { toast } = useToast();
@@ -20,7 +21,8 @@ export default function PersonnelPage() {
   const [searchTerm, setSearchTerm] = useState("");
   
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<string | undefined>(undefined);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -58,9 +60,14 @@ export default function PersonnelPage() {
     fetchData();
   }, []);
 
-  const handleAddAbsence = (userId?: string) => {
-    setSelectedUser(userId);
+  const handleAddAbsence = (user?: any) => {
+    setSelectedUser(user);
     setIsAbsenceModalOpen(true);
+  };
+
+  const handleEditUser = (user: any) => {
+    setSelectedUser(user);
+    setIsEditModalOpen(true);
   };
 
   const filteredUsers = users.filter(u => 
@@ -75,7 +82,7 @@ export default function PersonnelPage() {
           <h2 className="text-3xl font-bold tracking-tight">Gestión de Personal</h2>
           <p className="text-muted-foreground">Administra el equipo y programa ausencias.</p>
         </div>
-        <Button onClick={() => handleAddAbsence()}>
+        <Button onClick={() => handleAddAbsence(null)}>
           <CalendarOff className="w-4 h-4 mr-2" /> Registrar Novedad
         </Button>
       </div>
@@ -123,12 +130,17 @@ export default function PersonnelPage() {
                       <Badge variant="outline" className="capitalize">{user.role}</Badge>
                     </TableCell>
                     <TableCell>
-                       <div className={`w-2 h-2 rounded-full ${user.activo ? 'bg-green-500' : 'bg-gray-300'}`} />
+                       <div className={`w-2 h-2 rounded-full ${user.activo ? 'bg-green-500' : 'bg-gray-300'}`} title={user.activo ? "Activo" : "Inactivo"} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleAddAbsence(user.id)} title="Programar Ausencia">
-                        <CalendarOff className="w-4 h-4 text-muted-foreground" />
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => handleEditUser(user)} title="Editar Usuario">
+                          <Edit className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleAddAbsence(user)} title="Programar Ausencia">
+                          <CalendarOff className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -178,7 +190,14 @@ export default function PersonnelPage() {
         open={isAbsenceModalOpen} 
         onOpenChange={setIsAbsenceModalOpen} 
         onSuccess={fetchData}
-        preselectedUserId={selectedUser}
+        preselectedUserId={selectedUser?.id}
+      />
+
+      <EditUserModal
+        open={isEditModalOpen}
+        onOpenChange={setIsEditModalOpen}
+        userToEdit={selectedUser}
+        onSuccess={fetchData}
       />
     </div>
   );

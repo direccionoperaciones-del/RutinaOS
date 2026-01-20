@@ -19,6 +19,7 @@ import SystemAuditLog from "./pages/control/audit/SystemAuditLog";
 import MessageList from "./pages/ops/messages/MessageList";
 import GalleryPage from "./pages/control/gallery/GalleryPage";
 import ReportsPage from "./pages/control/reports/ReportsPage";
+import SettingsPage from "./pages/config/SettingsPage";
 
 const queryClient = new QueryClient();
 
@@ -53,6 +54,7 @@ const App = () => (
             <Route path="config/routines" element={<RoutineList />} />
             <Route path="config/assignments" element={<AssignmentList />} />
             <Route path="personnel" element={<PersonnelPage />} />
+            <Route path="settings" element={<SettingsPage />} />
             
           </Route>
 
