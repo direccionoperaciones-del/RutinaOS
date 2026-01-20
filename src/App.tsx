@@ -11,6 +11,7 @@ import PDVList from "./pages/config/pdv/PDVList";
 import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
+import CommandCenter from "./pages/ops/CommandCenter";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,9 @@ const App = () => (
           {/* Protected Routes */}
           <Route path="/" element={<DashboardLayout />}>
             <Route index element={<Index />} />
+            
+            {/* Ops Routes */}
+            <Route path="command-center" element={<CommandCenter />} />
             
             {/* Config Routes */}
             <Route path="config/pdv" element={<PDVList />} />
