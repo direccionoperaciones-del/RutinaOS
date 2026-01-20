@@ -11,24 +11,40 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Clock, Calendar, ShieldCheck, FileText } from "lucide-react";
+import { Loader2, Clock, Calendar as CalendarIcon, ShieldCheck, FileText, X, Plus } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
-// Esquema de validación
+// Esquema de validación actualizado
 const routineSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
   descripcion: z.string().min(1, "La descripción es obligatoria"),
   prioridad: z.enum(["baja", "media", "alta", "critica"]),
   frecuencia: z.enum(["diaria", "semanal", "quincenal", "mensual", "fechas_especificas"]),
+  
+  // Horarios
   hora_inicio: z.string(),
   hora_limite: z.string(),
+  
+  // Configuración Frecuencias
   dias_ejecucion: z.array(z.number()).default([]), // 0=Dom, 1=Lun...
+  corte_1_limite: z.coerce.number().optional(), // Para Quincenal (1-15)
+  corte_2_limite: z.coerce.number().optional(), // Para Quincenal (16-31)
+  vencimiento_dia_mes: z.coerce.number().optional(), // Para Mensual (1-31)
+  fechas_especificas: z.array(z.string()).max(5, "Máximo 5 fechas específicas").default([]),
+
+  // Requisitos
   gps_obligatorio: z.boolean().default(false),
   fotos_obligatorias: z.boolean().default(false),
   min_fotos: z.coerce.number().min(0).default(0),
   requiere_inventario: z.boolean().default(false),
   activo: z.boolean().default(true),
-  roles_ejecutores: z.array(z.string()).default(["administrador"]), // Por ahora fijo o seleccionable
+  roles_ejecutores: z.array(z.string()).default(["administrador"]),
 });
 
 type RoutineFormValues = z.infer<typeof routineSchema>;
@@ -64,6 +80,10 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       hora_inicio: "08:00",
       hora_limite: "18:00",
       dias_ejecucion: [],
+      corte_1_limite: 15,
+      corte_2_limite: 30,
+      vencimiento_dia_mes: 5,
+      fechas_especificas: [],
       gps_obligatorio: false,
       fotos_obligatorias: false,
       min_fotos: 0,
@@ -75,6 +95,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
 
   const watchFrecuencia = form.watch("frecuencia");
   const watchFotos = form.watch("fotos_obligatorias");
+  const watchFechasEspecificas = form.watch("fechas_especificas");
 
   useEffect(() => {
     if (routineToEdit) {
@@ -86,6 +107,10 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         hora_inicio: routineToEdit.hora_inicio?.slice(0, 5) || "08:00",
         hora_limite: routineToEdit.hora_limite?.slice(0, 5) || "18:00",
         dias_ejecucion: routineToEdit.dias_ejecucion || [],
+        corte_1_limite: routineToEdit.corte_1_limite || 15,
+        corte_2_limite: routineToEdit.corte_2_limite || 30,
+        vencimiento_dia_mes: routineToEdit.vencimiento_dia_mes || 5,
+        fechas_especificas: routineToEdit.fechas_especificas || [],
         gps_obligatorio: routineToEdit.gps_obligatorio,
         fotos_obligatorias: routineToEdit.fotos_obligatorias,
         min_fotos: routineToEdit.min_fotos,
@@ -102,6 +127,10 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         hora_inicio: "08:00",
         hora_limite: "18:00",
         dias_ejecucion: [],
+        corte_1_limite: 15,
+        corte_2_limite: 30,
+        vencimiento_dia_mes: 5,
+        fechas_especificas: [],
         gps_obligatorio: false,
         fotos_obligatorias: false,
         min_fotos: 0,
@@ -110,7 +139,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         roles_ejecutores: ["administrador"],
       });
     }
-  }, [routineToEdit, form]);
+  }, [routineToEdit, form, open]);
 
   const onSubmit = async (values: RoutineFormValues) => {
     setIsLoading(true);
@@ -124,6 +153,10 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       // Validaciones lógicas extra
       if (values.frecuencia === 'semanal' && values.dias_ejecucion.length === 0) {
         throw new Error("Debe seleccionar al menos un día de ejecución para frecuencia semanal.");
+      }
+      
+      if (values.frecuencia === 'fechas_especificas' && values.fechas_especificas.length === 0) {
+        throw new Error("Debe seleccionar al menos una fecha específica.");
       }
 
       const payload = {
@@ -159,6 +192,26 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
     }
   };
 
+  const addSpecificDate = (date: Date | undefined) => {
+    if (!date) return;
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const current = form.getValues("fechas_especificas");
+    
+    if (current.length >= 5) {
+      toast({ variant: "destructive", title: "Límite alcanzado", description: "Máximo 5 fechas específicas." });
+      return;
+    }
+    
+    if (!current.includes(dateStr)) {
+      form.setValue("fechas_especificas", [...current, dateStr]);
+    }
+  };
+
+  const removeSpecificDate = (dateStr: string) => {
+    const current = form.getValues("fechas_especificas");
+    form.setValue("fechas_especificas", current.filter(d => d !== dateStr));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
@@ -171,7 +224,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
             <Tabs defaultValue="general" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="general"><FileText className="w-4 h-4 mr-2"/> General</TabsTrigger>
-                <TabsTrigger value="planificacion"><Calendar className="w-4 h-4 mr-2"/> Planificación</TabsTrigger>
+                <TabsTrigger value="planificacion"><CalendarIcon className="w-4 h-4 mr-2"/> Frecuencia</TabsTrigger>
                 <TabsTrigger value="requisitos"><ShieldCheck className="w-4 h-4 mr-2"/> Requisitos</TabsTrigger>
               </TabsList>
 
@@ -259,40 +312,159 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
                         <SelectContent>
                           <SelectItem value="diaria">Diaria (Todos los días seleccionados)</SelectItem>
                           <SelectItem value="semanal">Semanal (Días específicos)</SelectItem>
-                          <SelectItem value="quincenal">Quincenal (Cortes 1-15 y 16-Fin)</SelectItem>
-                          <SelectItem value="mensual">Mensual (1 vez al mes)</SelectItem>
+                          <SelectItem value="quincenal">Quincenal (Dos cortes al mes)</SelectItem>
+                          <SelectItem value="mensual">Mensual (Una vez al mes)</SelectItem>
+                          <SelectItem value="fechas_especificas">Fechas Específicas</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormDescription>Determina cada cuánto se genera la tarea.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {(watchFrecuencia === 'diaria' || watchFrecuencia === 'semanal') && (
-                  <FormItem>
-                    <FormLabel>Días de Ejecución</FormLabel>
-                    <div className="flex flex-wrap gap-2">
-                      {DIAS_SEMANA.map((dia) => (
-                        <Button
-                          key={dia.value}
-                          type="button"
-                          variant={form.watch("dias_ejecucion").includes(dia.value) ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => toggleDia(dia.value)}
-                          className="w-12"
-                        >
-                          {dia.label}
-                        </Button>
-                      ))}
-                    </div>
-                    <FormDescription>
-                      {watchFrecuencia === 'diaria' ? 'Días en que se debe generar la tarea.' : 'Selecciona los días específicos de la semana.'}
-                    </FormDescription>
-                  </FormItem>
-                )}
+                {/* LOGICA CONDICIONAL DE FRECUENCIA */}
+                <div className="p-4 border rounded-md bg-muted/20 space-y-4">
+                  
+                  {/* Diaria / Semanal */}
+                  {(watchFrecuencia === 'diaria' || watchFrecuencia === 'semanal') && (
+                    <FormItem>
+                      <FormLabel>Días de Ejecución</FormLabel>
+                      <div className="flex flex-wrap gap-2">
+                        {DIAS_SEMANA.map((dia) => (
+                          <Button
+                            key={dia.value}
+                            type="button"
+                            variant={form.watch("dias_ejecucion").includes(dia.value) ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => toggleDia(dia.value)}
+                            className="w-12"
+                          >
+                            {dia.label}
+                          </Button>
+                        ))}
+                      </div>
+                      <FormDescription>
+                        {watchFrecuencia === 'diaria' ? 'Generar tarea todos los días marcados.' : 'Generar tarea solo en los días seleccionados.'}
+                      </FormDescription>
+                    </FormItem>
+                  )}
 
-                <div className="grid grid-cols-2 gap-4">
+                  {/* Quincenal */}
+                  {watchFrecuencia === 'quincenal' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="corte_1_limite"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Vencimiento 1er Corte</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent>
+                                {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
+                                  <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>Rango: 1 al 15</FormDescription>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="corte_2_limite"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Vencimiento 2do Corte</FormLabel>
+                            <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                              <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                              <SelectContent>
+                                {Array.from({ length: 16 }, (_, i) => i + 16).map((d) => (
+                                  <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>Rango: 16 al 31</FormDescription>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {/* Mensual */}
+                  {watchFrecuencia === 'mensual' && (
+                    <FormField
+                      control={form.control}
+                      name="vencimiento_dia_mes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Vencimiento (Día del mes)</FormLabel>
+                          <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                                <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            La tarea se abre el día 1 y vence el día seleccionado.
+                          </FormDescription>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {/* Fechas Específicas */}
+                  {watchFrecuencia === 'fechas_especificas' && (
+                    <FormItem className="flex flex-col">
+                      <FormLabel>Seleccionar Fechas (Máx 5)</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant={"outline"}
+                            className={cn(
+                              "w-[240px] pl-3 text-left font-normal",
+                              !watchFechasEspecificas && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                            Agregar fecha
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            onSelect={addSpecificDate}
+                            disabled={(date) => date < new Date() || date < new Date("1900-01-01")}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {watchFechasEspecificas.map((dateStr) => (
+                          <Badge key={dateStr} variant="secondary" className="px-3 py-1">
+                            {format(new Date(dateStr + 'T12:00:00'), "P", { locale: es })}
+                            <button
+                              type="button"
+                              className="ml-2 hover:text-destructive"
+                              onClick={() => removeSpecificDate(dateStr)}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                        {watchFechasEspecificas.length === 0 && (
+                          <span className="text-sm text-muted-foreground italic">Ninguna fecha seleccionada.</span>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
                   <FormField
                     control={form.control}
                     name="hora_inicio"
