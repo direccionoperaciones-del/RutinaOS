@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Search, Plus, Trash2, Link, Filter } from "lucide-react";
+import { Search, Plus, Trash2, Link, Filter, Store, CalendarClock } from "lucide-react";
 import { AssignmentForm } from "./AssignmentForm";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,12 +18,10 @@ export default function AssignmentList() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterRoutine, setFilterRoutine] = useState("all");
   
-  // Para filtros
   const [uniqueRoutines, setUniqueRoutines] = useState<any[]>([]);
 
   const fetchAssignments = async () => {
     setLoading(true);
-    // Join con Routine y PDV
     const { data, error } = await supabase
       .from('routine_assignments')
       .select(`
@@ -40,7 +38,6 @@ export default function AssignmentList() {
     } else {
       setAssignments(data || []);
       
-      // Extraer rutinas únicas para el filtro
       const routinesMap = new Map();
       data?.forEach((item: any) => {
         if (item.routine_templates) {
@@ -89,13 +86,13 @@ export default function AssignmentList() {
           <h2 className="text-3xl font-bold tracking-tight">Asignación de Rutinas</h2>
           <p className="text-muted-foreground">Vincula tus rutinas operativas a los puntos de venta correspondientes.</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)}>
+        <Button onClick={() => setIsModalOpen(true)} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" /> Nueva Asignación
         </Button>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-col sm:flex-row gap-4 space-y-0">
+        <CardHeader className="flex flex-col sm:flex-row gap-4 space-y-0 p-4 sm:p-6">
           <div className="relative flex-1">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -120,38 +117,52 @@ export default function AssignmentList() {
             </Select>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
+        <CardContent className="p-0 sm:p-6 pt-0">
+          <div className="rounded-md border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Rutina</TableHead>
+                  <TableHead className="pl-4">Rutina</TableHead>
                   <TableHead>PDV Asignado</TableHead>
-                  <TableHead>Frecuencia</TableHead>
+                  <TableHead className="hidden sm:table-cell">Frecuencia</TableHead>
                   <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
+                  <TableHead className="text-right pr-4">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredAssignments.map((assignment) => (
                   <TableRow key={assignment.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium pl-4">
                       <div className="flex items-center gap-2">
-                        <Link className="w-3 h-3 text-muted-foreground" />
+                        <div className="p-1.5 bg-primary/10 rounded-md text-primary">
+                          <ClipboardList className="w-4 h-4" />
+                        </div>
                         {assignment.routine_templates?.nombre}
                       </div>
                     </TableCell>
                     <TableCell>
-                      {assignment.pdv?.nombre}
-                      <span className="text-xs text-muted-foreground ml-2">({assignment.pdv?.ciudad})</span>
+                      <div className="flex flex-col">
+                        <span className="font-medium flex items-center gap-1">
+                           <Store className="w-3 h-3 text-muted-foreground" />
+                           {assignment.pdv?.nombre}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-4">
+                          {assignment.pdv?.ciudad}
+                        </span>
+                      </div>
                     </TableCell>
-                    <TableCell className="capitalize">{assignment.routine_templates?.frecuencia}</TableCell>
+                    <TableCell className="capitalize hidden sm:table-cell">
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <CalendarClock className="w-3 h-3" />
+                        {assignment.routine_templates?.frecuencia}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={assignment.estado === 'activa' ? 'default' : 'secondary'}>
                         {assignment.estado}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right pr-4">
                       <Button 
                         variant="ghost" 
                         size="icon" 
@@ -165,8 +176,11 @@ export default function AssignmentList() {
                 ))}
                 {filteredAssignments.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      No hay asignaciones que coincidan con los filtros.
+                    <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center">
+                        <Link className="w-8 h-8 mb-2 opacity-20" />
+                        <p>No hay asignaciones que coincidan con los filtros.</p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -184,3 +198,6 @@ export default function AssignmentList() {
     </div>
   );
 }
+
+// Helper icon component since it wasn't imported in original file
+import { ClipboardList } from "lucide-react";
