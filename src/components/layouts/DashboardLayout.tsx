@@ -16,7 +16,6 @@ import {
   Store,
   Calendar,
   UserCog,
-  ShieldAlert,
   Link,
   ClipboardList,
   Package,
@@ -58,7 +57,6 @@ const DashboardLayout = () => {
   const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
-    // Check auth and load profile
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -66,7 +64,6 @@ const DashboardLayout = () => {
         return;
       }
 
-      // Fetch profile
       const { data: profile } = await supabase
         .from('profiles')
         .select('*, tenants(nombre)')
@@ -78,7 +75,6 @@ const DashboardLayout = () => {
 
     checkUser();
 
-    // Listen for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') navigate("/login");
     });
@@ -97,42 +93,49 @@ const DashboardLayout = () => {
     navigate("/login");
   };
 
-  const navItems = [
+  // Definición de menú con permisos
+  const menuConfig = [
     {
       group: "Operación",
       items: [
-        { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-        { icon: CheckSquare, label: "Mis Tareas", path: "/tasks" },
-        { icon: MessageSquare, label: "Mensajes", path: "/messages" },
-        { icon: Activity, label: "Centro de Mando", path: "/command-center" },
+        { icon: LayoutDashboard, label: "Dashboard", path: "/", roles: ['all'] },
+        { icon: CheckSquare, label: "Mis Tareas", path: "/tasks", roles: ['all'] },
+        { icon: MessageSquare, label: "Mensajes", path: "/messages", roles: ['all'] },
+        { icon: Activity, label: "Centro de Mando", path: "/command-center", roles: ['director', 'lider'] },
       ]
     },
     {
       group: "Control",
       items: [
-        { icon: FileCheck, label: "Auditoría Calidad", path: "/audit" },
-        { icon: History, label: "Log del Sistema", path: "/system-audit" },
-        { icon: Image, label: "Galería", path: "/gallery" },
-        { icon: FileText, label: "Reportes", path: "/reports" },
+        { icon: FileCheck, label: "Auditoría Calidad", path: "/audit", roles: ['director', 'lider', 'auditor'] },
+        { icon: History, label: "Log del Sistema", path: "/system-audit", roles: ['director'] },
+        { icon: Image, label: "Galería", path: "/gallery", roles: ['director', 'lider', 'auditor'] },
+        { icon: FileText, label: "Reportes", path: "/reports", roles: ['director', 'lider'] },
       ]
     },
     {
       group: "Configuración",
       items: [
-        { icon: Store, label: "Puntos de Venta", path: "/config/pdv" },
-        { icon: ClipboardList, label: "Rutinas", path: "/config/routines" },
-        { icon: Link, label: "Asignación Rutinas", path: "/config/assignments" },
-        { icon: Package, label: "Inventarios", path: "/config/inventory" },
-        { icon: Calendar, label: "Calendario", path: "/calendar" },
-        { icon: UserCog, label: "Gestión Personal", path: "/personnel" },
-        { icon: Settings, label: "Ajustes", path: "/settings" },
+        { icon: Store, label: "Puntos de Venta", path: "/config/pdv", roles: ['director'] },
+        { icon: ClipboardList, label: "Rutinas", path: "/config/routines", roles: ['director'] },
+        { icon: Link, label: "Asignación Rutinas", path: "/config/assignments", roles: ['director', 'lider'] },
+        { icon: Package, label: "Inventarios", path: "/config/inventory", roles: ['director', 'lider'] },
+        { icon: Calendar, label: "Calendario", path: "/calendar", roles: ['director', 'lider'] },
+        { icon: UserCog, label: "Gestión Personal", path: "/personnel", roles: ['director', 'lider'] },
+        { icon: Settings, label: "Ajustes", path: "/settings", roles: ['all'] },
       ]
     }
   ];
 
+  const currentRole = userProfile?.role || 'administrador'; // Fallback seguro
+
+  const filteredMenu = menuConfig.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.roles.includes('all') || item.roles.includes(currentRole))
+  })).filter(group => group.items.length > 0);
+
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -140,7 +143,6 @@ const DashboardLayout = () => {
         />
       )}
 
-      {/* Sidebar */}
       <aside 
         className={cn(
           "fixed top-0 left-0 z-50 h-full w-64 bg-card border-r transition-transform duration-200 lg:static lg:translate-x-0",
@@ -148,7 +150,6 @@ const DashboardLayout = () => {
         )}
       >
         <div className="h-full flex flex-col">
-          {/* Logo Area */}
           <div className="p-6 border-b flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold text-primary">Operaciones</h1>
@@ -166,7 +167,6 @@ const DashboardLayout = () => {
             </button>
           </div>
 
-          {/* User Info */}
           <div className="p-4 bg-muted/30 border-b">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
@@ -183,9 +183,8 @@ const DashboardLayout = () => {
             </div>
           </div>
 
-          {/* Navigation */}
           <div className="flex-1 overflow-y-auto py-6 px-3">
-            {navItems.map((group, idx) => (
+            {filteredMenu.map((group, idx) => (
               <SidebarGroup key={idx} title={group.group}>
                 {group.items.map((item) => (
                   <SidebarItem
@@ -204,7 +203,6 @@ const DashboardLayout = () => {
             ))}
           </div>
 
-          {/* Footer */}
           <div className="p-4 border-t">
             <Button 
               variant="ghost" 
@@ -218,9 +216,7 @@ const DashboardLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Mobile Header */}
         <header className="lg:hidden h-16 border-b flex items-center px-4 bg-card">
           <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
             <Menu className="h-6 w-6" />
@@ -228,7 +224,6 @@ const DashboardLayout = () => {
           <span className="ml-4 font-semibold">Menú</span>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-muted/10">
           <Outlet />
         </main>
