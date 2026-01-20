@@ -10,7 +10,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Loader2, Mail, Shield, User } from "lucide-react";
 
 const userSchema = z.object({
   nombre: z.string().min(1, "Nombre requerido"),
@@ -68,7 +68,7 @@ export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: Edi
 
       if (error) throw error;
 
-      toast({ title: "Usuario actualizado", description: "Los cambios se han guardado." });
+      toast({ title: "Usuario actualizado", description: "Los permisos y datos han sido guardados." });
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
@@ -82,9 +82,19 @@ export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: Edi
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Editar Usuario</DialogTitle>
+          <DialogTitle>Gestionar Usuario</DialogTitle>
         </DialogHeader>
         
+        <div className="bg-muted/30 p-4 rounded-lg flex items-center gap-3 mb-2 border">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+            <User className="w-5 h-5" />
+          </div>
+          <div className="overflow-hidden">
+            <p className="text-sm font-medium">{userToEdit?.email}</p>
+            <p className="text-xs text-muted-foreground">ID: {userToEdit?.id?.slice(0, 8)}...</p>
+          </div>
+        </div>
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -117,18 +127,22 @@ export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: Edi
               name="role"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Rol</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormLabel>Rol / Permisos</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                     <FormControl>
-                      <SelectTrigger><SelectValue placeholder="Seleccione rol" /></SelectTrigger>
+                      <SelectTrigger>
+                        <Shield className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <SelectValue placeholder="Seleccione rol" />
+                      </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="director">Director</SelectItem>
-                      <SelectItem value="lider">Líder</SelectItem>
-                      <SelectItem value="administrador">Administrador</SelectItem>
-                      <SelectItem value="auditor">Auditor</SelectItem>
+                      <SelectItem value="director">Director (Acceso Total)</SelectItem>
+                      <SelectItem value="lider">Líder (Gestión y Auditoría)</SelectItem>
+                      <SelectItem value="administrador">Administrador (Ejecución Operativa)</SelectItem>
+                      <SelectItem value="auditor">Auditor (Solo Lectura y Revisión)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormDescription>Define qué módulos puede ver y editar este usuario.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -138,10 +152,12 @@ export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: Edi
               control={form.control}
               name="activo"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-card">
                   <div className="space-y-0.5">
-                    <FormLabel>Usuario Activo</FormLabel>
-                    <FormDescription>Si se desactiva, no podrá iniciar sesión.</FormDescription>
+                    <FormLabel>Acceso al Sistema</FormLabel>
+                    <FormDescription>
+                      {field.value ? "El usuario puede iniciar sesión." : "El usuario está bloqueado."}
+                    </FormDescription>
                   </div>
                   <FormControl>
                     <Checkbox checked={field.value} onCheckedChange={field.onChange} />
@@ -153,7 +169,7 @@ export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: Edi
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button type="submit" disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Guardar
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Guardar Cambios
               </Button>
             </DialogFooter>
           </form>
