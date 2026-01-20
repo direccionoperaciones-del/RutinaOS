@@ -11,11 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 
+// ✅ SKU y Unidad ahora son obligatorios
 const productSchema = z.object({
   categoria_id: z.string().min(1, "La categoría es obligatoria"),
   nombre: z.string().min(1, "El nombre es obligatorio"),
-  codigo_sku: z.string().optional(),
-  unidad: z.string().optional(),
+  codigo_sku: z.string().min(1, "El SKU es obligatorio"),
+  unidad: z.string().min(1, "La unidad de medida es obligatoria"),
   activo: z.boolean().default(true),
 });
 
@@ -31,6 +32,7 @@ interface ProductFormProps {
 export function ProductForm({ open, onOpenChange, productToEdit, onSuccess }: ProductFormProps) {
   const { toast } = useToast();
   const [categories, setCategories] = useState<any[]>([]);
+  const [units, setUnits] = useState<any[]>([]); // ✅ State for units
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<ProductFormValues>({
@@ -39,17 +41,22 @@ export function ProductForm({ open, onOpenChange, productToEdit, onSuccess }: Pr
       categoria_id: "",
       nombre: "",
       codigo_sku: "",
-      unidad: "Unidad",
+      unidad: "",
       activo: true,
     },
   });
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      const { data } = await supabase.from('inventory_categories').select('*').eq('activo', true);
-      if (data) setCategories(data);
+    const fetchData = async () => {
+      // Fetch categories
+      const { data: catData } = await supabase.from('inventory_categories').select('*').eq('activo', true);
+      if (catData) setCategories(catData);
+
+      // ✅ Fetch units
+      const { data: unitsData } = await supabase.from('measurement_units').select('*').eq('activo', true);
+      if (unitsData) setUnits(unitsData);
     };
-    fetchCategories();
+    if (open) fetchData();
   }, [open]);
 
   useEffect(() => {
@@ -58,7 +65,7 @@ export function ProductForm({ open, onOpenChange, productToEdit, onSuccess }: Pr
         categoria_id: productToEdit.categoria_id,
         nombre: productToEdit.nombre,
         codigo_sku: productToEdit.codigo_sku || "",
-        unidad: productToEdit.unidad || "Unidad",
+        unidad: productToEdit.unidad || "",
         activo: productToEdit.activo,
       });
     } else {
@@ -66,11 +73,11 @@ export function ProductForm({ open, onOpenChange, productToEdit, onSuccess }: Pr
         categoria_id: "",
         nombre: "",
         codigo_sku: "",
-        unidad: "Unidad",
+        unidad: "",
         activo: true,
       });
     }
-  }, [productToEdit, form]);
+  }, [productToEdit, form, open]);
 
   const onSubmit = async (values: ProductFormValues) => {
     setIsLoading(true);
@@ -144,7 +151,7 @@ export function ProductForm({ open, onOpenChange, productToEdit, onSuccess }: Pr
                 name="codigo_sku"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>SKU</FormLabel>
+                    <FormLabel>SKU *</FormLabel>
                     <FormControl><Input placeholder="SKU-123" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
@@ -155,8 +162,21 @@ export function ProductForm({ open, onOpenChange, productToEdit, onSuccess }: Pr
                 name="unidad"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unidad</FormLabel>
-                    <FormControl><Input placeholder="Ej: Und, Kg, L" {...field} /></FormControl>
+                    <FormLabel>Unidad *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccione..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {units.length > 0 ? units.map((u) => (
+                          <SelectItem key={u.id} value={u.simbolo}>{u.nombre} ({u.simbolo})</SelectItem>
+                        )) : (
+                          <SelectItem value="temp" disabled>No hay unidades configuradas</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                     <FormMessage />
                   </FormItem>
                 )}

@@ -12,7 +12,8 @@ import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
 import PersonnelPage from "./pages/config/personnel/PersonnelList";
-import CalendarPage from "./pages/config/calendar/CalendarPage"; // Importado
+import CalendarPage from "./pages/config/calendar/CalendarPage";
+import GeneralConfigPage from "./pages/config/general/GeneralConfigPage";
 import CommandCenter from "./pages/ops/CommandCenter";
 import TasksList from "./pages/ops/TasksList";
 import AuditList from "./pages/control/audit/AuditList";
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="config/inventory" element={<InventoryPage />} />
             <Route path="config/routines" element={<RoutineList />} />
             <Route path="config/assignments" element={<AssignmentList />} />
+            <Route path="config/general" element={<GeneralConfigPage />} />
             <Route path="calendar" element={<CalendarPage />} />
             <Route path="personnel" element={<PersonnelPage />} />
             <Route path="settings" element={<SettingsPage />} />

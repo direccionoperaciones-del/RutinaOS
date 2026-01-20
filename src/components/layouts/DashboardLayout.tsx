@@ -16,11 +16,11 @@ import {
   Store,
   Calendar,
   UserCog,
-  ShieldAlert,
   Link,
   ClipboardList,
   Package,
-  History
+  History,
+  Settings2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -125,6 +125,7 @@ const DashboardLayout = () => {
         { icon: Package, label: "Inventarios", path: "/config/inventory" },
         { icon: Calendar, label: "Calendario", path: "/calendar" },
         { icon: UserCog, label: "Gestión Personal", path: "/personnel" },
+        { icon: Settings2, label: "Parametrización", path: "/config/general" }, // Nueva opción
         { icon: Settings, label: "Ajustes", path: "/settings" },
       ]
     }
