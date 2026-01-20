@@ -12,6 +12,7 @@ import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
 import CommandCenter from "./pages/ops/CommandCenter";
+import TasksList from "./pages/ops/TasksList";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
             <Route index element={<Index />} />
             
             {/* Ops Routes */}
+            <Route path="tasks" element={<TasksList />} />
             <Route path="command-center" element={<CommandCenter />} />
             
             {/* Config Routes */}
