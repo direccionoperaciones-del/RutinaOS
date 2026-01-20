@@ -11,6 +11,7 @@ import PDVList from "./pages/config/pdv/PDVList";
 import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
+import PersonnelPage from "./pages/config/personnel/PersonnelList";
 import CommandCenter from "./pages/ops/CommandCenter";
 import TasksList from "./pages/ops/TasksList";
 import AuditList from "./pages/control/audit/AuditList";
@@ -49,6 +50,7 @@ const App = () => (
             <Route path="config/inventory" element={<InventoryPage />} />
             <Route path="config/routines" element={<RoutineList />} />
             <Route path="config/assignments" element={<AssignmentList />} />
+            <Route path="personnel" element={<PersonnelPage />} />
             
           </Route>
 
