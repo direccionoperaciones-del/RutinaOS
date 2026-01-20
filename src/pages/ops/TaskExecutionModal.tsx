@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { calculateDistance } from "@/utils/geo";
-import { MapPin, Camera, CheckCircle2, XCircle, AlertTriangle, Loader2, UploadCloud } from "lucide-react";
+import { MapPin, Camera, CheckCircle2, AlertTriangle, Loader2, UploadCloud, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
@@ -19,6 +19,7 @@ interface TaskExecutionModalProps {
 export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: TaskExecutionModalProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Estados de ejecución
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
@@ -26,6 +27,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [isGpsValid, setIsGpsValid] = useState(false);
   const [comentario, setComentario] = useState("");
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   
   // Configuración de la rutina
   const rutina = task?.routine_templates;
@@ -35,15 +37,26 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const pdvRadio = pdv?.radio_gps || 100;
 
   useEffect(() => {
-    if (open) {
+    if (open && task) {
       // Reset states
       setCurrentLocation(null);
       setDistance(null);
       setGpsError(null);
       setIsGpsValid(!requiresGps); // Si no requiere GPS, es válido por defecto
       setComentario("");
+      setUploadedFiles([]);
+      fetchEvidence();
     }
-  }, [open, requiresGps]);
+  }, [open, requiresGps, task]);
+
+  const fetchEvidence = async () => {
+    if (!task) return;
+    const { data } = await supabase
+      .from('evidence_files')
+      .select('*')
+      .eq('task_id', task.id);
+    setUploadedFiles(data || []);
+  };
 
   const getLocation = () => {
     setIsLoading(true);
@@ -91,9 +104,79 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     );
   };
 
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !task) return;
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
+      
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('evidence')
+        .upload(fileName, file);
+
+      if (uploadError) {
+        // Handle missing bucket error specifically if needed, but assuming bucket exists or configured
+        throw uploadError;
+      }
+
+      // Create record
+      const { error: dbError } = await supabase
+        .from('evidence_files')
+        .insert({
+          task_id: task.id,
+          tipo: 'foto',
+          filename: file.name,
+          storage_path: fileName,
+          size_bytes: file.size,
+          mime_type: file.type
+        });
+
+      if (dbError) throw dbError;
+
+      toast({ title: "Foto subida", description: "La evidencia se ha guardado correctamente." });
+      fetchEvidence();
+    } catch (error: any) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error al subir", description: error.message || "Verifica que el bucket 'evidence' exista y sea público." });
+    } finally {
+      setIsUploading(false);
+      // Reset input value to allow uploading same file again if needed
+      event.target.value = "";
+    }
+  };
+
+  const handleDeleteEvidence = async (id: string, path: string) => {
+    if (!confirm("¿Borrar esta evidencia?")) return;
+    
+    // Delete from storage
+    const { error: storageError } = await supabase.storage.from('evidence').remove([path]);
+    if (storageError) console.error(storageError); // Log but continue to delete record
+
+    // Delete from DB
+    const { error } = await supabase.from('evidence_files').delete().eq('id', id);
+    
+    if (!error) {
+      setUploadedFiles(prev => prev.filter(f => f.id !== id));
+      toast({ title: "Eliminado", description: "Evidencia borrada." });
+    }
+  };
+
   const handleComplete = async () => {
     if (requiresGps && !isGpsValid) {
       toast({ variant: "destructive", title: "Bloqueo de seguridad", description: "Debes validar tu ubicación GPS antes de finalizar." });
+      return;
+    }
+
+    if (rutina?.fotos_obligatorias && uploadedFiles.length < (rutina.min_fotos || 1)) {
+      toast({ 
+        variant: "destructive", 
+        title: "Evidencia requerida", 
+        description: `Debes subir al menos ${rutina.min_fotos || 1} foto(s) para completar la tarea.` 
+      });
       return;
     }
 
@@ -106,15 +189,13 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       const { error } = await supabase
         .from('task_instances')
         .update({
-          estado: 'completada', // En V2 esto podría calcularse si es a tiempo o vencida
+          estado: 'completada', 
           completado_at: new Date().toISOString(),
           completado_por: user.id,
           gps_latitud: currentLocation?.lat,
           gps_longitud: currentLocation?.lng,
           gps_en_rango: isGpsValid,
-          // Aquí iría el comentario si agregamos el campo a la tabla en el futuro,
-          // por ahora lo simulamos o lo guardamos en un log aparte si fuera necesario.
-          // Para V1 MVP, asumimos que se guarda en la tabla si existe campo 'comentario' (que no está en el esquema actual estricto pero es buena práctica)
+          // Guardar comentario si aplica (asumiendo que podríamos tener un campo notas en un futuro)
         })
         .eq('id', task.id);
 
@@ -128,6 +209,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const getPublicUrl = (path: string) => {
+    const { data } = supabase.storage.from('evidence').getPublicUrl(path);
+    return data.publicUrl;
   };
 
   if (!task) return null;
@@ -147,67 +233,111 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* SECCIÓN 1: GPS */}
-          <div className={`p-4 rounded-lg border ${isGpsValid ? 'bg-green-50 border-green-200' : 'bg-muted/50'}`}>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                Validación de Ubicación
-              </h4>
-              {requiresGps && <Badge variant="secondary">Obligatorio</Badge>}
-            </div>
-            
-            <div className="text-sm text-muted-foreground mb-4">
-              {currentLocation ? (
-                <>
-                  <p>Detectado: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}</p>
-                  {distance !== null && <p className="font-medium mt-1">Distancia al PDV: {distance} metros</p>}
-                </>
+          
+          {/* SECCIÓN 1: GPS (Solo visible si es obligatorio) */}
+          {requiresGps && (
+            <div className={`p-4 rounded-lg border ${isGpsValid ? 'bg-green-50 border-green-200' : 'bg-muted/50'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-semibold flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  Validación de Ubicación
+                </h4>
+                <Badge variant="secondary">Obligatorio</Badge>
+              </div>
+              
+              <div className="text-sm text-muted-foreground mb-4">
+                {currentLocation ? (
+                  <>
+                    <p>Detectado: {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}</p>
+                    {distance !== null && <p className="font-medium mt-1">Distancia al PDV: {distance} metros</p>}
+                  </>
+                ) : (
+                  <p>Se requiere tu ubicación actual para validar la presencia en el PDV.</p>
+                )}
+              </div>
+
+              {gpsError && (
+                <div className="flex items-center gap-2 text-destructive text-sm mb-3 font-medium bg-destructive/10 p-2 rounded">
+                  <AlertTriangle className="w-4 h-4" />
+                  {gpsError}
+                </div>
+              )}
+
+              {isGpsValid ? (
+                 <div className="flex items-center gap-2 text-green-700 font-medium">
+                   <CheckCircle2 className="w-5 h-5" />
+                   Ubicación Válida
+                 </div>
               ) : (
-                <p>Se requiere tu ubicación actual para validar la presencia en el PDV.</p>
+                <Button 
+                  type="button" 
+                  variant="secondary"
+                  size="sm" 
+                  onClick={getLocation}
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <MapPin className="w-4 h-4 mr-2"/>}
+                  Validar Ubicación
+                </Button>
               )}
             </div>
+          )}
 
-            {gpsError && (
-              <div className="flex items-center gap-2 text-destructive text-sm mb-3 font-medium bg-destructive/10 p-2 rounded">
-                <AlertTriangle className="w-4 h-4" />
-                {gpsError}
-              </div>
-            )}
-
-            {isGpsValid ? (
-               <div className="flex items-center gap-2 text-green-700 font-medium">
-                 <CheckCircle2 className="w-5 h-5" />
-                 Ubicación Válida
-               </div>
-            ) : (
-              <Button 
-                type="button" 
-                variant={requiresGps ? "default" : "secondary"} 
-                size="sm" 
-                onClick={getLocation}
-                disabled={isLoading}
-              >
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <MapPin className="w-4 h-4 mr-2"/>}
-                Validar Ubicación
-              </Button>
-            )}
-          </div>
-
-          {/* SECCIÓN 2: EVIDENCIA (Simulada por ahora) */}
+          {/* SECCIÓN 2: EVIDENCIA */}
           <div className="p-4 rounded-lg border bg-muted/20">
              <div className="flex items-center justify-between mb-2">
               <h4 className="font-semibold flex items-center gap-2">
                 <Camera className="w-4 h-4" />
                 Evidencia Fotográfica
               </h4>
-              <Badge variant="outline">Opcional V1</Badge>
+              {rutina?.fotos_obligatorias ? (
+                <Badge variant="secondary">Mínimo {rutina.min_fotos || 1}</Badge>
+              ) : (
+                <Badge variant="outline">Opcional</Badge>
+              )}
             </div>
-            <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-md p-6 bg-background">
-              <UploadCloud className="w-8 h-8 text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground text-center">
-                La subida de fotos estará disponible en la siguiente actualización.
-              </p>
+            
+            <div className="space-y-4">
+              {/* Botón de carga */}
+              <div className="flex items-center justify-center w-full">
+                <label 
+                  htmlFor="file-upload" 
+                  className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer bg-background hover:bg-muted/50 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+                >
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    {isUploading ? (
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    ) : (
+                      <UploadCloud className="w-8 h-8 text-muted-foreground mb-2" />
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      {isUploading ? "Subiendo..." : "Toca para subir foto"}
+                    </p>
+                  </div>
+                  <input id="file-upload" type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                </label>
+              </div>
+
+              {/* Lista de archivos */}
+              {uploadedFiles.length > 0 && (
+                <div className="grid grid-cols-3 gap-2">
+                  {uploadedFiles.map(file => (
+                    <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border">
+                      <img 
+                        src={getPublicUrl(file.storage_path)} 
+                        className="object-cover w-full h-full" 
+                        alt="Evidencia"
+                      />
+                      <button 
+                        onClick={() => handleDeleteEvidence(file.id, file.storage_path)}
+                        className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -226,8 +356,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button 
             onClick={handleComplete} 
-            disabled={isLoading || (requiresGps && !isGpsValid)}
-            className={isGpsValid || !requiresGps ? "bg-green-600 hover:bg-green-700" : ""}
+            disabled={isLoading || isUploading || (requiresGps && !isGpsValid)}
+            className="bg-green-600 hover:bg-green-700"
           >
             {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
             Finalizar Tarea

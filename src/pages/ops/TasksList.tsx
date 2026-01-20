@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Clock, MapPin, CheckCircle2, ArrowRight, Filter, X, Calendar as CalendarIcon } from "lucide-react";
+import { Clock, MapPin, CheckCircle2, ArrowRight, Filter, X, Calendar as CalendarIcon, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -269,7 +269,7 @@ export default function TasksList() {
                 </CardContent>
                 <CardFooter>
                   <Button className="w-full" onClick={() => handleStartTask(task)}>
-                    Iniciar Ejecución <ArrowRight className="w-4 h-4 ml-2" />
+                    Ver <Eye className="w-4 h-4 ml-2" />
                   </Button>
                 </CardFooter>
               </Card>
