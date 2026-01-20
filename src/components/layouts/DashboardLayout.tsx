@@ -55,22 +55,27 @@ const DashboardLayout = () => {
   const { toast } = useToast();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
 
   useEffect(() => {
     const checkUser = async () => {
+      setLoadingProfile(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         navigate("/login");
         return;
       }
 
+      // Obtener perfil. Usamos maybeSingle para no lanzar error si no existe,
+      // aunque debería existir por el fix anterior.
       const { data: profile } = await supabase
         .from('profiles')
         .select('*, tenants(nombre)')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
       
       setUserProfile(profile);
+      setLoadingProfile(false);
     };
 
     checkUser();
@@ -92,6 +97,11 @@ const DashboardLayout = () => {
     });
     navigate("/login");
   };
+
+  // 1. Normalizamos el rol actual para evitar errores de mayúsculas/espacios
+  // Si está cargando, asumimos 'administrador' temporalmente para no mostrar cosas de más
+  const rawRole = userProfile?.role || 'administrador';
+  const currentRole = rawRole.toLowerCase().trim();
 
   // Definición de menú con permisos
   const menuConfig = [
@@ -126,8 +136,6 @@ const DashboardLayout = () => {
       ]
     }
   ];
-
-  const currentRole = userProfile?.role || 'administrador'; // Fallback seguro
 
   const filteredMenu = menuConfig.map(group => ({
     ...group,
@@ -176,9 +184,18 @@ const DashboardLayout = () => {
                 <p className="text-sm font-medium truncate">
                   {userProfile?.nombre} {userProfile?.apellido}
                 </p>
-                <p className="text-xs text-muted-foreground capitalize">
-                  {userProfile?.role || 'Cargando...'}
-                </p>
+                <div className="flex items-center gap-2">
+                   <p className="text-xs text-muted-foreground capitalize">
+                    {loadingProfile ? 'Cargando...' : currentRole}
+                   </p>
+                   {/* Debug visual sutil para que veas qué rol detecta */}
+                   {currentRole === 'administrador' && !loadingProfile && (
+                     <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" title="Vista restringida (Admin)" />
+                   )}
+                   {currentRole === 'director' && (
+                     <span className="h-1.5 w-1.5 rounded-full bg-green-500" title="Vista completa (Director)" />
+                   )}
+                </div>
               </div>
             </div>
           </div>
