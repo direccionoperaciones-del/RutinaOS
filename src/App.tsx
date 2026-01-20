@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PDVList from "./pages/config/pdv/PDVList";
+import InventoryPage from "./pages/config/inventory/InventoryPage";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => (
             
             {/* Config Routes */}
             <Route path="config/pdv" element={<PDVList />} />
+            <Route path="config/inventory" element={<InventoryPage />} />
             
           </Route>
 
