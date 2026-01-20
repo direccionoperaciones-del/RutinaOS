@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, CalendarOff, UserCog, Mail, Edit, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
+import { Search, CalendarOff, UserCog, Mail, Edit, ShieldAlert, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -33,14 +33,19 @@ export default function PersonnelPage() {
       .order('nombre');
 
     if (userError) {
-      toast({ variant: "destructive", title: "Error", description: "Error cargando usuarios" });
+      console.error("Error fetching users:", userError);
+      toast({ 
+        variant: "destructive", 
+        title: "Error cargando usuarios", 
+        description: userError.message || "No se pudieron cargar los perfiles. Verifica permisos." 
+      });
     } else {
       setUsers(usersData || []);
     }
 
     // 2. Ausencias futuras o vigentes
     const today = new Date().toISOString().split('T')[0];
-    const { data: absData } = await supabase
+    const { data: absData, error: absError } = await supabase
       .from('user_absences')
       .select(`
         *,
@@ -51,7 +56,11 @@ export default function PersonnelPage() {
       .gte('fecha_hasta', today)
       .order('fecha_desde');
     
-    if (absData) setAbsences(absData);
+    if (absError) {
+       console.error("Error fetching absences:", absError);
+    } else if (absData) {
+       setAbsences(absData);
+    }
     
     setLoading(false);
   };
@@ -91,9 +100,14 @@ export default function PersonnelPage() {
           <h2 className="text-3xl font-bold tracking-tight">Gestión de Personal</h2>
           <p className="text-muted-foreground">Administra roles, accesos y ausencias del equipo.</p>
         </div>
-        <Button onClick={() => handleAddAbsence(null)}>
-          <CalendarOff className="w-4 h-4 mr-2" /> Registrar Novedad
-        </Button>
+        <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={fetchData} title="Recargar lista">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button onClick={() => handleAddAbsence(null)}>
+            <CalendarOff className="w-4 h-4 mr-2" /> Registrar Novedad
+            </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
@@ -165,12 +179,19 @@ export default function PersonnelPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {filteredUsers.length === 0 && (
+                {filteredUsers.length === 0 && !loading && (
                    <TableRow>
                     <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
                       No se encontraron usuarios.
                     </TableCell>
                   </TableRow>
+                )}
+                {loading && (
+                    <TableRow>
+                        <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                            Cargando...
+                        </TableCell>
+                    </TableRow>
                 )}
               </TableBody>
             </Table>
