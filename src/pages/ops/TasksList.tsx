@@ -38,7 +38,9 @@ export default function TasksList() {
           descripcion,
           prioridad,
           gps_obligatorio,
-          fotos_obligatorias
+          fotos_obligatorias,
+          min_fotos,
+          comentario_obligatorio
         ),
         pdv (
           id,

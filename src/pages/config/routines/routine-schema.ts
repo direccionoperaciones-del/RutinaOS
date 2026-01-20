@@ -21,10 +21,11 @@ export const routineSchema = z.object({
   gps_obligatorio: z.boolean().default(false),
   fotos_obligatorias: z.boolean().default(false),
   min_fotos: z.coerce.number().min(0).default(0),
+  comentario_obligatorio: z.boolean().default(false), // Nuevo campo
   requiere_inventario: z.boolean().default(false),
-  archivo_obligatorio: z.boolean().default(false), // Nuevo
-  enviar_email: z.boolean().default(false), // Nuevo
-  responder_email: z.boolean().default(false), // Nuevo
+  archivo_obligatorio: z.boolean().default(false),
+  enviar_email: z.boolean().default(false),
+  responder_email: z.boolean().default(false),
   
   activo: z.boolean().default(true),
   roles_ejecutores: z.array(z.string()).default(["administrador"]),

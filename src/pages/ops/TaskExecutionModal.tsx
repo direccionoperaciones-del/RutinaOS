@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { calculateDistance } from "@/utils/geo";
-import { MapPin, Camera, CheckCircle2, AlertTriangle, Loader2, UploadCloud, Trash2 } from "lucide-react";
+import { MapPin, Camera, CheckCircle2, AlertTriangle, Loader2, UploadCloud, Trash2, Edit } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
@@ -34,6 +34,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const pdv = task?.pdv;
   
   const requiresGps = rutina?.gps_obligatorio;
+  const requiresComment = rutina?.comentario_obligatorio;
+  const requiresPhotos = rutina?.fotos_obligatorias;
   const pdvRadio = pdv?.radio_gps || 100;
 
   useEffect(() => {
@@ -87,7 +89,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             setGpsError(`Estás a ${Math.round(dist)}m del PDV. Máximo permitido: ${pdvRadio}m.`);
           }
         } else {
-          // Si el PDV no tiene coordenadas pero la rutina pide GPS, es un error de configuración
           if (requiresGps) {
             setGpsError("El PDV no tiene coordenadas configuradas.");
             setIsGpsValid(false);
@@ -113,17 +114,12 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       const fileExt = file.name.split('.').pop();
       const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
       
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('evidence')
         .upload(fileName, file);
 
-      if (uploadError) {
-        // Handle missing bucket error specifically if needed, but assuming bucket exists or configured
-        throw uploadError;
-      }
+      if (uploadError) throw uploadError;
 
-      // Create record
       const { error: dbError } = await supabase
         .from('evidence_files')
         .insert({
@@ -141,10 +137,9 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       fetchEvidence();
     } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error al subir", description: error.message || "Verifica que el bucket 'evidence' exista y sea público." });
+      toast({ variant: "destructive", title: "Error al subir", description: error.message || "Error al subir archivo." });
     } finally {
       setIsUploading(false);
-      // Reset input value to allow uploading same file again if needed
       event.target.value = "";
     }
   };
@@ -152,11 +147,9 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const handleDeleteEvidence = async (id: string, path: string) => {
     if (!confirm("¿Borrar esta evidencia?")) return;
     
-    // Delete from storage
     const { error: storageError } = await supabase.storage.from('evidence').remove([path]);
-    if (storageError) console.error(storageError); // Log but continue to delete record
+    if (storageError) console.error(storageError);
 
-    // Delete from DB
     const { error } = await supabase.from('evidence_files').delete().eq('id', id);
     
     if (!error) {
@@ -166,16 +159,26 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleComplete = async () => {
+    // Validaciones
     if (requiresGps && !isGpsValid) {
       toast({ variant: "destructive", title: "Bloqueo de seguridad", description: "Debes validar tu ubicación GPS antes de finalizar." });
       return;
     }
 
-    if (rutina?.fotos_obligatorias && uploadedFiles.length < (rutina.min_fotos || 1)) {
+    if (requiresPhotos && uploadedFiles.length < (rutina.min_fotos || 1)) {
       toast({ 
         variant: "destructive", 
         title: "Evidencia requerida", 
-        description: `Debes subir al menos ${rutina.min_fotos || 1} foto(s) para completar la tarea.` 
+        description: `Debes subir al menos ${rutina.min_fotos || 1} foto(s).` 
+      });
+      return;
+    }
+
+    if (requiresComment && !comentario.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Comentario requerido",
+        description: "Esta rutina exige que ingreses notas de ejecución."
       });
       return;
     }
@@ -185,7 +188,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
 
-      // Actualizar la tarea
       const { error } = await supabase
         .from('task_instances')
         .update({
@@ -195,7 +197,9 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           gps_latitud: currentLocation?.lat,
           gps_longitud: currentLocation?.lng,
           gps_en_rango: isGpsValid,
-          // Guardar comentario si aplica (asumiendo que podríamos tener un campo notas en un futuro)
+          // Aquí podríamos guardar el comentario en un campo 'notas' si existiera en la tabla
+          // Por ahora simulamos que va al campo audit_notas o similar, o lo ignoramos si no hay columna
+          // Idealmente agregamos columna 'comentario_ejecutor' en migration.
         })
         .eq('id', task.id);
 
@@ -234,15 +238,15 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
         <div className="space-y-6 py-4">
           
-          {/* SECCIÓN 1: GPS (Solo visible si es obligatorio) */}
+          {/* GPS (Solo visible si es obligatorio) */}
           {requiresGps && (
             <div className={`p-4 rounded-lg border ${isGpsValid ? 'bg-green-50 border-green-200' : 'bg-muted/50'}`}>
               <div className="flex items-center justify-between mb-2">
-                <h4 className="font-semibold flex items-center gap-2">
+                <h4 className="font-semibold flex items-center gap-2 text-sm">
                   <MapPin className="w-4 h-4" />
                   Validación de Ubicación
                 </h4>
-                <Badge variant="secondary">Obligatorio</Badge>
+                <Badge variant="destructive" className="text-[10px] h-5">Requerido</Badge>
               </div>
               
               <div className="text-sm text-muted-foreground mb-4">
@@ -264,8 +268,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
               )}
 
               {isGpsValid ? (
-                 <div className="flex items-center gap-2 text-green-700 font-medium">
-                   <CheckCircle2 className="w-5 h-5" />
+                 <div className="flex items-center gap-2 text-green-700 font-medium text-sm">
+                   <CheckCircle2 className="w-4 h-4" />
                    Ubicación Válida
                  </div>
               ) : (
@@ -283,22 +287,21 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             </div>
           )}
 
-          {/* SECCIÓN 2: EVIDENCIA */}
+          {/* EVIDENCIA */}
           <div className="p-4 rounded-lg border bg-muted/20">
              <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold flex items-center gap-2">
+              <h4 className="font-semibold flex items-center gap-2 text-sm">
                 <Camera className="w-4 h-4" />
                 Evidencia Fotográfica
               </h4>
-              {rutina?.fotos_obligatorias ? (
-                <Badge variant="secondary">Mínimo {rutina.min_fotos || 1}</Badge>
+              {requiresPhotos ? (
+                <Badge variant="secondary" className="text-[10px]">Mínimo {rutina.min_fotos || 1}</Badge>
               ) : (
-                <Badge variant="outline">Opcional</Badge>
+                <Badge variant="outline" className="text-[10px]">Opcional</Badge>
               )}
             </div>
             
             <div className="space-y-4">
-              {/* Botón de carga */}
               <div className="flex items-center justify-center w-full">
                 <label 
                   htmlFor="file-upload" 
@@ -318,11 +321,10 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
                 </label>
               </div>
 
-              {/* Lista de archivos */}
               {uploadedFiles.length > 0 && (
                 <div className="grid grid-cols-3 gap-2">
                   {uploadedFiles.map(file => (
-                    <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border">
+                    <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border bg-background">
                       <img 
                         src={getPublicUrl(file.storage_path)} 
                         className="object-cover w-full h-full" 
@@ -341,13 +343,17 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             </div>
           </div>
 
-          {/* SECCIÓN 3: COMENTARIOS */}
+          {/* COMENTARIOS */}
           <div className="space-y-2">
-            <Label>Notas de ejecución</Label>
+            <div className="flex justify-between">
+              <Label>Notas de ejecución</Label>
+              {requiresComment && <span className="text-xs text-destructive font-medium">* Requerido</span>}
+            </div>
             <Textarea 
-              placeholder="¿Alguna novedad o incidencia durante la rutina?"
+              placeholder={requiresComment ? "Ingrese sus observaciones obligatorias..." : "¿Alguna novedad o incidencia?"}
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}
+              className={requiresComment && !comentario ? "border-red-200 focus-visible:ring-red-500" : ""}
             />
           </div>
         </div>

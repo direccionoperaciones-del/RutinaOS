@@ -66,6 +66,27 @@ export function RoutineRequirementsTab({ form }: RoutineRequirementsTabProps) {
           )}
         </div>
 
+        {/* COMENTARIO */}
+        <div className="border-t pt-4 mt-2">
+          <FormField
+            control={form.control}
+            name="comentario_obligatorio"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Requiere Comentario/Notas</FormLabel>
+                  <FormDescription>
+                    El usuario deberá escribir una observación obligatoria al finalizar.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
+        </div>
+
         {/* INVENTARIO */}
         <div className="border-t pt-4 mt-2">
           <FormField
