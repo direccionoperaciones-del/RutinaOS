@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, CalendarOff, UserCog, Mail, Edit, ShieldAlert, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Search, CalendarOff, UserCog, Mail, Edit, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Trash2, Edit2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -22,7 +22,9 @@ export default function PersonnelPage() {
   
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedAbsence, setSelectedAbsence] = useState<any>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -71,7 +73,26 @@ export default function PersonnelPage() {
 
   const handleAddAbsence = (user?: any) => {
     setSelectedUser(user);
+    setSelectedAbsence(null);
     setIsAbsenceModalOpen(true);
+  };
+
+  const handleEditAbsence = (absence: any) => {
+    setSelectedAbsence(absence);
+    setSelectedUser(null);
+    setIsAbsenceModalOpen(true);
+  };
+
+  const handleDeleteAbsence = async (id: string) => {
+    if (!confirm("¿Estás seguro de eliminar esta novedad?")) return;
+    
+    const { error } = await supabase.from('user_absences').delete().eq('id', id);
+    if (error) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } else {
+      toast({ title: "Eliminado", description: "Novedad eliminada correctamente." });
+      fetchData();
+    }
   };
 
   const handleEditUser = (user: any) => {
@@ -213,7 +234,7 @@ export default function PersonnelPage() {
                 </div>
               ) : (
                 absences.map(abs => (
-                  <div key={abs.id} className="p-3 border rounded-md bg-white shadow-sm text-sm">
+                  <div key={abs.id} className="p-3 border rounded-md bg-white shadow-sm text-sm group relative">
                     <div className="flex justify-between items-start mb-1">
                       <span className="font-semibold">{abs.profiles?.nombre} {abs.profiles?.apellido}</span>
                       <Badge variant="secondary" className="text-[10px]">{abs.absence_types?.nombre}</Badge>
@@ -233,6 +254,26 @@ export default function PersonnelPage() {
                          <span>Tareas omitidas (No se generan)</span>
                        </div>
                     )}
+                    
+                    {/* Botones de Acción (flotantes o al pie) */}
+                    <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-dashed">
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 px-2 text-xs hover:bg-muted"
+                            onClick={() => handleEditAbsence(abs)}
+                        >
+                            <Edit2 className="w-3 h-3 mr-1" /> Editar
+                        </Button>
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-6 px-2 text-xs text-destructive hover:text-destructive hover:bg-red-50"
+                            onClick={() => handleDeleteAbsence(abs.id)}
+                        >
+                            <Trash2 className="w-3 h-3 mr-1" /> Borrar
+                        </Button>
+                    </div>
                   </div>
                 ))
               )}
@@ -246,6 +287,7 @@ export default function PersonnelPage() {
         onOpenChange={setIsAbsenceModalOpen} 
         onSuccess={fetchData}
         preselectedUserId={selectedUser?.id}
+        absenceToEdit={selectedAbsence}
       />
 
       <EditUserModal

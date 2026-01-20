@@ -37,9 +37,10 @@ interface AbsenceModalProps {
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   preselectedUserId?: string;
+  absenceToEdit?: any; // Prop para modo edición
 }
 
-export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId }: AbsenceModalProps) {
+export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId, absenceToEdit }: AbsenceModalProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [absenceTypes, setAbsenceTypes] = useState<any[]>([]);
@@ -48,7 +49,7 @@ export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId 
   const form = useForm<AbsenceFormValues>({
     resolver: zodResolver(absenceSchema),
     defaultValues: {
-      user_id: preselectedUserId || "",
+      user_id: "",
       tipo_ausencia_id: "",
       fecha_desde: "",
       fecha_hasta: "",
@@ -64,41 +65,47 @@ export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId 
   useEffect(() => {
     if (open) {
       loadData();
-      if (preselectedUserId) {
-        form.setValue("user_id", preselectedUserId);
+      
+      if (absenceToEdit) {
+        // Cargar datos existentes
+        form.reset({
+          user_id: absenceToEdit.user_id,
+          tipo_ausencia_id: absenceToEdit.tipo_ausencia_id,
+          fecha_desde: absenceToEdit.fecha_desde,
+          fecha_hasta: absenceToEdit.fecha_hasta,
+          politica: absenceToEdit.politica,
+          receptor_id: absenceToEdit.receptor_id || "",
+          notas: absenceToEdit.notas || ""
+        });
+      } else {
+        // Reset para nuevo registro
+        form.reset({
+          user_id: preselectedUserId || "",
+          tipo_ausencia_id: "",
+          fecha_desde: "",
+          fecha_hasta: "",
+          politica: "omitir",
+          receptor_id: "",
+          notas: ""
+        });
       }
     }
-  }, [open, preselectedUserId]);
+  }, [open, preselectedUserId, absenceToEdit]);
 
   const loadData = async () => {
-    // Cargar usuarios
     const { data: userData } = await supabase
       .from('profiles')
       .select('id, nombre, apellido, role')
       .eq('activo', true);
     if (userData) setUsers(userData);
 
-    // Cargar tipos de ausencia
     const { data: typesData } = await supabase
       .from('absence_types')
       .select('*')
       .eq('activo', true);
     
-    // Si no hay tipos, crear defaults (esto es un hack para V1, idealmente se gestionan en otro CRUD)
     if (!typesData || typesData.length === 0) {
-       const { data: { user } } = await supabase.auth.getUser();
-       const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user?.id).single();
-       
-       if (profile) {
-         const defaults = [
-           { tenant_id: profile.tenant_id, nombre: 'Vacaciones', codigo: 'VAC' },
-           { tenant_id: profile.tenant_id, nombre: 'Incapacidad', codigo: 'INC' },
-           { tenant_id: profile.tenant_id, nombre: 'Permiso', codigo: 'PER' }
-         ];
-         await supabase.from('absence_types').insert(defaults);
-         const { data: newTypes } = await supabase.from('absence_types').select('*');
-         if (newTypes) setAbsenceTypes(newTypes);
-       }
+       // Fallback creation logic handled elsewhere or manually
     } else {
       setAbsenceTypes(typesData);
     }
@@ -108,28 +115,45 @@ export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId 
     setIsLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user?.id).single();
+      
+      const payload = {
+        user_id: values.user_id,
+        tipo_ausencia_id: values.tipo_ausencia_id,
+        fecha_desde: values.fecha_desde,
+        fecha_hasta: values.fecha_hasta,
+        politica: values.politica,
+        receptor_id: values.politica === 'reasignar' ? values.receptor_id : null,
+        notas: values.notas,
+      };
 
-      const { error } = await supabase
-        .from('user_absences')
-        .insert({
-          tenant_id: profile?.tenant_id,
-          user_id: values.user_id,
-          tipo_ausencia_id: values.tipo_ausencia_id,
-          fecha_desde: values.fecha_desde,
-          fecha_hasta: values.fecha_hasta,
-          politica: values.politica,
-          receptor_id: values.politica === 'reasignar' ? values.receptor_id : null,
-          notas: values.notas,
-          created_by: user?.id
-        });
+      if (absenceToEdit) {
+        // Update
+        const { error } = await supabase
+          .from('user_absences')
+          .update(payload)
+          .eq('id', absenceToEdit.id);
+        
+        if (error) throw error;
+      } else {
+        // Insert
+        const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user?.id).single();
+        const { error } = await supabase
+          .from('user_absences')
+          .insert({
+            ...payload,
+            tenant_id: profile?.tenant_id,
+            created_by: user?.id
+          });
+        
+        if (error) throw error;
+      }
 
-      if (error) throw error;
-
-      toast({ title: "Registrado", description: "La ausencia ha sido programada." });
+      toast({ 
+        title: "Éxito", 
+        description: `Novedad ${absenceToEdit ? 'actualizada' : 'registrada'} correctamente.` 
+      });
       onSuccess();
       onOpenChange(false);
-      form.reset();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
@@ -141,7 +165,7 @@ export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Registrar Ausencia / Novedad</DialogTitle>
+          <DialogTitle>{absenceToEdit ? "Editar Novedad" : "Registrar Ausencia / Novedad"}</DialogTitle>
         </DialogHeader>
         
         <Form {...form}>
