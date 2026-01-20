@@ -22,6 +22,10 @@ export const routineSchema = z.object({
   fotos_obligatorias: z.boolean().default(false),
   min_fotos: z.coerce.number().min(0).default(0),
   requiere_inventario: z.boolean().default(false),
+  archivo_obligatorio: z.boolean().default(false), // Nuevo
+  enviar_email: z.boolean().default(false), // Nuevo
+  responder_email: z.boolean().default(false), // Nuevo
+  
   activo: z.boolean().default(true),
   roles_ejecutores: z.array(z.string()).default(["administrador"]),
 });

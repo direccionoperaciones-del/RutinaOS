@@ -14,7 +14,9 @@ export function RoutineRequirementsTab({ form }: RoutineRequirementsTabProps) {
   return (
     <div className="space-y-4 py-4">
       <div className="grid grid-cols-1 gap-4 border p-4 rounded-md">
-          <FormField
+        
+        {/* GPS */}
+        <FormField
           control={form.control}
           name="gps_obligatorio"
           render={({ field }) => (
@@ -32,6 +34,7 @@ export function RoutineRequirementsTab({ form }: RoutineRequirementsTabProps) {
           )}
         />
         
+        {/* FOTOS */}
         <div className="border-t pt-4 mt-2">
           <FormField
             control={form.control}
@@ -63,6 +66,7 @@ export function RoutineRequirementsTab({ form }: RoutineRequirementsTabProps) {
           )}
         </div>
 
+        {/* INVENTARIO */}
         <div className="border-t pt-4 mt-2">
           <FormField
             control={form.control}
@@ -82,6 +86,64 @@ export function RoutineRequirementsTab({ form }: RoutineRequirementsTabProps) {
             )}
           />
         </div>
+
+        {/* NUEVOS REQUISITOS (ARCHIVO, EMAIL, RESPUESTA) */}
+        <div className="border-t pt-4 mt-2 space-y-4">
+          <FormField
+            control={form.control}
+            name="archivo_obligatorio"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Requiero adjuntar un archivo</FormLabel>
+                  <FormDescription>
+                    El usuario deberá subir un documento (PDF, Excel, etc.) obligatorio.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="enviar_email"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Enviar un mail</FormLabel>
+                  <FormDescription>
+                    Se requiere enviar un correo electrónico como parte de la tarea.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="responder_email"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Responder un correo</FormLabel>
+                  <FormDescription>
+                    El usuario debe confirmar que ha respondido un correo pendiente.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
+        </div>
+
       </div>
     </div>
   );
