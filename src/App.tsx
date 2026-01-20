@@ -16,6 +16,7 @@ import TasksList from "./pages/ops/TasksList";
 import AuditList from "./pages/control/audit/AuditList";
 import MessageList from "./pages/ops/messages/MessageList";
 import GalleryPage from "./pages/control/gallery/GalleryPage";
+import ReportsPage from "./pages/control/reports/ReportsPage";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ const App = () => (
             {/* Control Routes */}
             <Route path="audit" element={<AuditList />} />
             <Route path="gallery" element={<GalleryPage />} />
+            <Route path="reports" element={<ReportsPage />} />
             
             {/* Config Routes */}
             <Route path="config/pdv" element={<PDVList />} />
