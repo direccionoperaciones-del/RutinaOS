@@ -14,6 +14,7 @@ import AssignmentList from "./pages/config/assignments/AssignmentList";
 import CommandCenter from "./pages/ops/CommandCenter";
 import TasksList from "./pages/ops/TasksList";
 import AuditList from "./pages/control/audit/AuditList";
+import MessageList from "./pages/ops/messages/MessageList";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
             
             {/* Ops Routes */}
             <Route path="tasks" element={<TasksList />} />
+            <Route path="messages" element={<MessageList />} />
             <Route path="command-center" element={<CommandCenter />} />
             
             {/* Control Routes */}
