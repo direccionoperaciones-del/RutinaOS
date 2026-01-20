@@ -15,6 +15,7 @@ import PersonnelPage from "./pages/config/personnel/PersonnelList";
 import CommandCenter from "./pages/ops/CommandCenter";
 import TasksList from "./pages/ops/TasksList";
 import AuditList from "./pages/control/audit/AuditList";
+import SystemAuditLog from "./pages/control/audit/SystemAuditLog";
 import MessageList from "./pages/ops/messages/MessageList";
 import GalleryPage from "./pages/control/gallery/GalleryPage";
 import ReportsPage from "./pages/control/reports/ReportsPage";
@@ -42,6 +43,7 @@ const App = () => (
             
             {/* Control Routes */}
             <Route path="audit" element={<AuditList />} />
+            <Route path="system-audit" element={<SystemAuditLog />} />
             <Route path="gallery" element={<GalleryPage />} />
             <Route path="reports" element={<ReportsPage />} />
             

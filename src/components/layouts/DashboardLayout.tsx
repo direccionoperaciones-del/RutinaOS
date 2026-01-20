@@ -19,7 +19,8 @@ import {
   ShieldAlert,
   Link,
   ClipboardList,
-  Package
+  Package,
+  History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -109,7 +110,8 @@ const DashboardLayout = () => {
     {
       group: "Control",
       items: [
-        { icon: FileCheck, label: "Auditoría", path: "/audit" },
+        { icon: FileCheck, label: "Auditoría Calidad", path: "/audit" },
+        { icon: History, label: "Log del Sistema", path: "/system-audit" },
         { icon: Image, label: "Galería", path: "/gallery" },
         { icon: FileText, label: "Reportes", path: "/reports" },
       ]
