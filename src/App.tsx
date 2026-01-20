@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import DashboardLayout from "./components/layouts/DashboardLayout";
 import Login from "./pages/Login";
 import Index from "./pages/Index";
@@ -15,6 +15,7 @@ import CommandCenter from "./pages/ops/CommandCenter";
 import TasksList from "./pages/ops/TasksList";
 import AuditList from "./pages/control/audit/AuditList";
 import MessageList from "./pages/ops/messages/MessageList";
+import GalleryPage from "./pages/control/gallery/GalleryPage";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
             
             {/* Control Routes */}
             <Route path="audit" element={<AuditList />} />
+            <Route path="gallery" element={<GalleryPage />} />
             
             {/* Config Routes */}
             <Route path="config/pdv" element={<PDVList />} />
