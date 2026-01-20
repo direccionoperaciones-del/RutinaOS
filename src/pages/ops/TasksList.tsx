@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Clock, MapPin, CheckCircle2, AlertCircle, Calendar, ArrowRight } from "lucide-react";
+import { Clock, MapPin, CheckCircle2, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -110,7 +110,9 @@ export default function TasksList() {
                       <CardTitle className="text-lg">{task.routine_templates?.nombre}</CardTitle>
                     </div>
                     {task.routine_templates?.gps_obligatorio && (
-                      <MapPin className="w-4 h-4 text-muted-foreground" title="Requiere GPS" />
+                      <div title="Requiere GPS">
+                        <MapPin className="w-4 h-4 text-muted-foreground" />
+                      </div>
                     )}
                   </div>
                   <CardDescription className="flex items-center gap-2">
