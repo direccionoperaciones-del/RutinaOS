@@ -22,7 +22,6 @@ const pdvSchema = z.object({
   longitud: z.coerce.number().optional().nullable(),
   radio_gps: z.coerce.number().min(10).max(1000).default(100),
   activo: z.boolean().default(true),
-  // Nota: El responsable se maneja en una tabla separada, pero lo capturamos aquí para la creación inicial
   responsable_id: z.string().optional(), 
 });
 
@@ -58,15 +57,17 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
 
   // Cargar usuarios para el selector de responsables
   useEffect(() => {
-    const fetchUsers = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, nombre, apellido, role')
-        .eq('activo', true);
-      if (data) setUsers(data);
-    };
-    fetchUsers();
-  }, []);
+    if (open) {
+      const fetchUsers = async () => {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, nombre, apellido, role')
+          .eq('activo', true);
+        if (data) setUsers(data);
+      };
+      fetchUsers();
+    }
+  }, [open]);
 
   // Cargar datos al editar
   useEffect(() => {
@@ -81,7 +82,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
         longitud: pdvToEdit.longitud,
         radio_gps: pdvToEdit.radio_gps || 100,
         activo: pdvToEdit.activo,
-        responsable_id: "sin_asignar" // En edición compleja, traeríamos el responsable actual
+        responsable_id: "sin_asignar"
       });
     } else {
       form.reset({
@@ -123,8 +124,17 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       if (!user) throw new Error("No autenticado");
 
       // Obtener tenant del usuario actual
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-      if (!profile?.tenant_id) throw new Error("Usuario sin tenant asignado");
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('tenant_id')
+        .eq('id', user.id)
+        .maybeSingle(); // Usar maybeSingle para no lanzar error si no existe
+
+      if (profileError) console.error("Error fetching profile:", profileError);
+      
+      if (!profile?.tenant_id) {
+        throw new Error("Tu usuario no tiene una organización asignada. Por favor contacta al soporte o intenta registrarte nuevamente.");
+      }
 
       const pdvData = {
         tenant_id: profile.tenant_id,
@@ -160,7 +170,6 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       }
 
       // Manejo de Responsable (Asignación)
-      // Solo si se seleccionó uno nuevo y es creación (o lógica extendida para edición)
       if (values.responsable_id && values.responsable_id !== "sin_asignar" && !pdvToEdit) {
         const { error: assignError } = await supabase.from('pdv_assignments').insert({
           tenant_id: profile.tenant_id,
@@ -176,6 +185,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
+      console.error(error);
       toast({ 
         variant: "destructive", 
         title: "Error", 
