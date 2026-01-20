@@ -20,17 +20,18 @@ import {
   ClipboardList,
   Package,
   History,
-  Settings2
+  Settings2,
+  Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const SidebarItem = ({ icon: Icon, label, path, active, onClick }: any) => (
+const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <div
     className={cn(
-      "flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors cursor-pointer rounded-lg mb-1",
+      "flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors cursor-pointer rounded-lg mb-1 relative",
       active 
         ? "bg-primary text-primary-foreground" 
         : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -38,7 +39,12 @@ const SidebarItem = ({ icon: Icon, label, path, active, onClick }: any) => (
     onClick={onClick}
   >
     <Icon className="h-5 w-5" />
-    <span>{label}</span>
+    <span className="flex-1">{label}</span>
+    {badgeCount > 0 && (
+      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.2rem] text-center shadow-sm">
+        {badgeCount > 99 ? '99+' : badgeCount}
+      </span>
+    )}
   </div>
 );
 
@@ -52,7 +58,6 @@ const SidebarGroup = ({ title, children }: any) => (
 );
 
 // Definición de roles permitidos por ítem
-// 'all' significa acceso para todos los roles autenticados
 const NAV_CONFIG = [
   {
     group: "Operación",
@@ -67,13 +72,14 @@ const NAV_CONFIG = [
         icon: CheckSquare, 
         label: "Mis Tareas", 
         path: "/tasks", 
-        roles: ['administrador', 'lider', 'director'] // Auditor no ejecuta tareas
+        roles: ['administrador', 'lider', 'director'] 
       },
       { 
         icon: MessageSquare, 
         label: "Mensajes", 
         path: "/messages", 
-        roles: ['all'] 
+        roles: ['all'],
+        hasBadge: true // Flag para indicar que este item lleva badge
       },
       { 
         icon: Activity, 
@@ -174,6 +180,53 @@ const DashboardLayout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
+  // Función para cargar/actualizar mensajes no leídos
+  const refreshUnreadCount = async (profile: any) => {
+    if (!profile) return;
+
+    // 1. Obtener mensajes recientes (últimos 30 días)
+    const dateLimit = new Date();
+    dateLimit.setDate(dateLimit.getDate() - 30);
+
+    const { data: messages } = await supabase
+      .from('messages')
+      .select('id, message_recipients(recipient_type, recipient_id)')
+      .gt('created_at', dateLimit.toISOString())
+      .eq('tenant_id', profile.tenant_id);
+
+    if (!messages) return;
+
+    // 2. Filtrar los que son para mí
+    const myMessages = messages.filter((msg: any) => {
+      return msg.message_recipients.some((r: any) => {
+        if (r.recipient_type === 'all') return true;
+        if (r.recipient_type === 'user' && r.recipient_id === profile.id) return true;
+        if (r.recipient_type === 'role' && r.recipient_id === profile.role) return true;
+        // Check PDV assignments (si existe alguna coincidencia)
+        if (r.recipient_type === 'pdv' && profile.pdv_assignments?.some((a: any) => a.pdv_id === r.recipient_id && a.vigente)) return true;
+        return false;
+      });
+    });
+
+    if (myMessages.length === 0) {
+      setUnreadMessages(0);
+      return;
+    }
+
+    // 3. Chequear cuáles ya leí
+    const { data: receipts } = await supabase
+      .from('message_receipts')
+      .select('message_id')
+      .eq('user_id', profile.id);
+    
+    const readSet = new Set(receipts?.map(r => r.message_id));
+    
+    // 4. Calcular no leídos
+    const unread = myMessages.filter((m: any) => !readSet.has(m.id)).length;
+    setUnreadMessages(unread);
+  };
 
   useEffect(() => {
     // Check auth and load profile
@@ -185,19 +238,20 @@ const DashboardLayout = () => {
           return;
         }
 
-        // Fetch profile
+        // Fetch profile and assignments for message filtering
         const { data: profile, error } = await supabase
           .from('profiles')
-          .select('*, tenants(nombre)')
+          .select('*, tenants(nombre), pdv_assignments(pdv_id, vigente)')
           .eq('id', session.user.id)
           .single();
         
         if (error) throw error;
         
         setUserProfile(profile);
+        refreshUnreadCount(profile);
+
       } catch (error) {
         console.error("Error loading profile:", error);
-        // Fallback o redirect si falla crítico
       } finally {
         setLoading(false);
       }
@@ -214,6 +268,46 @@ const DashboardLayout = () => {
       authListener.subscription.unsubscribe();
     };
   }, [navigate]);
+
+  // Suscripción a Realtime para Mensajes
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const channel = supabase
+      .channel('global-notifications')
+      .on(
+        'postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `tenant_id=eq.${userProfile.tenant_id}` }, 
+        (payload) => {
+          // Mostrar notificación
+          toast({
+            title: "Nuevo Mensaje",
+            description: payload.new.asunto,
+            action: <Button variant="outline" size="sm" onClick={() => navigate('/messages')}>Ver</Button>,
+          });
+          // Actualizar contador
+          refreshUnreadCount(userProfile);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${userProfile.id}` },
+        () => {
+          // Si yo leo algo (o marco como leído en otra pestaña), actualizar contador
+          refreshUnreadCount(userProfile);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userProfile]);
+
+  // Refrescar contador al cambiar de ruta (por si leímos mensajes)
+  useEffect(() => {
+    if (userProfile) refreshUnreadCount(userProfile);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -307,13 +401,14 @@ const DashboardLayout = () => {
 
               return (
                 <SidebarGroup key={idx} title={group.group}>
-                  {allowedItems.map((item) => (
+                  {allowedItems.map((item: any) => (
                     <SidebarItem
                       key={item.path}
                       icon={item.icon}
                       label={item.label}
                       path={item.path}
                       active={location.pathname === item.path}
+                      badgeCount={item.hasBadge ? unreadMessages : 0}
                       onClick={() => {
                         navigate(item.path);
                         setIsMobileMenuOpen(false);
@@ -342,11 +437,19 @@ const DashboardLayout = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Mobile Header */}
-        <header className="lg:hidden h-16 border-b flex items-center px-4 bg-card shrink-0">
-          <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
-            <Menu className="h-6 w-6" />
-          </Button>
-          <span className="ml-4 font-semibold">Menú</span>
+        <header className="lg:hidden h-16 border-b flex items-center px-4 bg-card shrink-0 justify-between">
+          <div className="flex items-center">
+            <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu className="h-6 w-6" />
+            </Button>
+            <span className="ml-4 font-semibold">Menú</span>
+          </div>
+          {unreadMessages > 0 && (
+            <div className="flex items-center text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded-full animate-pulse">
+              <Bell className="w-3 h-3 mr-1" />
+              {unreadMessages} nuevos
+            </div>
+          )}
         </header>
 
         {/* Page Content */}
