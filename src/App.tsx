@@ -7,6 +7,7 @@ import DashboardLayout from "./components/layouts/DashboardLayout";
 import Login from "./pages/Login";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import PDVList from "./pages/config/pdv/PDVList";
 
 const queryClient = new QueryClient();
 
@@ -23,9 +24,10 @@ const App = () => (
           {/* Protected Routes */}
           <Route path="/" element={<DashboardLayout />}>
             <Route index element={<Index />} />
-            {/* Future routes will go here */}
-            {/* <Route path="tasks" element={<Tasks />} /> */}
-            {/* <Route path="config/pdv" element={<ConfigPDV />} /> */}
+            
+            {/* Config Routes */}
+            <Route path="config/pdv" element={<PDVList />} />
+            
           </Route>
 
           {/* Catch-all */}
