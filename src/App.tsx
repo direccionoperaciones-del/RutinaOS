@@ -13,6 +13,7 @@ import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
 import CommandCenter from "./pages/ops/CommandCenter";
 import TasksList from "./pages/ops/TasksList";
+import AuditList from "./pages/control/audit/AuditList";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,9 @@ const App = () => (
             {/* Ops Routes */}
             <Route path="tasks" element={<TasksList />} />
             <Route path="command-center" element={<CommandCenter />} />
+            
+            {/* Control Routes */}
+            <Route path="audit" element={<AuditList />} />
             
             {/* Config Routes */}
             <Route path="config/pdv" element={<PDVList />} />
