@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import PDVList from "./pages/config/pdv/PDVList";
 import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
+import AssignmentList from "./pages/config/assignments/AssignmentList";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="config/pdv" element={<PDVList />} />
             <Route path="config/inventory" element={<InventoryPage />} />
             <Route path="config/routines" element={<RoutineList />} />
+            <Route path="config/assignments" element={<AssignmentList />} />
             
           </Route>
 

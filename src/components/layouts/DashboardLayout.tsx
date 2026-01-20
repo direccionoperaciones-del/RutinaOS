@@ -16,7 +16,10 @@ import {
   Store,
   Calendar,
   UserCog,
-  ShieldAlert
+  ShieldAlert,
+  Link,
+  ClipboardList,
+  Package
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -115,10 +118,11 @@ const DashboardLayout = () => {
       group: "Configuración",
       items: [
         { icon: Store, label: "Puntos de Venta", path: "/config/pdv" },
-        { icon: CheckSquare, label: "Rutinas", path: "/config/routines" },
+        { icon: ClipboardList, label: "Rutinas", path: "/config/routines" },
+        { icon: Link, label: "Asignación Rutinas", path: "/config/assignments" },
+        { icon: Package, label: "Inventarios", path: "/config/inventory" },
         { icon: Calendar, label: "Calendario", path: "/calendar" },
         { icon: UserCog, label: "Gestión Personal", path: "/personnel" },
-        { icon: ShieldAlert, label: "Audit Sistema", path: "/system-audit" },
         { icon: Settings, label: "Ajustes", path: "/settings" },
       ]
     }
