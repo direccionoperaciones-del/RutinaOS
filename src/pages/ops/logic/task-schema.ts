@@ -21,6 +21,8 @@ export interface TaskField {
 /**
  * Convierte la configuración plana de la BD (routine_templates)
  * en un Schema estructurado para la UI.
+ * 
+ * REGLA DE ORO: Si el flag de configuración es false, el campo NO se agrega.
  */
 export function buildTaskSchema(rutina: any, pdv: any): TaskField[] {
   const fields: TaskField[] = [];
@@ -63,44 +65,41 @@ export function buildTaskSchema(rutina: any, pdv: any): TaskField[] {
     });
   }
 
-  // 3. Archivos
-  // Si archivo_obligatorio es false, NO agregamos el campo (o lo agregamos como opcional si quisiéramos)
-  // Según requerimiento: "renderizar campos solo si están definidos".
-  // Asumiremos que si está en false pero queremos permitir adjuntos opcionales, lo agregamos con required: false.
-  // Pero para limpiar la UI, si es false y no es obligatorio, podríamos ocultarlo o mostrarlo como opcional.
-  // Vamos a mostrarlo siempre para permitir adjuntos opcionales, pero validando solo si es true.
-  fields.push({
-    id: 'files',
-    type: 'file',
-    label: 'Documentos Adjuntos',
-    required: rutina.archivo_obligatorio,
-    validate: (files: any[]) => {
-      if (rutina.archivo_obligatorio && (!files || files.length === 0)) {
-        return 'Debes adjuntar al menos un documento.';
+  // 3. Archivos (Solo si archivo_obligatorio es true)
+  if (rutina.archivo_obligatorio) {
+    fields.push({
+      id: 'files',
+      type: 'file',
+      label: 'Documentos Adjuntos',
+      required: true,
+      validate: (files: any[]) => {
+        if (!files || files.length === 0) {
+          return 'Debes adjuntar al menos un documento.';
+        }
+        return null;
       }
-      return null;
-    }
-  });
+    });
+  }
 
-  // 4. Fotos (El BUG estaba aquí: la lógica debe ser estricta)
-  fields.push({
-    id: 'photos',
-    type: 'photo',
-    label: 'Evidencia Fotográfica',
-    required: rutina.fotos_obligatorias,
-    constraints: {
-      min: rutina.fotos_obligatorias ? (rutina.min_fotos || 1) : 0
-    },
-    validate: (photos: any[]) => {
-      if (rutina.fotos_obligatorias) {
-        const min = rutina.min_fotos || 1;
+  // 4. Fotos (Solo si fotos_obligatorias es true)
+  if (rutina.fotos_obligatorias) {
+    // Si está habilitado, respetamos el min_fotos. Si es 0 o null, asumimos 1 por defecto al ser "obligatorias".
+    const min = (rutina.min_fotos && rutina.min_fotos > 0) ? rutina.min_fotos : 1;
+    
+    fields.push({
+      id: 'photos',
+      type: 'photo',
+      label: 'Evidencia Fotográfica',
+      required: true,
+      constraints: { min },
+      validate: (photos: any[]) => {
         if (!photos || photos.length < min) {
           return `Debes subir al menos ${min} foto(s).`;
         }
+        return null;
       }
-      return null;
-    }
-  });
+    });
+  }
 
   // 5. Inventario
   if (rutina.requiere_inventario) {
@@ -112,23 +111,30 @@ export function buildTaskSchema(rutina: any, pdv: any): TaskField[] {
       constraints: {
         categories: rutina.categorias_ids
       },
-      validate: (data: any) => null // TODO: Validar inventario cuando se implemente el módulo completo
+      // TODO: Implementar validación real de inventario cuando exista el módulo
+      validate: (data: any) => null 
     });
   }
 
-  // 6. Comentarios
-  fields.push({
-    id: 'comments',
-    type: 'text',
-    label: 'Notas de ejecución',
-    required: rutina.comentario_obligatorio,
-    validate: (val: string) => {
-      if (rutina.comentario_obligatorio && (!val || val.trim().length === 0)) {
-        return 'El comentario es obligatorio.';
+  // 6. Comentarios (Solo si comentario_obligatorio es true)
+  if (rutina.comentario_obligatorio) {
+    fields.push({
+      id: 'comments',
+      type: 'text',
+      label: 'Notas de ejecución',
+      required: true,
+      validate: (val: string) => {
+        if (!val || val.trim().length === 0) {
+          return 'El comentario es obligatorio.';
+        }
+        return null;
       }
-      return null;
-    }
-  });
+    });
+  } 
+  // Opcional: Si queremos mostrar comentarios siempre como opcional si no es obligatorio
+  // Se puede agregar un 'else' aquí, pero según la regla estricta "Si no está seleccionado no se muestra", lo omitimos.
+  // Sin embargo, es común dejar un campo de notas opcional siempre. 
+  // Para cumplir estrictamente tu pedido de "No debe aparecer si no está seleccionado", lo dejo dentro del if.
 
   return fields;
 }
