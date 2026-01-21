@@ -88,37 +88,46 @@ export default function AssignmentList() {
         .eq('activo', true)
         .order('nombre');
 
-      // 2. Obtener PDVs Activos
-      const { data: pdvs, error: pdvError } = await supabase
+      // 2. Obtener PDVs con su responsable ACTIVO (JOIN directo)
+      // Esta consulta trae el PDV y anida SOLO las asignaciones que tengan 'vigente' (aunque el filtro 'eq' en join profundo es complejo en API directa,
+      // traemos el array y filtramos en memoria que es más seguro para este caso)
+      const { data: pdvsData, error: pdvError } = await supabase
         .from('pdv')
-        .select('id, codigo_interno, nombre, ciudad')
+        .select(`
+          id, 
+          codigo_interno, 
+          nombre, 
+          ciudad,
+          pdv_assignments (
+            vigente,
+            profiles (nombre, apellido)
+          )
+        `)
         .eq('activo', true)
         .order('codigo_interno');
 
       if (pdvError) throw pdvError;
 
-      // 3. Obtener Asignaciones VIGENTES (Manual join para evitar ambigüedad de FKs)
-      const { data: assignments } = await supabase
-        .from('pdv_assignments')
-        .select('pdv_id, user_id')
-        .eq('vigente', true);
-      
-      // Obtener perfiles de usuarios asignados
-      const userIds = assignments?.map(a => a.user_id).filter(Boolean) || [];
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, nombre, apellido')
-        .in('id', userIds);
-      
-      // Mapas de ayuda
-      const profileMap = new Map();
-      profiles?.forEach(p => profileMap.set(p.id, `${p.nombre} ${p.apellido}`));
-
-      const responsibleMap = new Map();
-      assignments?.forEach((a: any) => {
-        if (a.user_id && profileMap.has(a.user_id)) {
-          responsibleMap.set(a.pdv_id, profileMap.get(a.user_id));
+      // 3. Procesar PDVs para encontrar el responsable vigente exacto
+      const processedPdvs = pdvsData.map((p: any) => {
+        // Buscamos dentro del array de asignaciones aquella que esté marcada como vigente
+        const activeAssignment = p.pdv_assignments?.find((a: any) => a.vigente === true);
+        
+        let responsableName = "Sin asignar";
+        
+        if (activeAssignment?.profiles) {
+          responsableName = `${activeAssignment.profiles.nombre} ${activeAssignment.profiles.apellido}`;
+        } else if (activeAssignment) {
+          // Caso raro: hay asignación vigente pero no cargó perfil (usuario borrado?)
+          responsableName = "Usuario desconocido";
         }
+
+        return {
+          codigo: p.codigo_interno,
+          nombre: p.nombre,
+          ciudad: p.ciudad,
+          responsable: responsableName
+        };
       });
 
       // 4. Construir CSV
@@ -138,18 +147,17 @@ export default function AssignmentList() {
       let csvContent = headers.join(";") + "\n";
 
       // Determinar máximo de filas necesarias
-      const maxRows = Math.max(routines?.length || 0, pdvs?.length || 0, 2); 
+      const maxRows = Math.max(routines?.length || 0, processedPdvs.length, 2); 
 
       const clean = (str: string) => str ? str.replace(/;/g, ',').trim() : '';
 
       for (let i = 0; i < maxRows; i++) {
         const parts = [];
 
-        // BLOQUE 1: DATOS DE CARGA (Cols A, B)
-        // Fila 0: Ejemplo
+        // BLOQUE 1: DATOS DE CARGA (Cols A, B) - Ejemplo en fila 0
         if (i === 0) {
           const exRoutine = routines?.[0]?.nombre || "Nombre Rutina";
-          const exPdv = pdvs?.[0]?.codigo_interno || "CODIGO";
+          const exPdv = processedPdvs?.[0]?.codigo || "CODIGO";
           parts.push(exRoutine);
           parts.push(exPdv);
         } else {
@@ -172,13 +180,11 @@ export default function AssignmentList() {
         parts.push(""); parts.push(""); parts.push("");
 
         // BLOQUE 3: REFERENCIA PDVS (Cols K, L, M)
-        if (pdvs && i < pdvs.length) {
-          const p = pdvs[i];
-          const responsable = responsibleMap.get(p.id) || "Sin asignar";
-          
-          parts.push(clean(p.codigo_interno));
+        if (i < processedPdvs.length) {
+          const p = processedPdvs[i];
+          parts.push(clean(p.codigo));
           parts.push(`${clean(p.nombre)} (${clean(p.ciudad)})`);
-          parts.push(clean(responsable));
+          parts.push(clean(p.responsable));
         } else {
           parts.push(""); parts.push(""); parts.push("");
         }
