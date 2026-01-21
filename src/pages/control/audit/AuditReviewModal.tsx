@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, User, Calendar, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText } from "lucide-react";
+import { MapPin, User, Calendar, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface AuditReviewModalProps {
   task: any;
@@ -21,13 +22,53 @@ interface AuditReviewModalProps {
 export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditReviewModalProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [notes, setNotes] = useState("");
-  const [action, setAction] = useState<'approve' | 'reject' | null>(null);
+  
+  // Datos detallados
+  const [evidenceFiles, setEvidenceFiles] = useState<any[]>([]);
+  const [inventoryRows, setInventoryRows] = useState<any[]>([]);
 
-  if (!task) return null;
+  // Configuración de la rutina (alias para facilitar lectura)
+  const config = task?.routine_templates || {};
 
-  const handleAudit = async () => {
-    if (action === 'reject' && !notes.trim()) {
+  useEffect(() => {
+    if (open && task) {
+      fetchTaskDetails();
+      setNotes(task.audit_notas || "");
+    }
+  }, [open, task]);
+
+  const fetchTaskDetails = async () => {
+    setIsLoadingDetails(true);
+    try {
+      // 1. Cargar Evidencias (Fotos y Archivos)
+      const { data: files } = await supabase
+        .from('evidence_files')
+        .select('*')
+        .eq('task_id', task.id);
+      
+      if (files) setEvidenceFiles(files);
+
+      // 2. Cargar Inventario (Si aplica)
+      if (config.requiere_inventario) {
+        const { data: inv } = await supabase
+          .from('inventory_submission_rows')
+          .select('*, inventory_products(nombre, codigo_sku, unidad)')
+          .eq('task_id', task.id);
+        
+        if (inv) setInventoryRows(inv);
+      }
+
+    } catch (error) {
+      console.error("Error loading details:", error);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
+
+  const handleAudit = async (status: 'approve' | 'reject') => {
+    if (status === 'reject' && !notes.trim()) {
       toast({ 
         variant: "destructive", 
         title: "Requerido", 
@@ -42,7 +83,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       if (!user) throw new Error("No autenticado");
 
       const updateData = {
-        audit_status: action === 'approve' ? 'aprobado' : 'rechazado',
+        audit_status: status === 'approve' ? 'aprobado' : 'rechazado',
         audit_at: new Date().toISOString(),
         audit_by: user.id,
         audit_notas: notes
@@ -56,7 +97,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       if (error) throw error;
 
       toast({ 
-        title: action === 'approve' ? "Tarea Aprobada" : "Tarea Rechazada", 
+        title: status === 'approve' ? "Tarea Aprobada" : "Tarea Rechazada", 
         description: "La auditoría se ha registrado correctamente." 
       });
       
@@ -77,114 +118,234 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
     }
   };
 
+  const getPublicUrl = (path: string) => {
+    const { data } = supabase.storage.from('evidence').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  if (!task) return null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col p-0 gap-0">
+        
+        {/* Header Fijo */}
+        <DialogHeader className="p-6 pb-4 border-b bg-muted/10">
           <div className="flex items-center justify-between mb-2">
-            <Badge variant="outline" className="capitalize">
-              {task.routine_templates?.prioridad}
-            </Badge>
-            {task.audit_status && (
-              <Badge className={getStatusColor(task.audit_status)}>
-                {task.audit_status.toUpperCase()}
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="capitalize border-primary/20 text-primary">
+                Prioridad {config.prioridad}
               </Badge>
-            )}
+              {task.audit_status && task.audit_status !== 'pendiente' && (
+                <Badge className={getStatusColor(task.audit_status)}>
+                  {task.audit_status.toUpperCase()}
+                </Badge>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground font-mono">
+              ID: {task.id.slice(0,8)}
+            </span>
           </div>
-          <DialogTitle>{task.routine_templates?.nombre}</DialogTitle>
-          <div className="text-sm text-muted-foreground flex items-center gap-2">
-            <User className="w-3 h-3" /> 
-            Ejecutado por: {task.profiles?.nombre} {task.profiles?.apellido}
+          <DialogTitle className="text-xl">{config.nombre}</DialogTitle>
+          <div className="text-sm text-muted-foreground flex items-center gap-4 mt-1">
+            <span className="flex items-center gap-1">
+              <User className="w-3 h-3" /> {task.profiles?.nombre} {task.profiles?.apellido}
+            </span>
+            <span className="flex items-center gap-1">
+              <MapPin className="w-3 h-3" /> {task.pdv?.nombre}
+            </span>
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="details" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="details">Detalles de Ejecución</TabsTrigger>
-            <TabsTrigger value="evidence">Evidencia</TabsTrigger>
-          </TabsList>
+        {/* Scrollable Content */}
+        <ScrollArea className="flex-1 max-h-[60vh]">
+          <div className="p-6">
+            <Tabs defaultValue="details" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="details">Detalles de Ejecución</TabsTrigger>
+                <TabsTrigger value="evidence">
+                  Evidencia y Adjuntos 
+                  {evidenceFiles.length > 0 && <Badge className="ml-2 h-5 px-1.5" variant="secondary">{evidenceFiles.length}</Badge>}
+                </TabsTrigger>
+              </TabsList>
 
-          <TabsContent value="details" className="space-y-4 py-4">
-            {/* Info Básica */}
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="space-y-1">
-                <Label className="text-muted-foreground">PDV</Label>
-                <p className="font-medium">{task.pdv?.nombre}</p>
-                <p className="text-xs text-muted-foreground">{task.pdv?.ciudad}</p>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-muted-foreground">Fecha Completado</Label>
-                <p className="font-medium">
-                  {task.completado_at 
-                    ? format(new Date(task.completado_at), "PPP p", { locale: es }) 
-                    : "N/A"}
-                </p>
-              </div>
-            </div>
-
-            {/* Validación GPS */}
-            <div className={`p-4 rounded-lg border flex items-start gap-3 ${task.gps_en_rango ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-              {task.gps_en_rango ? (
-                <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-              )}
-              <div>
-                <h4 className={`font-semibold text-sm ${task.gps_en_rango ? 'text-green-800' : 'text-red-800'}`}>
-                  {task.gps_en_rango ? "GPS Válido (En rango)" : "Alerta de GPS (Fuera de rango)"}
-                </h4>
-                <div className="text-xs mt-1 opacity-90">
-                  <p>Coordenadas registro: {task.gps_latitud?.toFixed(5)}, {task.gps_longitud?.toFixed(5)}</p>
+              <TabsContent value="details" className="space-y-6">
+                
+                {/* 1. Información General */}
+                <div className="grid grid-cols-2 gap-4 text-sm border p-4 rounded-lg bg-card">
+                  <div className="space-y-1">
+                    <Label className="text-muted-foreground text-xs uppercase">Fecha Programada</Label>
+                    <p className="font-medium">{format(new Date(task.fecha_programada), "PPP", { locale: es })}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-muted-foreground text-xs uppercase">Fecha Ejecución</Label>
+                    <p className="font-medium">
+                      {task.completado_at 
+                        ? format(new Date(task.completado_at), "PPP p", { locale: es }) 
+                        : <span className="text-orange-600">No completada</span>}
+                    </p>
+                  </div>
                 </div>
+
+                {/* 2. GPS (Solo si es obligatorio en la configuración) */}
+                {config.gps_obligatorio && (
+                  <div className={`p-4 rounded-lg border flex items-start gap-3 ${task.gps_en_rango ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                    {task.gps_en_rango ? (
+                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <h4 className={`font-semibold text-sm ${task.gps_en_rango ? 'text-green-800' : 'text-red-800'}`}>
+                        {task.gps_en_rango ? "Ubicación Validada Correctamente" : "Alerta: Ubicación Fuera de Rango"}
+                      </h4>
+                      <div className="text-xs mt-1 opacity-90">
+                        <p>Coordenadas: {task.gps_latitud?.toFixed(5) || 'N/A'}, {task.gps_longitud?.toFixed(5) || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Inventario (Solo si requiere inventario) */}
+                {config.requiere_inventario && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-muted/50 px-4 py-2 border-b flex justify-between items-center">
+                      <h4 className="font-semibold text-sm flex items-center gap-2">
+                        <Package className="w-4 h-4" /> Registro de Inventario
+                      </h4>
+                    </div>
+                    {isLoadingDetails ? (
+                      <div className="p-4 text-center"><Loader2 className="w-4 h-4 animate-spin mx-auto"/></div>
+                    ) : (
+                      <div className="text-sm">
+                        <table className="w-full">
+                          <thead className="bg-muted/20 text-xs uppercase text-muted-foreground">
+                            <tr>
+                              <th className="px-4 py-2 text-left">Producto</th>
+                              <th className="px-4 py-2 text-center">Físico</th>
+                              <th className="px-4 py-2 text-center">Sistema</th>
+                              <th className="px-4 py-2 text-right">Dif</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {inventoryRows.map((row) => (
+                              <tr key={row.id}>
+                                <td className="px-4 py-2">
+                                  <div className="font-medium">{row.inventory_products?.nombre}</div>
+                                  <div className="text-[10px] text-muted-foreground">{row.inventory_products?.codigo_sku}</div>
+                                </td>
+                                <td className="px-4 py-2 text-center font-bold">{row.fisico}</td>
+                                <td className="px-4 py-2 text-center text-muted-foreground">{row.esperado}</td>
+                                <td className={`px-4 py-2 text-right font-bold ${row.diferencia !== 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {row.diferencia > 0 ? '+' : ''}{row.diferencia}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 4. Comentarios del Usuario */}
+                {task.comentario && (
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase text-muted-foreground">Notas del Ejecutor</Label>
+                    <div className="p-3 bg-muted/30 rounded-md text-sm italic border">
+                      "{task.comentario}"
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="evidence" className="space-y-6">
+                {isLoadingDetails ? (
+                  <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground"/></div>
+                ) : evidenceFiles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg bg-muted/10">
+                    <Camera className="w-10 h-10 text-muted-foreground mb-2 opacity-50" />
+                    <p className="text-sm text-muted-foreground">No se adjuntaron evidencias.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {evidenceFiles.map((file) => (
+                      file.tipo === 'foto' ? (
+                        <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-black/5 cursor-pointer">
+                          <img 
+                            src={getPublicUrl(file.storage_path)} 
+                            alt="Evidencia" 
+                            className="object-cover w-full h-full hover:scale-105 transition-transform"
+                            onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}
+                          />
+                        </div>
+                      ) : (
+                        <div key={file.id} className="col-span-full flex items-center p-3 border rounded-lg bg-blue-50/50 hover:bg-blue-50 transition-colors cursor-pointer"
+                             onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}>
+                          <FileText className="w-8 h-8 text-blue-500 mr-3" />
+                          <div className="overflow-hidden">
+                            <p className="text-sm font-medium truncate">{file.filename}</p>
+                            <p className="text-xs text-muted-foreground flex items-center">
+                              Clic para descargar <ChevronRight className="w-3 h-3 ml-1"/>
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        </ScrollArea>
+
+        {/* Footer de Acción Fijo */}
+        <div className="p-6 border-t bg-muted/10 mt-auto">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="audit-notes">Notas de Auditoría</Label>
+              <Textarea 
+                id="audit-notes"
+                placeholder="Escribe tus observaciones (Obligatorio para rechazar)..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={!!task.audit_status && task.audit_status !== 'pendiente'}
+                className="bg-background resize-none h-20"
+              />
+            </div>
+
+            {(!task.audit_status || task.audit_status === 'pendiente') ? (
+              <div className="flex gap-3 pt-2">
+                <Button 
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white" 
+                  onClick={() => handleAudit('approve')}
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                  Aprobar
+                </Button>
+                <Button 
+                  className="flex-1" 
+                  variant="destructive"
+                  onClick={() => handleAudit('reject')}
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
+                  Rechazar
+                </Button>
               </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="evidence" className="py-4">
-             <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg bg-muted/30">
-                <FileText className="w-10 h-10 text-muted-foreground mb-2" />
-                <p className="text-sm text-muted-foreground">No hay archivos adjuntos</p>
-             </div>
-             {/* Aquí iría la galería de fotos en el futuro */}
-          </TabsContent>
-        </Tabs>
-
-        {/* Sección de Auditoría */}
-        <div className="border-t pt-4 space-y-4">
-          <Label>Notas de Auditoría</Label>
-          <Textarea 
-            placeholder="Escribe tus observaciones aquí (requerido para rechazar)..."
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            disabled={!!task.audit_status && task.audit_status !== 'pendiente'}
-          />
-
-          {!task.audit_status || task.audit_status === 'pendiente' ? (
-            <div className="flex gap-3 pt-2">
-              <Button 
-                className="flex-1 bg-green-600 hover:bg-green-700" 
-                onClick={() => { setAction('approve'); handleAudit(); }}
-                disabled={isLoading}
-              >
-                {isLoading && action === 'approve' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                Aprobar
-              </Button>
-              <Button 
-                className="flex-1" 
-                variant="destructive"
-                onClick={() => { setAction('reject'); handleAudit(); }}
-                disabled={isLoading}
-              >
-                {isLoading && action === 'reject' ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
-                Rechazar
-              </Button>
-            </div>
-          ) : (
-            <div className="text-center text-sm text-muted-foreground py-2 bg-muted rounded">
-              Esta tarea ya fue auditada por el usuario.
-            </div>
-          )}
+            ) : (
+              <div className={`text-center text-sm py-2 px-4 rounded border font-medium ${
+                task.audit_status === 'aprobado' 
+                  ? 'bg-green-50 text-green-700 border-green-200' 
+                  : 'bg-red-50 text-red-700 border-red-200'
+              }`}>
+                Auditoría cerrada: {task.audit_status.toUpperCase()}
+              </div>
+            )}
+          </div>
         </div>
+
       </DialogContent>
     </Dialog>
   );
