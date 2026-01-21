@@ -46,6 +46,7 @@ export default function TasksList() {
           min_fotos,
           comentario_obligatorio,
           requiere_inventario,
+          categorias_ids, 
           archivo_obligatorio,
           enviar_email,
           responder_email

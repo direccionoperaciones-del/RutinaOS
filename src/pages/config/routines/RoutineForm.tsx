@@ -42,6 +42,8 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       fotos_obligatorias: false,
       min_fotos: 0,
       requiere_inventario: false,
+      categorias_ids: [],
+      comentario_obligatorio: false,
       archivo_obligatorio: false,
       enviar_email: false,
       responder_email: false,
@@ -68,6 +70,8 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         fotos_obligatorias: routineToEdit.fotos_obligatorias,
         min_fotos: routineToEdit.min_fotos,
         requiere_inventario: routineToEdit.requiere_inventario,
+        categorias_ids: routineToEdit.categorias_ids || [], // Cargar array
+        comentario_obligatorio: routineToEdit.comentario_obligatorio,
         archivo_obligatorio: routineToEdit.archivo_obligatorio,
         enviar_email: routineToEdit.enviar_email,
         responder_email: routineToEdit.responder_email,
@@ -91,6 +95,8 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         fotos_obligatorias: false,
         min_fotos: 0,
         requiere_inventario: false,
+        categorias_ids: [],
+        comentario_obligatorio: false,
         archivo_obligatorio: false,
         enviar_email: false,
         responder_email: false,
@@ -116,6 +122,10 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       
       if (values.frecuencia === 'fechas_especificas' && values.fechas_especificas.length === 0) {
         throw new Error("Debe seleccionar al menos una fecha específica.");
+      }
+
+      if (values.requiere_inventario && values.categorias_ids.length === 0) {
+        throw new Error("Si requiere inventario, debe seleccionar al menos una categoría.");
       }
 
       const payload = {
