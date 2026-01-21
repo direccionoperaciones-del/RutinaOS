@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, CheckCircle2, AlertTriangle, Eye, Clock } from "lucide-react";
+import { Search, Filter, CheckCircle2, AlertTriangle, Eye, Clock, MapPin, Camera, Box, FileText, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +17,7 @@ export default function AuditList() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("pendiente");
+  const [statusFilter, setStatusFilter] = useState("todos"); // Default cambiado a 'todos'
   
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -30,17 +30,25 @@ export default function AuditList() {
         .from('task_instances')
         .select(`
           *,
-          routine_templates (nombre, prioridad, gps_obligatorio),
+          routine_templates (
+            nombre, 
+            prioridad, 
+            gps_obligatorio, 
+            fotos_obligatorias, 
+            requiere_inventario,
+            comentario_obligatorio,
+            archivo_obligatorio,
+            enviar_email,
+            responder_email
+          ),
           pdv (nombre, ciudad),
           profiles:completado_por (nombre, apellido)
         `)
-        // Filtramos solo las tareas que ya fueron completadas (en cualquiera de sus estados finales)
-        .in('estado', ['completada_a_tiempo', 'completada_vencida', 'completada']) 
+        .in('estado', ['completada', 'completada_a_tiempo', 'completada_vencida']) 
         .order('completado_at', { ascending: false });
 
       if (statusFilter !== 'todos') {
         if (statusFilter === 'pendiente') {
-           // Traer las que no tienen estado o están explícitamente pendientes
            query = query.or('audit_status.is.null,audit_status.eq.pendiente');
         } else {
            query = query.eq('audit_status', statusFilter);
@@ -107,10 +115,10 @@ export default function AuditList() {
                 <SelectValue placeholder="Estado Auditoría" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
                 <SelectItem value="pendiente">Pendientes</SelectItem>
                 <SelectItem value="aprobado">Aprobados</SelectItem>
                 <SelectItem value="rechazado">Rechazados</SelectItem>
-                <SelectItem value="todos">Todos</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -120,64 +128,92 @@ export default function AuditList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Fecha Ejecución</TableHead>
-                  <TableHead>Rutina</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Rutina / Requisitos</TableHead>
                   <TableHead>PDV</TableHead>
-                  <TableHead>Ejecutado Por</TableHead>
-                  <TableHead>GPS</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Ejecución</TableHead>
+                  <TableHead>Auditoría</TableHead>
                   <TableHead className="text-right">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">Cargando...</TableCell>
+                    <TableCell colSpan={6} className="text-center py-8">Cargando...</TableCell>
                   </TableRow>
                 ) : filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       No hay tareas que coincidan con los filtros.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="text-xs">
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-3 h-3 text-muted-foreground" />
-                          {task.completado_at ? format(new Date(task.completado_at), "dd/MM HH:mm") : '-'}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {task.routine_templates?.nombre}
-                        {task.routine_templates?.prioridad === 'critica' && (
-                           <Badge variant="destructive" className="ml-2 text-[10px] h-5">Crítica</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{task.pdv?.nombre}</TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {task.profiles ? `${task.profiles.nombre} ${task.profiles.apellido}` : 'Desconocido'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {task.gps_en_rango === true && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                        {task.gps_en_rango === false && <AlertTriangle className="w-4 h-4 text-orange-500" />}
-                        {task.gps_en_rango === null && <span className="text-muted-foreground">-</span>}
-                      </TableCell>
-                      <TableCell>
-                        {task.audit_status === 'aprobado' && <Badge className="bg-green-100 text-green-800 border-green-200">Aprobado</Badge>}
-                        {task.audit_status === 'rechazado' && <Badge className="bg-red-100 text-red-800 border-red-200">Rechazado</Badge>}
-                        {(!task.audit_status || task.audit_status === 'pendiente') && <Badge variant="outline">Pendiente</Badge>}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => handleReview(task)}>
-                          <Eye className="w-4 h-4 mr-2" /> Revisar
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  filteredTasks.map((task) => {
+                    const r = task.routine_templates || {};
+                    return (
+                      <TableRow key={task.id}>
+                        <TableCell className="text-xs whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{task.completado_at ? format(new Date(task.completado_at), "dd MMM") : '-'}</span>
+                            <span className="text-muted-foreground">{task.completado_at ? format(new Date(task.completado_at), "HH:mm") : '-'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <div className="font-medium flex items-center gap-2">
+                              {r.nombre}
+                              {r.prioridad === 'critica' && (
+                                <Badge variant="destructive" className="text-[9px] h-4 px-1">Crítica</Badge>
+                              )}
+                            </div>
+                            {/* Iconos de Requisitos */}
+                            <div className="flex gap-1 text-muted-foreground">
+                              {r.gps_obligatorio && <MapPin className="w-3 h-3 text-blue-500" title="GPS" />}
+                              {r.fotos_obligatorias && <Camera className="w-3 h-3 text-purple-500" title="Fotos" />}
+                              {r.requiere_inventario && <Box className="w-3 h-3 text-orange-500" title="Inventario" />}
+                              {r.archivo_obligatorio && <FileText className="w-3 h-3 text-cyan-500" title="Archivo" />}
+                              {(r.enviar_email || r.responder_email) && <Mail className="w-3 h-3 text-pink-500" title="Email" />}
+                              {r.comentario_obligatorio && <MessageSquareText className="w-3 h-3 text-yellow-500" title="Comentario" />}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col text-sm">
+                            <span>{task.pdv?.nombre}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {task.profiles ? `${task.profiles.nombre} ${task.profiles.apellido}` : 'Desconocido'}
+                            </span>
+                          </div>
+                        </TableCell>
+                        
+                        {/* Estado de Ejecución (Tiempo) */}
+                        <TableCell>
+                          {task.estado === 'completada_a_tiempo' && (
+                            <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">A Tiempo</Badge>
+                          )}
+                          {task.estado === 'completada_vencida' && (
+                            <Badge className="bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-100">Vencida</Badge>
+                          )}
+                          {task.estado === 'completada' && (
+                            <Badge variant="outline">Completada</Badge>
+                          )}
+                        </TableCell>
+
+                        {/* Estado de Auditoría */}
+                        <TableCell>
+                          {task.audit_status === 'aprobado' && <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100">Aprobado</Badge>}
+                          {task.audit_status === 'rechazado' && <Badge className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">Rechazado</Badge>}
+                          {(!task.audit_status || task.audit_status === 'pendiente') && <Badge variant="outline" className="text-gray-500">Pendiente</Badge>}
+                        </TableCell>
+
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => handleReview(task)}>
+                            <Eye className="w-4 h-4 mr-2" /> Revisar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

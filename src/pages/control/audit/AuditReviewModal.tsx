@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, User, Calendar, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight } from "lucide-react";
+import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -112,7 +112,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
   const getStatusColor = (status: string) => {
     switch(status) {
-      case 'aprobado': return 'bg-green-100 text-green-800 border-green-200';
+      case 'aprobado': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'rechazado': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     }
@@ -133,12 +133,27 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
         <DialogHeader className="p-6 pb-4 border-b bg-muted/10">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
+              {/* Badge de Tiempo */}
+              {task.estado === 'completada_a_tiempo' ? (
+                <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200 gap-1 pl-1">
+                  <CheckCircle2 className="w-3 h-3" /> A Tiempo
+                </Badge>
+              ) : task.estado === 'completada_vencida' ? (
+                <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100 border-orange-200 gap-1 pl-1">
+                  <Clock className="w-3 h-3" /> Vencida
+                </Badge>
+              ) : (
+                <Badge variant="secondary">Completada</Badge>
+              )}
+
               <Badge variant="outline" className="capitalize border-primary/20 text-primary">
-                Prioridad {config.prioridad}
+                {config.prioridad}
               </Badge>
+              
+              {/* Badge de Auditoría */}
               {task.audit_status && task.audit_status !== 'pendiente' && (
                 <Badge className={getStatusColor(task.audit_status)}>
-                  {task.audit_status.toUpperCase()}
+                  AUDITORÍA: {task.audit_status.toUpperCase()}
                 </Badge>
               )}
             </div>
@@ -178,7 +193,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                     <p className="font-medium">{format(new Date(task.fecha_programada), "PPP", { locale: es })}</p>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-muted-foreground text-xs uppercase">Fecha Ejecución</Label>
+                    <Label className="text-muted-foreground text-xs uppercase">Ejecutado</Label>
                     <p className="font-medium">
                       {task.completado_at 
                         ? format(new Date(task.completado_at), "PPP p", { locale: es }) 
@@ -337,7 +352,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
             ) : (
               <div className={`text-center text-sm py-2 px-4 rounded border font-medium ${
                 task.audit_status === 'aprobado' 
-                  ? 'bg-green-50 text-green-700 border-green-200' 
+                  ? 'bg-blue-50 text-blue-700 border-blue-200' 
                   : 'bg-red-50 text-red-700 border-red-200'
               }`}>
                 Auditoría cerrada: {task.audit_status.toUpperCase()}
