@@ -131,7 +131,23 @@ export default function ReportsPage() {
   const generateInventoryReport = async () => {
     setLoading(true);
     try {
-      // Consultamos las filas de inventario y unimos con la tarea padre para saber fecha y PDV
+      // Paso 1: Obtener IDs de tareas en el rango de fechas
+      const { data: tasks, error: taskError } = await supabase
+        .from('task_instances')
+        .select('id')
+        .gte('fecha_programada', dateFrom)
+        .lte('fecha_programada', dateTo);
+
+      if (taskError) throw taskError;
+
+      if (!tasks || tasks.length === 0) {
+        toast({ variant: "destructive", title: "Sin datos", description: "No hay tareas en este rango de fechas." });
+        return;
+      }
+
+      const taskIds = tasks.map(t => t.id);
+
+      // Paso 2: Obtener registros de inventario de esas tareas
       const { data, error } = await supabase
         .from('inventory_submission_rows')
         .select(`
@@ -140,16 +156,20 @@ export default function ReportsPage() {
           diferencia,
           created_at,
           inventory_products (nombre, codigo_sku, unidad),
-          task_instances!inner (
+          task_instances (
             fecha_programada,
             pdv (nombre, ciudad),
             routine_templates (nombre)
           )
         `)
-        .gte('task_instances.fecha_programada', dateFrom)
-        .lte('task_instances.fecha_programada', dateTo);
+        .in('task_id', taskIds);
 
       if (error) throw error;
+
+      if (!data || data.length === 0) {
+        toast({ variant: "destructive", title: "Sin datos", description: "Las tareas encontradas no tienen registros de inventario." });
+        return;
+      }
 
       const flattened = data.map((item: any) => ({
         Fecha: item.task_instances?.fecha_programada,
