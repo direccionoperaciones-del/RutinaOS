@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Search, Plus, Trash2, Link, Filter, Store, CalendarClock } from "lucide-react";
+import { Search, Plus, Trash2, Link, Filter, Store, CalendarClock, Download, Upload, Loader2, ClipboardList } from "lucide-react";
 import { AssignmentForm } from "./AssignmentForm";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,6 +17,11 @@ export default function AssignmentList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filterRoutine, setFilterRoutine] = useState("all");
+  
+  // Estados para carga masiva
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [uniqueRoutines, setUniqueRoutines] = useState<any[]>([]);
 
@@ -69,6 +74,233 @@ export default function AssignmentList() {
     }
   };
 
+  // --- LOGICA DE PLANTILLA Y CARGA MASIVA ---
+
+  const downloadTemplate = async () => {
+    setIsDownloading(true);
+    try {
+      toast({ title: "Generando plantilla...", description: "Consultando rutinas y PDVs activos..." });
+
+      // 1. Obtener Rutinas Activas
+      const { data: routines } = await supabase
+        .from('routine_templates')
+        .select('nombre, frecuencia')
+        .eq('activo', true)
+        .order('nombre');
+
+      // 2. Obtener PDVs Activos con Responsable
+      // Usamos inner join o left join para obtener info del responsable
+      const { data: pdvs } = await supabase
+        .from('pdv')
+        .select(`
+          codigo_interno, 
+          nombre, 
+          ciudad,
+          pdv_assignments (
+            profiles (nombre, apellido)
+          )
+        `)
+        .eq('activo', true)
+        .order('codigo_interno');
+
+      // 3. Construir CSV
+      const headers = [
+        "NOMBRE_RUTINA", 
+        "CODIGO_PDV", 
+        "", // Separador
+        "--- RUTINAS DISPONIBLES (COPIAR NOMBRE) ---", 
+        "FRECUENCIA",
+        "", // Separador
+        "--- PDVS DISPONIBLES (COPIAR CODIGO) ---",
+        "NOMBRE PDV",
+        "RESPONSABLE ACTUAL"
+      ];
+
+      let csvContent = headers.join(";") + "\n";
+
+      // Fila de Ejemplo
+      const exRoutine = routines?.[0]?.nombre || "Apertura de Caja";
+      const exPdv = pdvs?.[0]?.codigo_interno || "PDV-001";
+      
+      // Primera fila con ejemplo + referencias
+      // No agregamos el ejemplo a las columnas de carga para evitar que el usuario lo suba por error si no lo borra,
+      // o mejor, lo ponemos pero le indicamos que es ejemplo.
+      // Para ser consistentes con el módulo anterior, pondremos un ejemplo válido.
+      
+      const maxRows = Math.max(routines?.length || 0, pdvs?.length || 0);
+
+      for (let i = 0; i < maxRows; i++) {
+        let row = "";
+
+        // Columnas de Carga (Solo fila 0 tiene ejemplo)
+        if (i === 0) {
+          row += `${exRoutine};${exPdv};`;
+        } else {
+          row += ";;";
+        }
+
+        // Columna Referencia Rutinas
+        if (routines && i < routines.length) {
+          row += `${routines[i].nombre};${routines[i].frecuencia};`;
+        } else {
+          row += ";;";
+        }
+
+        // Columna Referencia PDVs
+        if (pdvs && i < pdvs.length) {
+          const p = pdvs[i];
+          // Obtener nombre del responsable si existe asignación vigente
+          // Nota: pdv_assignments es un array, tomamos el primero (o filtramos por vigente en la query idealmente)
+          // Aquí asumimos que la query trajo todo, simplificamos visualización
+          const responsable = p.pdv_assignments?.[0]?.profiles 
+            ? `${p.pdv_assignments[0].profiles.nombre} ${p.pdv_assignments[0].profiles.apellido}`
+            : "Sin asignar";
+
+          row += `${p.codigo_interno};${p.nombre} (${p.ciudad});${responsable}`;
+        } else {
+          row += ";;";
+        }
+
+        csvContent += row + "\n";
+      }
+
+      const bom = "\uFEFF";
+      const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'plantilla_asignacion_rutinas.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast({ title: "Descarga completa", description: "Usa las columnas de referencia para llenar los datos exactos." });
+
+    } catch (error: any) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: "Error generando la plantilla." });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (text) {
+        try {
+          await processBatch(text);
+        } catch (error: any) {
+          toast({ variant: "destructive", title: "Error", description: error.message });
+        } finally {
+          setIsUploading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const processBatch = async (csvText: string) => {
+    const lines = csvText.split(/\r?\n/);
+    const rows = lines.slice(1).filter(line => line.trim() !== '');
+    
+    if (rows.length === 0) throw new Error("Archivo vacío.");
+
+    const separator = lines[0].includes(';') ? ';' : ',';
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("No autenticado");
+    
+    const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
+    if (!profile?.tenant_id) throw new Error("Sin tenant.");
+
+    // 1. Cargar Mapas de IDs para validación rápida
+    // Mapa Rutinas: Nombre -> ID
+    const { data: dbRoutines } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true);
+    const routineMap = new Map();
+    dbRoutines?.forEach(r => routineMap.set(r.nombre.toLowerCase().trim(), r.id));
+
+    // Mapa PDVs: Código -> ID
+    const { data: dbPdvs } = await supabase.from('pdv').select('id, codigo_interno').eq('activo', true);
+    const pdvMap = new Map();
+    dbPdvs?.forEach(p => pdvMap.set(p.codigo_interno.toLowerCase().trim(), p.id));
+
+    let successCount = 0;
+    let errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const cols = row.split(separator).map(c => c.trim().replace(/^"|"$/g, ''));
+      
+      const routineName = cols[0];
+      const pdvCode = cols[1];
+
+      // Ignorar filas de solo referencia (donde no hay datos a la izquierda)
+      if (!routineName || !pdvCode) continue;
+
+      const routineId = routineMap.get(routineName.toLowerCase());
+      const pdvId = pdvMap.get(pdvCode.toLowerCase());
+
+      if (!routineId) {
+        errors.push(`Fila ${i+2}: Rutina "${routineName}" no encontrada.`);
+        continue;
+      }
+      if (!pdvId) {
+        errors.push(`Fila ${i+2}: PDV con código "${pdvCode}" no encontrado.`);
+        continue;
+      }
+
+      // Intentar Insertar
+      try {
+        // Primero verificamos si ya existe para no hacer ruido con errores 23505 (unique violation)
+        // O usamos upsert (insert on conflict do nothing)
+        const { error } = await supabase
+          .from('routine_assignments')
+          .insert({
+            tenant_id: profile.tenant_id,
+            rutina_id: routineId,
+            pdv_id: pdvId,
+            estado: 'activa',
+            created_by: user.id
+          });
+
+        if (error) {
+          if (error.code === '23505') { // Unique violation
+             // No es un error crítico, es que ya estaba asignada. Lo contamos como warning o lo ignoramos.
+             errors.push(`Fila ${i+2}: La asignación ya existía (${routineName} -> ${pdvCode}).`);
+          } else {
+             throw error;
+          }
+        } else {
+          successCount++;
+        }
+      } catch (err: any) {
+        errors.push(`Fila ${i+2}: Error desconocido - ${err.message}`);
+      }
+    }
+
+    fetchAssignments();
+
+    if (errors.length > 0) {
+      toast({
+        variant: "default",
+        title: "Proceso finalizado con observaciones",
+        description: `Asignadas: ${successCount}. Alertas: ${errors.length}.`,
+        duration: 5000
+      });
+      alert(`Reporte de Carga:\n\nAsignaciones Nuevas: ${successCount}\n\nObservaciones:\n${errors.slice(0, 10).join('\n')}\n${errors.length > 10 ? '...' : ''}`);
+    } else {
+      toast({ title: "Carga Exitosa", description: `Se crearon ${successCount} nuevas asignaciones.` });
+    }
+  };
+
   const filteredAssignments = assignments.filter(a => {
     const matchesSearch = 
       a.pdv?.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -86,9 +318,30 @@ export default function AssignmentList() {
           <h2 className="text-3xl font-bold tracking-tight">Asignación de Rutinas</h2>
           <p className="text-muted-foreground">Vincula tus rutinas operativas a los puntos de venta correspondientes.</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} className="w-full sm:w-auto">
-          <Plus className="w-4 h-4 mr-2" /> Nueva Asignación
-        </Button>
+        
+        <div className="flex gap-2 w-full sm:w-auto">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept=".csv,.txt" 
+            onChange={handleFileUpload} 
+          />
+          
+          <Button variant="outline" size="sm" onClick={downloadTemplate} disabled={isDownloading} title="Descargar plantilla con referencias">
+            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />} 
+            Plantilla
+          </Button>
+          
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
+            Carga Masiva
+          </Button>
+
+          <Button onClick={() => setIsModalOpen(true)} size="sm">
+            <Plus className="w-4 h-4 mr-2" /> Nueva Asignación
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -147,7 +400,7 @@ export default function AssignmentList() {
                            {assignment.pdv?.nombre}
                         </span>
                         <span className="text-xs text-muted-foreground ml-4">
-                          {assignment.pdv?.ciudad}
+                          {assignment.pdv?.ciudad} ({assignment.pdv?.codigo_interno})
                         </span>
                       </div>
                     </TableCell>
@@ -198,6 +451,3 @@ export default function AssignmentList() {
     </div>
   );
 }
-
-// Helper icon component since it wasn't imported in original file
-import { ClipboardList } from "lucide-react";
