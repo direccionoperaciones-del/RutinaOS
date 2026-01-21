@@ -11,8 +11,9 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, ClipboardList } from "lucide-react";
 
+// Esquema actualizado con validación condicional
 const messageSchema = z.object({
   asunto: z.string().min(1, "El asunto es obligatorio"),
   cuerpo: z.string().min(1, "El mensaje no puede estar vacío"),
@@ -21,6 +22,16 @@ const messageSchema = z.object({
   requiere_confirmacion: z.boolean().default(false),
   recipient_type: z.enum(["all", "role", "pdv", "user"]),
   recipient_id: z.string().optional(),
+  rutina_id: z.string().optional(),
+}).refine((data) => {
+  // Si es tarea flash, la rutina es obligatoria
+  if (data.tipo === 'tarea_flash' && !data.rutina_id) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Debe seleccionar una rutina para la Tarea Flash",
+  path: ["rutina_id"],
 });
 
 type MessageFormValues = z.infer<typeof messageSchema>;
@@ -43,6 +54,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   ]);
   const [pdvs, setPdvs] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [routines, setRoutines] = useState<any[]>([]); // Estado para rutinas
 
   const form = useForm<MessageFormValues>({
     resolver: zodResolver(messageSchema),
@@ -52,26 +64,43 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
       tipo: "comunicado",
       prioridad: "normal",
       requiere_confirmacion: false,
-      recipient_type: "role", // Default más seguro que 'all'
+      recipient_type: "role",
       recipient_id: "",
+      rutina_id: "",
     },
   });
 
   const recipientType = form.watch("recipient_type");
+  const messageType = form.watch("tipo"); // Observamos el tipo
 
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
+        // Cargar PDVs
         const { data: pdvData } = await supabase.from('pdv').select('id, nombre, ciudad').eq('activo', true);
         if (pdvData) setPdvs(pdvData);
 
+        // Cargar Usuarios
         const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido, role').eq('activo', true);
         if (userData) setUsers(userData);
+
+        // Cargar Rutinas (Solo activas)
+        const { data: routineData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+        if (routineData) setRoutines(routineData);
       };
       fetchData();
       form.reset();
     }
   }, [open]);
+
+  // Efecto para autocompletar asunto si selecciona tarea flash
+  useEffect(() => {
+    if (messageType === 'tarea_flash' && !form.getValues('asunto')) {
+      form.setValue('asunto', '🚨 Tarea Flash Prioritaria');
+      form.setValue('prioridad', 'alta');
+      form.setValue('requiere_confirmacion', true);
+    }
+  }, [messageType]);
 
   const onSubmit = async (values: MessageFormValues) => {
     if (values.recipient_type !== 'all' && !values.recipient_id) {
@@ -81,7 +110,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
 
     setIsLoading(true);
     try {
-      // Usamos la RPC para garantizar atomicidad y expansión de destinatarios
       const { error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -89,7 +117,8 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_prioridad: values.prioridad,
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
-        p_recipient_id: values.recipient_type === 'all' ? null : values.recipient_id
+        p_recipient_id: values.recipient_type === 'all' ? null : values.recipient_id,
+        p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null // Enviamos rutina si aplica
       });
 
       if (error) throw error;
@@ -139,7 +168,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Prioridad</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="normal">Normal</SelectItem>
@@ -150,6 +179,39 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                 )}
               />
             </div>
+
+            {/* SELECTOR DE RUTINA - SOLO SI ES TAREA FLASH */}
+            {messageType === 'tarea_flash' && (
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-md animate-in fade-in slide-in-from-top-2">
+                <FormField
+                  control={form.control}
+                  name="rutina_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-orange-900 flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4" /> Seleccionar Rutina a Ejecutar
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="bg-white border-orange-200">
+                            <SelectValue placeholder="Seleccione una rutina del catálogo..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {routines.map(r => (
+                            <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription className="text-orange-700/80 text-xs">
+                        Esta rutina deberá ser ejecutada inmediatamente por los receptores.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
 
             <div className="space-y-3 p-3 bg-muted/30 rounded border">
               <FormField
@@ -248,9 +310,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               name="cuerpo"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Contenido</FormLabel>
+                  <FormLabel>Contenido / Instrucciones</FormLabel>
                   <FormControl>
-                    <Textarea className="h-32" {...field} />
+                    <Textarea className="h-24" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
