@@ -15,9 +15,9 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Estado local para los conteos: { [productId]: { fisico: number, esperado: number } }
-  // Nota: "esperado" (Sistema) se asume 0 por defecto ya que no tenemos tabla de stock en vivo aún.
-  const [counts, setCounts] = useState<Record<string, { fisico: string, esperado: number }>>({});
+  // Estado local para los conteos: { [productId]: { fisico: string, esperado: string } }
+  // Cambiamos 'esperado' a string para manejar inputs vacíos
+  const [counts, setCounts] = useState<Record<string, { fisico: string, esperado: string }>>({});
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -44,10 +44,10 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
 
       if (data) {
         setProducts(data);
-        // Inicializar conteos
+        // Inicializar conteos vacíos
         const initialCounts: any = {};
         data.forEach(p => {
-          initialCounts[p.id] = { fisico: "", esperado: 0 }; // Esperado 0 por defecto
+          initialCounts[p.id] = { fisico: "", esperado: "" };
         });
         setCounts(initialCounts);
       }
@@ -55,7 +55,7 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
     };
 
     fetchProducts();
-  }, [categoriesIds]); // Recargar si cambian las categorías (raro en ejecución, pero correcto)
+  }, [categoriesIds]);
 
   // Agrupar productos por categoría
   const groupedProducts = useMemo(() => {
@@ -68,36 +68,45 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
     return groups;
   }, [products]);
 
-  const handleInputChange = (productId: string, value: string) => {
+  const handleInputChange = (productId: string, field: 'fisico' | 'esperado', value: string) => {
     // Permitir vacío o números
     if (value !== "" && isNaN(Number(value))) return;
 
+    const current = counts[productId] || { fisico: "", esperado: "" };
     const newCounts = {
       ...counts,
       [productId]: { 
-        ...counts[productId], 
-        fisico: value 
+        ...current, 
+        [field]: value 
       }
     };
     setCounts(newCounts);
 
-    // Preparar datos para el padre (array plano para guardar en BD)
-    const submissionData = Object.entries(newCounts).map(([pid, val]) => ({
-      producto_id: pid,
-      fisico: val.fisico === "" ? 0 : Number(val.fisico),
-      esperado: val.esperado,
-      diferencia: (val.fisico === "" ? 0 : Number(val.fisico)) - val.esperado
-    }));
+    // Preparar datos para el padre
+    const submissionData = Object.entries(newCounts).map(([pid, val]) => {
+      const fis = val.fisico === "" ? 0 : Number(val.fisico);
+      const esp = val.esperado === "" ? 0 : Number(val.esperado);
+      
+      return {
+        producto_id: pid,
+        fisico: fis,
+        esperado: esp,
+        diferencia: fis - esp
+      };
+    });
     
     onChange(submissionData);
   };
 
   // Cálculos de Totales
   const totalItems = products.length;
-  const itemsCounted = Object.values(counts).filter(c => c.fisico !== "").length;
+  // Item contado si tiene al menos uno de los dos valores
+  const itemsCounted = Object.values(counts).filter(c => c.fisico !== "" || c.esperado !== "").length;
+  
   const totalDiff = Object.values(counts).reduce((acc, curr) => {
     const fis = curr.fisico === "" ? 0 : Number(curr.fisico);
-    return acc + (fis - curr.esperado);
+    const esp = curr.esperado === "" ? 0 : Number(curr.esperado);
+    return acc + (fis - esp);
   }, 0);
 
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
@@ -119,46 +128,71 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[40%]">Producto</TableHead>
-                <TableHead className="w-[15%]">Unidad</TableHead>
-                <TableHead className="w-[15%] text-center bg-blue-50/50 text-blue-800">Físico</TableHead>
-                <TableHead className="w-[15%] text-center">Sistema</TableHead>
-                <TableHead className="w-[15%] text-right">Dif.</TableHead>
+                <TableHead className="w-[10%] text-center">Unidad</TableHead>
+                <TableHead className="w-[20%] text-center bg-blue-50/50 text-blue-800 border-r border-l border-blue-100">
+                  Físico
+                </TableHead>
+                <TableHead className="w-[20%] text-center bg-gray-50 text-gray-800">
+                  Sistema
+                </TableHead>
+                <TableHead className="w-[10%] text-right">Dif.</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((prod) => {
-                const count = counts[prod.id] || { fisico: "", esperado: 0 };
-                const fisicoNum = count.fisico === "" ? 0 : Number(count.fisico);
-                const diff = fisicoNum - count.esperado;
+                const count = counts[prod.id] || { fisico: "", esperado: "" };
+                const fisNum = count.fisico === "" ? 0 : Number(count.fisico);
+                const espNum = count.esperado === "" ? 0 : Number(count.esperado);
+                const diff = fisNum - espNum;
                 
+                // Mostrar diferencia solo si se han ingresado datos
+                const showDiff = count.fisico !== "" && count.esperado !== "";
+
                 return (
                   <TableRow key={prod.id} className="hover:bg-muted/30">
-                    <TableCell className="font-medium text-xs">
-                      {prod.nombre}
+                    <TableCell className="font-medium text-xs py-2">
+                      <div className="line-clamp-2">{prod.nombre}</div>
                       <div className="text-[10px] text-muted-foreground font-mono">{prod.codigo_sku}</div>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{prod.unidad}</TableCell>
-                    <TableCell className="p-1 bg-blue-50/30">
+                    <TableCell className="text-xs text-muted-foreground text-center py-2">{prod.unidad}</TableCell>
+                    
+                    {/* Input Físico */}
+                    <TableCell className="p-1 bg-blue-50/30 border-r border-l border-blue-100">
                       <Input 
                         type="number" 
                         min="0"
-                        className="h-8 text-center bg-white focus-visible:ring-blue-400"
+                        className="h-8 text-center bg-white border-blue-200 focus-visible:ring-blue-400 font-medium"
                         placeholder="0"
                         value={count.fisico}
-                        onChange={(e) => handleInputChange(prod.id, e.target.value)}
+                        onChange={(e) => handleInputChange(prod.id, 'fisico', e.target.value)}
                       />
                     </TableCell>
-                    <TableCell className="text-center text-xs text-muted-foreground">
-                      {count.esperado}
+                    
+                    {/* Input Sistema (Editable) */}
+                    <TableCell className="p-1 bg-gray-50/50">
+                      <Input 
+                        type="number" 
+                        min="0"
+                        className="h-8 text-center bg-white border-gray-200 focus-visible:ring-gray-400"
+                        placeholder="0"
+                        value={count.esperado}
+                        onChange={(e) => handleInputChange(prod.id, 'esperado', e.target.value)}
+                      />
                     </TableCell>
-                    <TableCell className="text-right">
-                      <span className={`text-xs font-bold px-2 py-1 rounded ${
-                        diff < 0 ? 'text-red-600 bg-red-100' : 
-                        diff > 0 ? 'text-blue-600 bg-blue-100' : 
-                        'text-gray-400'
-                      }`}>
-                        {diff > 0 ? '+' : ''}{diff}
-                      </span>
+                    
+                    {/* Diferencia */}
+                    <TableCell className="text-right py-2">
+                      {showDiff ? (
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${
+                          diff < 0 ? 'text-red-600 bg-red-100' : 
+                          diff > 0 ? 'text-blue-600 bg-blue-100' : 
+                          'text-gray-500 bg-gray-100'
+                        }`}>
+                          {diff > 0 ? '+' : ''}{diff}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-[10px]">-</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -169,7 +203,7 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
       ))}
 
       {/* Footer Totalizador */}
-      <div className="sticky bottom-0 bg-background border-t p-4 flex justify-between items-center rounded-lg shadow-sm">
+      <div className="sticky bottom-0 bg-background border-t p-4 flex justify-between items-center rounded-lg shadow-sm z-10">
         <div className="flex gap-4 text-xs">
           <div>
             <span className="text-muted-foreground">Progreso:</span>
@@ -177,14 +211,14 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
           </div>
           {itemsCounted < totalItems && (
             <div className="text-orange-600 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" /> Faltan conteos
+              <AlertCircle className="w-3 h-3" /> Incompleto
             </div>
           )}
         </div>
         <div className="text-sm">
-          <span className="text-muted-foreground mr-2">Diferencia Total:</span>
+          <span className="text-muted-foreground mr-2">Diferencia Neta:</span>
           <Badge variant={totalDiff === 0 ? "outline" : totalDiff < 0 ? "destructive" : "default"}>
-            {totalDiff > 0 ? '+' : ''}{totalDiff} Unidades
+            {totalDiff > 0 ? '+' : ''}{totalDiff}
           </Badge>
         </div>
       </div>
