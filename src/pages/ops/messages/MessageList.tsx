@@ -4,130 +4,142 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Check, Clock, Mail, MessageSquare, Megaphone, AlertCircle } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Bell, Check, Clock, Mail, MessageSquare, Megaphone, AlertCircle, Send, CheckCheck, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { NewMessageModal } from "./NewMessageModal";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function MessageList() {
   const { toast } = useToast();
-  const [messages, setMessages] = useState<any[]>([]);
+  const { user, profile } = useCurrentUser();
+  
+  const [inboxMessages, setInboxMessages] = useState<any[]>([]);
+  const [sentMessages, setSentMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState<any>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   
-  // Estado para lecturas (caché local rápido)
-  const [readReceipts, setReadReceipts] = useState<Set<string>>(new Set());
+  // Estado para modal de detalle de lecturas (Enviados)
+  const [readDetailsOpen, setReadDetailsOpen] = useState(false);
+  const [selectedSentMessage, setSelectedSentMessage] = useState<any>(null);
+  const [readReceiptsDetail, setReadReceiptsDetail] = useState<any[]>([]);
 
-  const fetchProfileAndMessages = async () => {
-    setLoading(true);
-    
-    // 1. Obtener perfil completo con asignación de PDV vigente
-    const { data: { user } } = await supabase.auth.getUser();
+  const fetchData = async () => {
     if (!user) return;
+    setLoading(true);
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select(`
-        *,
-        pdv_assignments!inner(pdv_id)
-      `)
-      .eq('id', user.id)
-      .eq('pdv_assignments.vigente', true)
-      .maybeSingle(); // Puede ser null si no tiene PDV
-
-    // Si no tiene asignación por join, obtener perfil base
-    let finalProfile = profile;
-    if (!finalProfile) {
-       const { data: baseProfile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-       finalProfile = { ...baseProfile, pdv_assignments: [] };
-    }
-    
-    setUserProfile(finalProfile);
-
-    // 2. Obtener todos los mensajes del tenant
-    // (Optimizacion: En producción real esto debería ser una RPC o View para filtrar en backend)
-    const { data: allMessages, error } = await supabase
-      .from('messages')
-      .select(`
-        *,
-        message_recipients(recipient_type, recipient_id),
-        created_by_profile:created_by(nombre, apellido)
-      `)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los mensajes" });
-      setLoading(false);
-      return;
-    }
-
-    // 3. Filtrar en memoria los que me corresponden
-    const myMessages = allMessages.filter(msg => {
-      // Verificar cada destinatario del mensaje
-      return msg.message_recipients.some((r: any) => {
-        if (r.recipient_type === 'all') return true;
-        if (r.recipient_type === 'user' && r.recipient_id === user.id) return true;
-        if (r.recipient_type === 'role' && r.recipient_id === finalProfile.role) return true;
-        // Check PDV assignment
-        if (r.recipient_type === 'pdv' && finalProfile.pdv_assignments?.some((a: any) => a.pdv_id === r.recipient_id)) return true;
-        
-        return false;
-      });
-    });
-
-    setMessages(myMessages);
-
-    // 4. Obtener mis recibos de lectura/confirmación
-    const { data: receipts } = await supabase
+    // 1. RECIBIDOS: Consultar message_receipts (Deliveries) que pertenecen a mi usuario
+    const { data: receipts, error: rxError } = await supabase
       .from('message_receipts')
-      .select('message_id, leido_at, confirmado_at')
-      .eq('user_id', user.id);
+      .select(`
+        id,
+        leido_at,
+        confirmado_at,
+        messages (
+          id, tipo, asunto, cuerpo, prioridad, requiere_confirmacion, created_at,
+          profiles:created_by (nombre, apellido)
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('messages(created_at)', { ascending: false }); // Ordenar por fecha mensaje
+
+    if (rxError) console.error("Error inbox:", rxError);
     
-    const readSet = new Set<string>();
-    receipts?.forEach(r => {
-      if (r.leido_at || r.confirmado_at) readSet.add(r.message_id);
-    });
-    setReadReceipts(readSet);
+    // Mapear para tener estructura plana fácil de usar
+    const inbox = receipts?.map((r: any) => ({
+      receipt_id: r.id,
+      ...r.messages,
+      leido_at: r.leido_at,
+      confirmado_at: r.confirmado_at
+    })) || [];
+    
+    // Ordenar manualmente porque Supabase order en foreign table a veces es tricky
+    inbox.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    setInboxMessages(inbox);
+
+    // 2. ENVIADOS: Consultar messages creados por mí (Solo si tengo rol adecuado)
+    if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
+      const { data: sent, error: txError } = await supabase
+        .from('messages')
+        .select(`
+          *,
+          message_receipts (id, leido_at)
+        `)
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false });
+
+      if (txError) console.error("Error sent:", txError);
+      setSentMessages(sent || []);
+    }
 
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchProfileAndMessages();
-  }, []);
+    fetchData();
+  }, [user, profile]);
 
-  const markAsRead = async (msgId: string, confirm: boolean) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  // Acción: Marcar como leído al abrir acordeón
+  const handleOpenMessage = async (msg: any) => {
+    if (!msg.leido_at) {
+      const now = new Date().toISOString();
+      
+      // Actualizar UI optimista
+      setInboxMessages(prev => prev.map(m => 
+        m.receipt_id === msg.receipt_id ? { ...m, leido_at: now } : m
+      ));
 
-    const payload: any = {
-      message_id: msgId,
-      user_id: user.id,
-      leido_at: new Date().toISOString()
-    };
-    if (confirm) {
-      payload.confirmado_at = new Date().toISOString();
+      // Actualizar BD
+      await supabase
+        .from('message_receipts')
+        .update({ leido_at: now })
+        .eq('id', msg.receipt_id);
+        
+      // También marcar notificación asociada como leída (opcional pero limpio)
+      await supabase
+        .from('notifications')
+        .update({ leido: true })
+        .eq('entity_id', msg.id)
+        .eq('user_id', user.id);
     }
+  };
 
-    // Upsert para manejar si ya existe o no
-    const { error } = await supabase
+  // Acción: Confirmación explícita
+  const handleConfirm = async (receiptId: string) => {
+    const now = new Date().toISOString();
+    
+    setInboxMessages(prev => prev.map(m => 
+      m.receipt_id === receiptId ? { ...m, confirmado_at: now, leido_at: m.leido_at || now } : m
+    ));
+
+    await supabase
       .from('message_receipts')
-      .upsert(payload, { onConflict: 'message_id,user_id' });
+      .update({ confirmed_at: now, leido_at: now }) // Aseguramos ambos
+      .eq('id', receiptId);
+      
+    toast({ title: "Confirmado", description: "Has confirmado la recepción de este mensaje." });
+  };
 
-    if (error) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudo confirmar lectura" });
-    } else {
-      setReadReceipts(prev => new Set(prev).add(msgId));
-      if (confirm) {
-        toast({ title: "Confirmado", description: "Has confirmado la lectura del mensaje." });
-      }
-    }
+  // Acción: Ver detalle de lecturas (Enviados)
+  const viewReadDetails = async (msg: any) => {
+    setSelectedSentMessage(msg);
+    setReadReceiptsDetail([]);
+    setReadDetailsOpen(true);
+
+    const { data } = await supabase
+      .from('message_receipts')
+      .select(`
+        leido_at,
+        confirmado_at,
+        profiles (nombre, apellido, email)
+      `)
+      .eq('message_id', msg.id);
+    
+    if (data) setReadReceiptsDetail(data);
   };
 
   const getIcon = (type: string) => {
@@ -138,101 +150,191 @@ export default function MessageList() {
     }
   };
 
-  const canCreate = userProfile?.role === 'director' || userProfile?.role === 'lider';
+  const canCreate = ['director', 'lider'].includes(profile?.role || '');
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Centro de Mensajes</h2>
-          <p className="text-muted-foreground">Comunicados oficiales y alertas operativas.</p>
+          <p className="text-muted-foreground">Comunicaciones oficiales y notificaciones.</p>
         </div>
         {canCreate && (
           <Button onClick={() => setIsNewModalOpen(true)}>
-            <Mail className="w-4 h-4 mr-2" /> Nuevo Mensaje
+            <Send className="w-4 h-4 mr-2" /> Redactar
           </Button>
         )}
       </div>
 
-      <div className="grid gap-4">
-        {loading ? (
-          <div className="text-center py-10">Cargando mensajes...</div>
-        ) : messages.length === 0 ? (
-          <div className="text-center py-12 border rounded-lg bg-muted/20">
-            <Bell className="w-12 h-12 mx-auto text-muted-foreground mb-3 opacity-50" />
-            <h3 className="text-lg font-medium">Bandeja vacía</h3>
-            <p className="text-muted-foreground">No tienes mensajes nuevos.</p>
-          </div>
-        ) : (
-          messages.map((msg) => {
-            const isRead = readReceipts.has(msg.id);
-            const isHighPriority = msg.prioridad === 'alta';
+      <Tabs defaultValue="inbox" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
+          <TabsTrigger value="inbox" className="flex gap-2">
+            <Mail className="w-4 h-4" /> Recibidos
+            {inboxMessages.some(m => !m.leido_at) && (
+              <Badge variant="destructive" className="h-2 w-2 rounded-full p-0" />
+            )}
+          </TabsTrigger>
+          {canCreate && (
+            <TabsTrigger value="sent" className="flex gap-2">
+              <Send className="w-4 h-4" /> Enviados
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-            return (
-              <Card 
-                key={msg.id} 
-                className={`transition-all ${!isRead ? 'border-l-4 border-l-primary bg-primary/5' : 'opacity-80'}`}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1">{getIcon(msg.tipo)}</div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          {isHighPriority && <Badge variant="destructive">Prioridad Alta</Badge>}
-                          {!isRead && <Badge className="bg-primary">Nuevo</Badge>}
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {format(new Date(msg.created_at), "PPP p", { locale: es })}
-                          </span>
+        {/* --- BANDEJA DE ENTRADA --- */}
+        <TabsContent value="inbox" className="mt-4">
+          {loading ? (
+            <div className="text-center py-10">Cargando...</div>
+          ) : inboxMessages.length === 0 ? (
+            <div className="text-center py-16 border-2 border-dashed rounded-lg text-muted-foreground">
+              <Bell className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p>No tienes mensajes recibidos.</p>
+            </div>
+          ) : (
+            <Accordion type="single" collapsible className="space-y-2">
+              {inboxMessages.map((msg) => (
+                <AccordionItem 
+                  key={msg.receipt_id} 
+                  value={msg.receipt_id} 
+                  className={`border rounded-lg px-4 ${!msg.leido_at ? 'bg-blue-50/50 border-blue-100' : 'bg-card'}`}
+                >
+                  <AccordionTrigger 
+                    className="hover:no-underline py-3"
+                    onClick={() => handleOpenMessage(msg)}
+                  >
+                    <div className="flex items-center gap-4 w-full text-left">
+                      <div className="shrink-0">{getIcon(msg.tipo)}</div>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="flex items-center gap-2">
+                          <h4 className={`text-sm font-medium truncate ${!msg.leido_at ? 'text-black font-bold' : 'text-muted-foreground'}`}>
+                            {msg.asunto}
+                          </h4>
+                          {msg.prioridad === 'alta' && <Badge variant="destructive" className="text-[10px] h-5">Alta</Badge>}
+                          {!msg.leido_at && <Badge className="bg-blue-500 text-[10px] h-5">Nuevo</Badge>}
                         </div>
-                        <CardTitle className="text-lg leading-tight">{msg.asunto}</CardTitle>
-                        <CardDescription>
-                          De: {msg.created_by_profile?.nombre} {msg.created_by_profile?.apellido}
-                        </CardDescription>
+                        <p className="text-xs text-muted-foreground truncate">
+                          De: {msg.profiles?.nombre} {msg.profiles?.apellido} • {format(new Date(msg.created_at), "dd MMM HH:mm", {locale: es})}
+                        </p>
                       </div>
                     </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="pb-2">
-                  <div className="prose prose-sm max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-line">
-                    {msg.cuerpo}
-                  </div>
-                </CardContent>
-                <CardFooter className="flex justify-end pt-2 border-t mt-2 bg-muted/20">
-                  {msg.requiere_confirmacion ? (
-                    <Button 
-                      size="sm" 
-                      onClick={() => markAsRead(msg.id, true)} 
-                      disabled={isRead}
-                      variant={isRead ? "outline" : "default"}
-                    >
-                      {isRead ? (
-                        <>
-                          <Check className="w-4 h-4 mr-2" /> Leído y Confirmado
-                        </>
-                      ) : (
-                        "Confirmar Lectura"
-                      )}
-                    </Button>
-                  ) : (
-                    !isRead && (
-                      <Button size="sm" variant="ghost" onClick={() => markAsRead(msg.id, false)}>
-                        Marcar como leído
+                  </AccordionTrigger>
+                  <AccordionContent className="pt-2 pb-4">
+                    <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line mb-4 pl-9">
+                      {msg.cuerpo}
+                    </div>
+                    {msg.requiere_confirmacion && (
+                      <div className="flex justify-end pl-9">
+                        {msg.confirmado_at ? (
+                          <div className="flex items-center text-xs text-green-600 font-medium bg-green-50 px-3 py-1.5 rounded border border-green-200">
+                            <CheckCheck className="w-3 h-3 mr-2" />
+                            Confirmado el {format(new Date(msg.confirmado_at), "dd/MM/yyyy HH:mm")}
+                          </div>
+                        ) : (
+                          <Button size="sm" onClick={() => handleConfirm(msg.receipt_id)}>
+                            <Check className="w-4 h-4 mr-2" /> Confirmar Lectura
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
+        </TabsContent>
+
+        {/* --- BANDEJA DE ENVIADOS --- */}
+        <TabsContent value="sent" className="mt-4">
+          <div className="space-y-3">
+            {sentMessages.map((msg) => {
+              const total = msg.message_receipts?.length || 0;
+              const read = msg.message_receipts?.filter((r: any) => r.leido_at).length || 0;
+              const percent = total > 0 ? Math.round((read / total) * 100) : 0;
+
+              return (
+                <Card key={msg.id} className="hover:border-primary/50 transition-colors">
+                  <CardHeader className="pb-2 pt-4">
+                    <div className="flex justify-between">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-1">{getIcon(msg.tipo)}</div>
+                        <div>
+                          <CardTitle className="text-base">{msg.asunto}</CardTitle>
+                          <CardDescription className="text-xs mt-1">
+                            Enviado el {format(new Date(msg.created_at), "PPP p", {locale: es})}
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => viewReadDetails(msg)}>
+                        <Eye className="w-4 h-4 mr-2" /> Detalles
                       </Button>
-                    )
-                  )}
-                </CardFooter>
-              </Card>
-            );
-          })
-        )}
-      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pb-3 text-sm text-muted-foreground truncate">
+                    {msg.cuerpo}
+                  </CardContent>
+                  <CardFooter className="pt-0 pb-3 border-t bg-muted/20 px-4 py-2 mt-2 flex justify-between items-center">
+                    <div className="flex items-center gap-2 text-xs">
+                      <CheckCheck className="w-3 h-3 text-blue-500" />
+                      <span>Leído por <strong>{read}</strong> de <strong>{total}</strong> destinatarios ({percent}%)</span>
+                    </div>
+                    {/* Mini barra de progreso */}
+                    <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 transition-all" style={{ width: `${percent}%` }} />
+                    </div>
+                  </CardFooter>
+                </Card>
+              );
+            })}
+            {sentMessages.length === 0 && (
+              <div className="text-center py-10 text-muted-foreground">No has enviado mensajes aún.</div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* MODAL DETALLE DE LECTURAS */}
+      <Dialog open={readDetailsOpen} onOpenChange={setReadDetailsOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Estado de Lectura</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Destinatario</TableHead>
+                  <TableHead className="text-right">Leído</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {readReceiptsDetail.map((r, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell>
+                      <div className="font-medium text-sm">{r.profiles?.nombre} {r.profiles?.apellido}</div>
+                      <div className="text-xs text-muted-foreground">{r.profiles?.email}</div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {r.leido_at ? (
+                        <div className="flex flex-col items-end text-green-600 text-xs">
+                          <span className="flex items-center gap-1 font-medium"><CheckCheck className="w-3 h-3"/> Visto</span>
+                          <span>{format(new Date(r.leido_at), "dd/MM HH:mm")}</span>
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-400">No leído</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <NewMessageModal 
         open={isNewModalOpen} 
         onOpenChange={setIsNewModalOpen} 
-        onSuccess={fetchProfileAndMessages}
+        onSuccess={fetchData}
       />
     </div>
   );

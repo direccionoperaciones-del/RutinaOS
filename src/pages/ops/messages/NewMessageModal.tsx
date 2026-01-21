@@ -20,7 +20,7 @@ const messageSchema = z.object({
   prioridad: z.enum(["normal", "alta"]),
   requiere_confirmacion: z.boolean().default(false),
   recipient_type: z.enum(["all", "role", "pdv", "user"]),
-  recipient_id: z.string().optional(), // Opcional si es 'all'
+  recipient_id: z.string().optional(),
 });
 
 type MessageFormValues = z.infer<typeof messageSchema>;
@@ -35,11 +35,11 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   
-  // Opciones para destinatarios
   const [roles] = useState([
     { id: 'administrador', name: 'Administradores' },
     { id: 'lider', name: 'Líderes' },
-    { id: 'director', name: 'Directores' }
+    { id: 'director', name: 'Directores' },
+    { id: 'auditor', name: 'Auditores' }
   ]);
   const [pdvs, setPdvs] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -52,7 +52,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
       tipo: "comunicado",
       prioridad: "normal",
       requiere_confirmacion: false,
-      recipient_type: "all",
+      recipient_type: "role", // Default más seguro que 'all'
       recipient_id: "",
     },
   });
@@ -62,18 +62,10 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
-        // Cargar PDVs
-        const { data: pdvData } = await supabase
-          .from('pdv')
-          .select('id, nombre, ciudad')
-          .eq('activo', true);
+        const { data: pdvData } = await supabase.from('pdv').select('id, nombre, ciudad').eq('activo', true);
         if (pdvData) setPdvs(pdvData);
 
-        // Cargar Usuarios
-        const { data: userData } = await supabase
-          .from('profiles')
-          .select('id, nombre, apellido, role')
-          .eq('activo', true);
+        const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido, role').eq('activo', true);
         if (userData) setUsers(userData);
       };
       fetchData();
@@ -89,41 +81,20 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
 
     setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No autenticado");
-      
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-      if (!profile?.tenant_id) throw new Error("Sin tenant");
+      // Usamos la RPC para garantizar atomicidad y expansión de destinatarios
+      const { error } = await supabase.rpc('send_broadcast_message', {
+        p_asunto: values.asunto,
+        p_cuerpo: values.cuerpo,
+        p_tipo: values.tipo,
+        p_prioridad: values.prioridad,
+        p_requiere_confirmacion: values.requiere_confirmacion,
+        p_recipient_type: values.recipient_type,
+        p_recipient_id: values.recipient_type === 'all' ? null : values.recipient_id
+      });
 
-      // 1. Crear Mensaje
-      const { data: msgData, error: msgError } = await supabase
-        .from('messages')
-        .insert({
-          tenant_id: profile.tenant_id,
-          tipo: values.tipo,
-          asunto: values.asunto,
-          cuerpo: values.cuerpo,
-          prioridad: values.prioridad,
-          requiere_confirmacion: values.requiere_confirmacion,
-          created_by: user.id
-        })
-        .select()
-        .single();
+      if (error) throw error;
 
-      if (msgError) throw msgError;
-
-      // 2. Crear Destinatarios
-      const { error: rcptError } = await supabase
-        .from('message_recipients')
-        .insert({
-          message_id: msgData.id,
-          recipient_type: values.recipient_type,
-          recipient_id: values.recipient_type === 'all' ? null : values.recipient_id
-        });
-
-      if (rcptError) throw rcptError;
-
-      toast({ title: "Enviado", description: "El mensaje ha sido enviado correctamente." });
+      toast({ title: "Mensaje Enviado", description: "Se ha notificado a los destinatarios." });
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
@@ -138,7 +109,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Nuevo Comunicado</DialogTitle>
+          <DialogTitle>Nuevo Mensaje</DialogTitle>
         </DialogHeader>
         
         <Form {...form}>
@@ -152,16 +123,13 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   <FormItem>
                     <FormLabel>Tipo</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="comunicado">Comunicado General</SelectItem>
+                        <SelectItem value="comunicado">Comunicado</SelectItem>
                         <SelectItem value="mensaje">Mensaje Directo</SelectItem>
-                        <SelectItem value="tarea_flash">Tarea Flash / Alerta</SelectItem>
+                        <SelectItem value="tarea_flash">Tarea Flash</SelectItem>
                       </SelectContent>
                     </Select>
-                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -172,39 +140,37 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   <FormItem>
                     <FormLabel>Prioridad</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="normal">Normal</SelectItem>
                         <SelectItem value="alta">Alta</SelectItem>
                       </SelectContent>
                     </Select>
-                    <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
 
-            <div className="space-y-4 border rounded-md p-3 bg-muted/20">
+            <div className="space-y-3 p-3 bg-muted/30 rounded border">
               <FormField
                 control={form.control}
                 name="recipient_type"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Destinatarios</FormLabel>
-                    <Select onValueChange={(val) => {
-                      field.onChange(val);
-                      form.setValue("recipient_id", ""); 
-                    }} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                    <Select 
+                      onValueChange={(val) => {
+                        field.onChange(val);
+                        form.setValue("recipient_id", ""); 
+                      }} 
+                      defaultValue={field.value}
+                    >
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="all">Todos los Usuarios</SelectItem>
                         <SelectItem value="role">Por Rol</SelectItem>
-                        <SelectItem value="pdv">Por PDV (Equipo)</SelectItem>
+                        <SelectItem value="pdv">Por PDV</SelectItem>
                         <SelectItem value="user">Usuario Específico</SelectItem>
+                        <SelectItem value="all">Todos (Global)</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormItem>
@@ -218,9 +184,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   render={({ field }) => (
                     <FormItem>
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                           <SelectTrigger><SelectValue placeholder="Seleccione un rol..." /></SelectTrigger>
-                        </FormControl>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Seleccione Rol..." /></SelectTrigger></FormControl>
                         <SelectContent>
                           {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                         </SelectContent>
@@ -237,11 +201,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   render={({ field }) => (
                     <FormItem>
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                           <SelectTrigger><SelectValue placeholder="Seleccione un PDV..." /></SelectTrigger>
-                        </FormControl>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Seleccione PDV..." /></SelectTrigger></FormControl>
                         <SelectContent>
-                          {pdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre} - {p.ciudad}</SelectItem>)}
+                          {pdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </FormItem>
@@ -256,14 +218,10 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   render={({ field }) => (
                     <FormItem>
                       <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                           <SelectTrigger><SelectValue placeholder="Seleccione un usuario..." /></SelectTrigger>
-                        </FormControl>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Busque usuario..." /></SelectTrigger></FormControl>
                         <SelectContent>
                           {users.map(u => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.nombre} {u.apellido} ({u.role})
-                            </SelectItem>
+                            <SelectItem key={u.id} value={u.id}>{u.nombre} {u.apellido}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -279,7 +237,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Asunto</FormLabel>
-                  <FormControl><Input placeholder="Título del mensaje..." {...field} /></FormControl>
+                  <FormControl><Input {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -290,9 +248,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               name="cuerpo"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Mensaje</FormLabel>
+                  <FormLabel>Contenido</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="Escribe el contenido aquí..." className="h-24 resize-none" {...field} />
+                    <Textarea className="h-32" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -303,25 +261,21 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               control={form.control}
               name="requiere_confirmacion"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 p-2">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                  <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                   <div className="space-y-1 leading-none">
                     <FormLabel>Solicitar confirmación de lectura</FormLabel>
-                    <FormDescription>
-                      Los usuarios deberán marcar explícitamente que han leído el mensaje.
-                    </FormDescription>
+                    <FormDescription>Se registrará la fecha y hora exacta de lectura.</FormDescription>
                   </div>
                 </FormItem>
               )}
             />
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button type="submit" disabled={isLoading}>
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                Enviar Mensaje
+                Enviar
               </Button>
             </DialogFooter>
           </form>
