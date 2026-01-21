@@ -47,7 +47,8 @@ export default function TasksList() {
           comentario_obligatorio,
           requiere_inventario,
           archivo_obligatorio,
-          enviar_email
+          enviar_email,
+          responder_email
         ),
         pdv (
           id,
@@ -99,11 +100,24 @@ export default function TasksList() {
     return matchesDate && matchesPdv && matchesRoutine;
   });
 
+  // Categorización de Tareas
+  const allTasks = filteredTasks;
   const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
-  const completedTasks = filteredTasks.filter(t => t.estado === 'completada' || t.estado === 'completada_vencida' || t.estado === 'incumplida');
+  
+  const overdueTasks = filteredTasks.filter(t => 
+    t.estado === 'incumplida' || 
+    t.estado === 'completada_vencida' || 
+    (t.estado === 'pendiente' && new Date() > new Date(`${t.fecha_programada}T${t.hora_limite_snapshot}`))
+  );
+  
+  const historyTasks = filteredTasks.filter(t => 
+    t.estado === 'completada' || 
+    t.estado === 'completada_vencida' || 
+    t.estado === 'incumplida'
+  );
 
   const totalFiltered = filteredTasks.length;
-  const totalCompleted = completedTasks.length;
+  const totalCompleted = filteredTasks.filter(t => t.estado.startsWith('completada')).length;
   const progressPercentage = totalFiltered > 0 ? Math.round((totalCompleted / totalFiltered) * 100) : 0;
 
   const clearFilters = () => {
@@ -159,6 +173,7 @@ export default function TasksList() {
     const r = task.routine_templates || {};
     const styles = getPriorityStyles(task.prioridad_snapshot);
     const isCompleted = task.estado === 'completada' || task.estado === 'completada_vencida';
+    const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
 
     return (
       <Card className={`flex flex-col h-full hover:shadow-lg transition-shadow duration-200 ${styles.border}`}>
@@ -195,6 +210,10 @@ export default function TasksList() {
               <Badge variant="outline" className={getStatusColor(task.estado)}>
                 {task.estado === 'completada' ? 'A Tiempo' : 'Vencida'}
               </Badge>
+            ) : task.estado === 'incumplida' ? (
+              <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200">Incumplida</Badge>
+            ) : isLate ? (
+              <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-200">Retrasada</Badge>
             ) : (
               <Badge variant="outline" className="bg-white">Pendiente</Badge>
             )}
@@ -233,9 +252,15 @@ export default function TasksList() {
               </div>
             )}
             {r.enviar_email && (
-              <div className="flex flex-col items-center gap-0.5" title="Email">
+              <div className="flex flex-col items-center gap-0.5" title="Enviar Email">
                 <Mail className="w-4 h-4 text-pink-500" />
                 <span className="text-[9px]">MAIL</span>
+              </div>
+            )}
+            {r.responder_email && (
+              <div className="flex flex-col items-center gap-0.5" title="Responder Email">
+                <Mail className="w-4 h-4 text-teal-500" />
+                <span className="text-[9px]">RESP</span>
               </div>
             )}
           </div>
@@ -244,11 +269,11 @@ export default function TasksList() {
         <CardFooter className="p-3 bg-muted/10">
           <Button 
             className="w-full shadow-sm hover:shadow transition-all" 
-            variant={isCompleted ? "secondary" : "default"}
+            variant={isCompleted || task.estado === 'incumplida' ? "secondary" : "default"}
             size="sm"
             onClick={() => handleStartTask(task)}
           >
-            {isCompleted ? (
+            {(isCompleted || task.estado === 'incumplida') ? (
               <>
                 <Eye className="w-4 h-4 mr-2" /> Ver Detalle
               </>
@@ -260,6 +285,28 @@ export default function TasksList() {
           </Button>
         </CardFooter>
       </Card>
+    );
+  };
+
+  const TaskGrid = ({ items, emptyMessage }: { items: any[], emptyMessage: string }) => {
+    if (loading) {
+      return <div className="text-center py-10">Cargando tareas...</div>;
+    }
+    if (items.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
+          <CheckCircle2 className="w-12 h-12 mb-3 text-muted-foreground/50" />
+          <h3 className="text-lg font-medium">Sin tareas</h3>
+          <p className="text-muted-foreground">{emptyMessage}</p>
+        </div>
+      );
+    }
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {items.map((task) => (
+          <TaskCard key={task.id} task={task} />
+        ))}
+      </div>
     );
   };
 
@@ -331,41 +378,27 @@ export default function TasksList() {
       </div>
 
       <Tabs defaultValue="pending" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
+        <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsTrigger value="all">Todas ({allTasks.length})</TabsTrigger>
           <TabsTrigger value="pending">Pendientes ({pendingTasks.length})</TabsTrigger>
-          <TabsTrigger value="history">Historial ({completedTasks.length})</TabsTrigger>
+          <TabsTrigger value="overdue">Vencidas ({overdueTasks.length})</TabsTrigger>
+          <TabsTrigger value="history">Historial ({historyTasks.length})</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="all" className="space-y-6">
+          <TaskGrid items={allTasks} emptyMessage="No hay tareas para mostrar." />
+        </TabsContent>
+
         <TabsContent value="pending" className="space-y-6">
-          {loading ? (
-            <div className="text-center py-10">Cargando tareas...</div>
-          ) : pendingTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
-              <CheckCircle2 className="w-12 h-12 mb-3 text-green-500/50" />
-              <h3 className="text-lg font-medium">¡Todo listo!</h3>
-              <p className="text-muted-foreground">No hay tareas pendientes con los filtros actuales.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {pendingTasks.map((task) => (
-                <TaskCard key={task.id} task={task} />
-              ))}
-            </div>
-          )}
+          <TaskGrid items={pendingTasks} emptyMessage="¡Todo al día! No hay tareas pendientes." />
+        </TabsContent>
+
+        <TabsContent value="overdue" className="space-y-6">
+          <TaskGrid items={overdueTasks} emptyMessage="No tienes tareas vencidas ni incumplidas." />
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">
-          {completedTasks.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground bg-muted/20 rounded-lg border-2 border-dashed">
-              No hay historial disponible con estos filtros.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {completedTasks.map((task) => (
-                <TaskCard key={task.id} task={task} />
-              ))}
-            </div>
-          )}
+          <TaskGrid items={historyTasks} emptyMessage="No hay historial disponible con estos filtros." />
         </TabsContent>
       </Tabs>
 
