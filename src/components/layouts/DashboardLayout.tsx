@@ -20,25 +20,36 @@ import {
   ClipboardList,
   Package,
   History,
-  Settings2
+  Settings2,
+  Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { useNotifications } from "@/hooks/use-notifications";
 
-const SidebarItem = ({ icon: Icon, label, path, active, onClick }: any) => (
+// Componente para items del sidebar
+const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <div
     className={cn(
-      "flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors cursor-pointer rounded-lg mb-1",
+      "flex items-center justify-between px-4 py-3 text-sm font-medium transition-colors cursor-pointer rounded-lg mb-1",
       active 
         ? "bg-primary text-primary-foreground" 
         : "text-muted-foreground hover:bg-muted hover:text-foreground"
     )}
     onClick={onClick}
   >
-    <Icon className="h-5 w-5" />
-    <span>{label}</span>
+    <div className="flex items-center gap-3">
+      <Icon className="h-5 w-5" />
+      <span>{label}</span>
+    </div>
+    {badgeCount > 0 && (
+      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+        {badgeCount > 99 ? '99+' : badgeCount}
+      </span>
+    )}
   </div>
 );
 
@@ -51,8 +62,6 @@ const SidebarGroup = ({ title, children }: any) => (
   </div>
 );
 
-// Definición de roles permitidos por ítem
-// 'all' significa acceso para todos los roles autenticados
 const NAV_CONFIG = [
   {
     group: "Operación",
@@ -67,13 +76,14 @@ const NAV_CONFIG = [
         icon: CheckSquare, 
         label: "Mis Tareas", 
         path: "/tasks", 
-        roles: ['administrador', 'lider', 'director'] // Auditor no ejecuta tareas
+        roles: ['administrador', 'lider', 'director'] 
       },
       { 
         icon: MessageSquare, 
         label: "Mensajes", 
         path: "/messages", 
-        roles: ['all'] 
+        roles: ['all'],
+        showBadge: true // Flag para indicar que este item lleva badge
       },
       { 
         icon: Activity, 
@@ -143,7 +153,6 @@ const NAV_CONFIG = [
         icon: Calendar, 
         label: "Calendario", 
         path: "/calendar", 
-        // CAMBIO AQUÍ: Agregado 'administrador'
         roles: ['director', 'lider', 'administrador'] 
       },
       { 
@@ -175,9 +184,11 @@ const DashboardLayout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Usar nuestro nuevo hook de notificaciones
+  const { unreadCount } = useNotifications();
 
   useEffect(() => {
-    // Check auth and load profile
     const checkUser = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -186,7 +197,6 @@ const DashboardLayout = () => {
           return;
         }
 
-        // Fetch profile
         const { data: profile, error } = await supabase
           .from('profiles')
           .select('*, tenants(nombre)')
@@ -194,11 +204,9 @@ const DashboardLayout = () => {
           .single();
         
         if (error) throw error;
-        
         setUserProfile(profile);
       } catch (error) {
         console.error("Error loading profile:", error);
-        // Fallback o redirect si falla crítico
       } finally {
         setLoading(false);
       }
@@ -206,7 +214,6 @@ const DashboardLayout = () => {
 
     checkUser();
 
-    // Listen for auth changes
     const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') navigate("/login");
     });
@@ -244,7 +251,6 @@ const DashboardLayout = () => {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -255,99 +261,114 @@ const DashboardLayout = () => {
       {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed top-0 left-0 z-50 h-full w-64 bg-card border-r transition-transform duration-200 lg:static lg:translate-x-0",
+          "fixed top-0 left-0 z-50 h-full w-64 bg-card border-r transition-transform duration-200 lg:static lg:translate-x-0 flex flex-col",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="h-full flex flex-col">
-          {/* Logo Area */}
-          <div className="p-6 border-b flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-primary">Operaciones</h1>
-              {userProfile && (
-                <p className="text-xs text-muted-foreground mt-1 font-medium">
-                  {userProfile.tenants?.nombre || 'Sin Organización'}
-                </p>
-              )}
-            </div>
-            <button 
-              className="lg:hidden"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </button>
+        {/* Header del Sidebar */}
+        <div className="p-6 border-b flex items-center justify-between shrink-0">
+          <div>
+            <h1 className="text-xl font-bold text-primary">Operaciones</h1>
+            {userProfile && (
+              <p className="text-xs text-muted-foreground mt-1 font-medium truncate max-w-[150px]">
+                {userProfile.tenants?.nombre || 'Sin Organización'}
+              </p>
+            )}
           </div>
+          <button className="lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-          {/* User Info */}
-          <div className="p-4 bg-muted/30 border-b">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold uppercase">
-                {userProfile?.nombre?.[0] || 'U'}
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-sm font-medium truncate">
-                  {userProfile?.nombre} {userProfile?.apellido}
+        {/* User Info & Notification Bell */}
+        <div className="p-4 bg-muted/30 border-b flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold uppercase shrink-0">
+              {userProfile?.nombre?.[0] || 'U'}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-medium truncate">
+                {userProfile?.nombre}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <p className="text-xs text-muted-foreground capitalize truncate">
+                  {userProfile?.role}
                 </p>
-                <div className="flex items-center gap-1.5">
-                  <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                  <p className="text-xs text-muted-foreground capitalize">
-                    {userProfile?.role}
-                  </p>
-                </div>
               </div>
             </div>
           </div>
-
-          {/* Navigation */}
-          <div className="flex-1 overflow-y-auto py-6 px-3">
-            {NAV_CONFIG.map((group, idx) => {
-              // Filtrar items permitidos para el rol actual
-              const allowedItems = group.items.filter(item => hasPermission(item.roles));
-              
-              if (allowedItems.length === 0) return null;
-
-              return (
-                <SidebarGroup key={idx} title={group.group}>
-                  {allowedItems.map((item) => (
-                    <SidebarItem
-                      key={item.path}
-                      icon={item.icon}
-                      label={item.label}
-                      path={item.path}
-                      active={location.pathname === item.path}
-                      onClick={() => {
-                        navigate(item.path);
-                        setIsMobileMenuOpen(false);
-                      }}
-                    />
-                  ))}
-                </SidebarGroup>
-              );
-            })}
+          
+          {/* Icono de Campana con Badge */}
+          <div className="relative cursor-pointer hover:bg-muted p-1.5 rounded-full transition-colors" onClick={() => navigate('/messages')}>
+            <Bell className="w-5 h-5 text-muted-foreground" />
+            {unreadCount > 0 && (
+              <span className="absolute top-1 right-1 h-2.5 w-2.5 bg-red-500 rounded-full border-2 border-background box-content" />
+            )}
           </div>
+        </div>
 
-          {/* Footer */}
-          <div className="p-4 border-t">
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={handleLogout}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Cerrar Sesión
-            </Button>
-          </div>
+        {/* Navigation Items */}
+        <div className="flex-1 overflow-y-auto py-6 px-3">
+          {NAV_CONFIG.map((group, idx) => {
+            const allowedItems = group.items.filter(item => hasPermission(item.roles));
+            if (allowedItems.length === 0) return null;
+
+            return (
+              <SidebarGroup key={idx} title={group.group}>
+                {allowedItems.map((item) => (
+                  <SidebarItem
+                    key={item.path}
+                    icon={item.icon}
+                    label={item.label}
+                    path={item.path}
+                    active={location.pathname === item.path}
+                    // Pasar el conteo SOLO si es el item de Mensajes
+                    badgeCount={item.showBadge ? unreadCount : 0}
+                    onClick={() => {
+                      navigate(item.path);
+                      setIsMobileMenuOpen(false);
+                    }}
+                  />
+                ))}
+              </SidebarGroup>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t shrink-0">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={handleLogout}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar Sesión
+          </Button>
         </div>
       </aside>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Mobile Header */}
-        <header className="lg:hidden h-16 border-b flex items-center px-4 bg-card shrink-0">
-          <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
-            <Menu className="h-6 w-6" />
-          </Button>
-          <span className="ml-4 font-semibold">Menú</span>
+        <header className="lg:hidden h-16 border-b flex items-center justify-between px-4 bg-card shrink-0">
+          <div className="flex items-center">
+            <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu className="h-6 w-6" />
+            </Button>
+            <span className="ml-4 font-semibold">Menú</span>
+          </div>
+          
+          {/* Mobile Bell */}
+          <div className="relative mr-2" onClick={() => navigate('/messages')}>
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {unreadCount > 9 ? '!' : unreadCount}
+              </span>
+            )}
+          </div>
         </header>
 
         {/* Page Content */}
