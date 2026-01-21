@@ -55,50 +55,65 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
     },
   });
 
-  // Cargar usuarios para el selector de responsables
+  // Cargar usuarios para el selector
   useEffect(() => {
     if (open) {
       const fetchUsers = async () => {
         const { data } = await supabase
           .from('profiles')
           .select('id, nombre, apellido, role')
-          .eq('activo', true);
+          .eq('activo', true)
+          .order('nombre');
         if (data) setUsers(data);
       };
       fetchUsers();
     }
   }, [open]);
 
-  // Cargar datos al editar
+  // Cargar datos al editar (incluyendo responsable actual)
   useEffect(() => {
-    if (pdvToEdit) {
-      form.reset({
-        nombre: pdvToEdit.nombre,
-        codigo_interno: pdvToEdit.codigo_interno,
-        ciudad: pdvToEdit.ciudad,
-        direccion: pdvToEdit.direccion || "",
-        telefono: pdvToEdit.telefono || "",
-        latitud: pdvToEdit.latitud,
-        longitud: pdvToEdit.longitud,
-        radio_gps: pdvToEdit.radio_gps || 100,
-        activo: pdvToEdit.activo,
-        responsable_id: "sin_asignar"
-      });
-    } else {
-      form.reset({
-        nombre: "",
-        codigo_interno: "",
-        ciudad: "",
-        direccion: "",
-        telefono: "",
-        latitud: null,
-        longitud: null,
-        radio_gps: 100,
-        activo: true,
-        responsable_id: "sin_asignar"
-      });
+    const loadPDVData = async () => {
+      if (pdvToEdit) {
+        // Buscar responsable vigente
+        const { data: assignment } = await supabase
+          .from('pdv_assignments')
+          .select('user_id')
+          .eq('pdv_id', pdvToEdit.id)
+          .eq('vigente', true)
+          .maybeSingle();
+
+        form.reset({
+          nombre: pdvToEdit.nombre,
+          codigo_interno: pdvToEdit.codigo_interno,
+          ciudad: pdvToEdit.ciudad,
+          direccion: pdvToEdit.direccion || "",
+          telefono: pdvToEdit.telefono || "",
+          latitud: pdvToEdit.latitud,
+          longitud: pdvToEdit.longitud,
+          radio_gps: pdvToEdit.radio_gps || 100,
+          activo: pdvToEdit.activo,
+          responsable_id: assignment?.user_id || "sin_asignar"
+        });
+      } else {
+        form.reset({
+          nombre: "",
+          codigo_interno: "",
+          ciudad: "",
+          direccion: "",
+          telefono: "",
+          latitud: null,
+          longitud: null,
+          radio_gps: 100,
+          activo: true,
+          responsable_id: "sin_asignar"
+        });
+      }
+    };
+
+    if (open) {
+      loadPDVData();
     }
-  }, [pdvToEdit, form]);
+  }, [pdvToEdit, open]); // form excluido para evitar re-renders innecesarios
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -124,16 +139,14 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       if (!user) throw new Error("No autenticado");
 
       // Obtener tenant del usuario actual
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
         .select('tenant_id')
         .eq('id', user.id)
-        .maybeSingle(); // Usar maybeSingle para no lanzar error si no existe
-
-      if (profileError) console.error("Error fetching profile:", profileError);
+        .maybeSingle();
       
       if (!profile?.tenant_id) {
-        throw new Error("Tu usuario no tiene una organización asignada. Por favor contacta al soporte o intenta registrarte nuevamente.");
+        throw new Error("Sin organización asignada.");
       }
 
       const pdvData = {
@@ -169,16 +182,44 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
         pdvId = data.id;
       }
 
-      // Manejo de Responsable (Asignación)
-      if (values.responsable_id && values.responsable_id !== "sin_asignar" && !pdvToEdit) {
-        const { error: assignError } = await supabase.from('pdv_assignments').insert({
-          tenant_id: profile.tenant_id,
-          pdv_id: pdvId,
-          user_id: values.responsable_id,
-          vigente: true,
-          created_by: user.id
-        });
-        if (assignError) console.error("Error asignando responsable", assignError);
+      // --- MANEJO INTELIGENTE DE RESPONSABLE ---
+      const newResponsableId = values.responsable_id;
+      
+      // 1. Verificar asignación actual
+      const { data: currentAssignment } = await supabase
+        .from('pdv_assignments')
+        .select('id, user_id')
+        .eq('pdv_id', pdvId)
+        .eq('vigente', true)
+        .maybeSingle();
+      
+      const oldUserId = currentAssignment?.user_id || "sin_asignar";
+
+      // 2. Si hubo cambio
+      if (newResponsableId !== oldUserId) {
+        // A. Cerrar asignación anterior (si existe)
+        if (currentAssignment) {
+          await supabase
+            .from('pdv_assignments')
+            .update({ 
+              vigente: false, 
+              fecha_hasta: new Date().toISOString().split('T')[0] 
+            })
+            .eq('id', currentAssignment.id);
+        }
+
+        // B. Crear nueva asignación (si se seleccionó un usuario válido)
+        if (newResponsableId && newResponsableId !== "sin_asignar") {
+          const { error: assignError } = await supabase.from('pdv_assignments').insert({
+            tenant_id: profile.tenant_id,
+            pdv_id: pdvId,
+            user_id: newResponsableId,
+            vigente: true,
+            created_by: user.id
+          });
+          
+          if (assignError) throw assignError;
+        }
       }
 
       toast({ title: "Éxito", description: `PDV ${pdvToEdit ? 'actualizado' : 'creado'} correctamente.` });
@@ -233,7 +274,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Ciudad *</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger><SelectValue placeholder="Seleccione..." /></SelectTrigger>
                             </FormControl>
@@ -359,7 +400,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Responsable Principal</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Seleccione un usuario" />
@@ -383,7 +424,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                   />
                   {pdvToEdit && (
                     <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800 border border-yellow-200">
-                      Nota: Para ver el historial completo de responsables, use el módulo de Gestión Personal.
+                      Nota: Al cambiar el responsable, se cerrará la asignación anterior y se creará una nueva automáticamente.
                     </div>
                   )}
                 </TabsContent>
