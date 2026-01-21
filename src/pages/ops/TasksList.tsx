@@ -37,8 +37,6 @@ export default function TasksList() {
 
   const fetchTasks = async () => {
     setLoading(true);
-    // Traemos un rango amplio por defecto (ej. últimos 30 días) o todo si la BD es pequeña
-    // Para producción idealmente se filtra en backend, pero mantenemos lógica actual mejorada.
     const { data, error } = await supabase
       .from('task_instances')
       .select(`
@@ -131,8 +129,6 @@ export default function TasksList() {
 
     // Filtro Usuario (Multi)
     if (selectedUsers.length > 0) {
-      // Si filtramos por usuario, tareas sin usuario (pendientes sin asignar explícitamente en BD) se ocultan
-      // Ojo: completado_por es null si está pendiente.
       if (!t.completado_por || !selectedUsers.includes(t.completado_por)) return false;
     }
 
@@ -187,6 +183,7 @@ export default function TasksList() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'completada': return "bg-green-100 text-green-700 border-green-200";
       case 'completada_a_tiempo': return "bg-green-100 text-green-700 border-green-200";
       case 'completada_vencida': return "bg-yellow-100 text-yellow-700 border-yellow-200";
       case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
@@ -196,6 +193,7 @@ export default function TasksList() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
+      case 'completada': return "Completada";
       case 'completada_a_tiempo': return "A Tiempo";
       case 'completada_vencida': return "Vencida";
       case 'incumplida': return "Incumplida";
