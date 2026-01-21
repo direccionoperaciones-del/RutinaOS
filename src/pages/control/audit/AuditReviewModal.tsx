@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText, Box } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -52,12 +53,16 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
       // 2. Cargar Inventario (Si aplica)
       if (config.requiere_inventario) {
-        const { data: inv } = await supabase
+        const { data: inv, error: invError } = await supabase
           .from('inventory_submission_rows')
           .select('*, inventory_products(nombre, codigo_sku, unidad)')
           .eq('task_id', task.id);
         
-        if (inv) setInventoryRows(inv);
+        if (invError) {
+          console.error("Error loading inventory:", invError);
+        } else if (inv) {
+          setInventoryRows(inv);
+        }
       }
 
     } catch (error) {
@@ -112,7 +117,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
   const getStatusColor = (status: string) => {
     switch(status) {
-      case 'aprobado': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'aprobado': return 'bg-green-100 text-green-800 border-green-200';
       case 'rechazado': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     }
@@ -127,7 +132,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col p-0 gap-0">
         
         {/* Header Fijo */}
         <DialogHeader className="p-6 pb-4 border-b bg-muted/10">
@@ -153,7 +158,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
               {/* Badge de Auditoría */}
               {task.audit_status && task.audit_status !== 'pendiente' && (
                 <Badge className={getStatusColor(task.audit_status)}>
-                  AUDITORÍA: {task.audit_status.toUpperCase()}
+                  {task.audit_status.toUpperCase()}
                 </Badge>
               )}
             </div>
@@ -161,7 +166,9 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
               ID: {task.id.slice(0,8)}
             </span>
           </div>
-          <DialogTitle className="text-xl">{config.nombre}</DialogTitle>
+          <DialogTitle className="text-xl flex items-center gap-2">
+            {config.nombre}
+          </DialogTitle>
           <div className="text-sm text-muted-foreground flex items-center gap-4 mt-1">
             <span className="flex items-center gap-1">
               <User className="w-3 h-3" /> {task.profiles?.nombre} {task.profiles?.apellido}
@@ -193,7 +200,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                     <p className="font-medium">{format(new Date(task.fecha_programada), "PPP", { locale: es })}</p>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-muted-foreground text-xs uppercase">Ejecutado</Label>
+                    <Label className="text-muted-foreground text-xs uppercase">Fecha Ejecución</Label>
                     <p className="font-medium">
                       {task.completado_at 
                         ? format(new Date(task.completado_at), "PPP p", { locale: es }) 
@@ -223,50 +230,85 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
                 {/* 3. Inventario (Solo si requiere inventario) */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg overflow-hidden">
-                    <div className="bg-muted/50 px-4 py-2 border-b flex justify-between items-center">
+                  <div className="border rounded-lg overflow-hidden bg-card">
+                    <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center">
                       <h4 className="font-semibold text-sm flex items-center gap-2">
-                        <Package className="w-4 h-4" /> Registro de Inventario
+                        <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
                       </h4>
+                      <Badge variant="outline" className="text-xs">{inventoryRows.length} Productos</Badge>
                     </div>
                     {isLoadingDetails ? (
-                      <div className="p-4 text-center"><Loader2 className="w-4 h-4 animate-spin mx-auto"/></div>
+                      <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground"/></div>
+                    ) : inventoryRows.length === 0 ? (
+                      <div className="p-8 text-center text-muted-foreground">
+                        <p>No hay datos de inventario registrados.</p>
+                      </div>
                     ) : (
                       <div className="text-sm">
-                        <table className="w-full">
-                          <thead className="bg-muted/20 text-xs uppercase text-muted-foreground">
-                            <tr>
-                              <th className="px-4 py-2 text-left">Producto</th>
-                              <th className="px-4 py-2 text-center">Físico</th>
-                              <th className="px-4 py-2 text-center">Sistema</th>
-                              <th className="px-4 py-2 text-right">Dif</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y">
+                        <Table>
+                          <TableHeader className="bg-muted/20">
+                            <TableRow>
+                              <TableHead>Producto</TableHead>
+                              <TableHead className="text-center w-[100px]">Físico</TableHead>
+                              <TableHead className="text-center w-[100px]">Sistema</TableHead>
+                              <TableHead className="text-right w-[80px]">Dif</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
                             {inventoryRows.map((row) => (
-                              <tr key={row.id}>
-                                <td className="px-4 py-2">
-                                  <div className="font-medium">{row.inventory_products?.nombre}</div>
-                                  <div className="text-[10px] text-muted-foreground">{row.inventory_products?.codigo_sku}</div>
-                                </td>
-                                <td className="px-4 py-2 text-center font-bold">{row.fisico}</td>
-                                <td className="px-4 py-2 text-center text-muted-foreground">{row.esperado}</td>
-                                <td className={`px-4 py-2 text-right font-bold ${row.diferencia !== 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              <TableRow key={row.id}>
+                                <TableCell>
+                                  <div className="font-medium text-sm">{row.inventory_products?.nombre}</div>
+                                  <div className="text-[10px] text-muted-foreground flex gap-2">
+                                    <span>SKU: {row.inventory_products?.codigo_sku || '-'}</span>
+                                    <span>Unidad: {row.inventory_products?.unidad || '-'}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center font-bold bg-blue-50/50">
+                                  {row.fisico}
+                                </TableCell>
+                                <TableCell className="text-center text-muted-foreground bg-gray-50/50">
+                                  {row.esperado}
+                                </TableCell>
+                                <TableCell className={`text-right font-bold ${row.diferencia !== 0 ? 'text-red-600' : 'text-green-600'}`}>
                                   {row.diferencia > 0 ? '+' : ''}{row.diferencia}
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ))}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* 4. Comentarios del Usuario */}
+                {/* 4. Correos Enviados/Respondidos */}
+                {(config.enviar_email || config.responder_email) && (
+                  <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-100">
+                    <h4 className="font-semibold text-sm flex items-center gap-2 mb-2 text-blue-900">
+                      <Mail className="w-4 h-4" /> Gestión de Correos
+                    </h4>
+                    <div className="grid gap-2">
+                      {config.enviar_email && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado envío de correo
+                        </div>
+                      )}
+                      {config.responder_email && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado respuesta de correo
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 5. Comentarios del Usuario */}
                 {task.comentario && (
                   <div className="space-y-2">
-                    <Label className="text-xs uppercase text-muted-foreground">Notas del Ejecutor</Label>
+                    <Label className="text-xs uppercase text-muted-foreground flex items-center gap-2">
+                      <MessageSquareText className="w-3 h-3" /> Notas del Ejecutor
+                    </Label>
                     <div className="p-3 bg-muted/30 rounded-md text-sm italic border">
                       "{task.comentario}"
                     </div>
