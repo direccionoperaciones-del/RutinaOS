@@ -14,6 +14,7 @@ export default function PDVList() {
   const [pdvs, setPdvs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPDV, setSelectedPDV] = useState<any>(null);
@@ -26,13 +27,13 @@ export default function PDVList() {
       .from('pdv')
       .select(`
         *,
-        pdv_assignments!inner(
+        pdv_assignments(
           profiles(nombre, apellido)
         )
       `)
       .order('codigo_interno', { ascending: true });
       
-    // Fallback simple si el join falla por configuración RLS
+    // Fallback simple si el join falla
     const { data: simpleData, error: simpleError } = await supabase
       .from('pdv')
       .select('*')
@@ -77,30 +78,78 @@ export default function PDVList() {
 
   // --- LOGICA DE PLANTILLA Y CARGA MASIVA ---
 
-  const downloadTemplate = () => {
-    // Encabezados del CSV (Usamos ; para mayor compatibilidad con Excel español)
-    const headers = [
-      "codigo_interno",
-      "nombre",
-      "ciudad",
-      "direccion",
-      "telefono",
-      "latitud",
-      "longitud",
-      "radio_gps",
-      "responsable"
-    ];
+  const downloadTemplate = async () => {
+    setIsDownloading(true);
+    try {
+      toast({ title: "Generando plantilla...", description: "Consultando usuarios activos..." });
+      
+      // 1. Obtener usuarios activos para la referencia
+      const { data: users } = await supabase
+        .from('profiles')
+        .select('nombre, apellido, role')
+        .eq('activo', true)
+        .order('nombre');
 
-    const csvContent = headers.join(";") + "\n" + "PDV-001;Tienda Central;Bogotá;Calle 123 #45-67;3001234567;4.6097;-74.0817;100;Juan Perez";
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'plantilla_carga_pdv.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // 2. Definir encabezados
+      const headers = [
+        "codigo_interno", "nombre", "ciudad", "direccion", "telefono", 
+        "latitud", "longitud", "radio_gps", "responsable",
+        "", // Columna J vacía como separador visual
+        "USUARIO_REFERENCIA (COPIAR)", "ROL_REFERENCIA"
+      ];
+
+      // 3. Construir filas
+      const rows = [];
+      
+      // Fila de ejemplo
+      // Si hay usuarios, usamos el primero como ejemplo en la columna I
+      const firstUser = users && users.length > 0 ? `${users[0].nombre} ${users[0].apellido}` : "Juan Perez";
+      
+      // Función auxiliar para escapar comillas si es necesario (CSV standard)
+      const escape = (val: string) => `"${val.replace(/"/g, '""')}"`;
+
+      const examplePdv = [
+        "PDV-001", "Tienda Central", "Bogotá", "Calle 123 #45-67", "3001234567", "4.6097", "-74.0817", "100", firstUser
+      ];
+
+      // Primera fila de referencia (si existe usuario)
+      const u1 = users && users.length > 0 ? users[0] : null;
+      const refData1 = u1 ? ["", `${u1.nombre} ${u1.apellido}`, u1.role] : ["", "Sin usuarios", "-"];
+
+      rows.push([...examplePdv, ...refData1].join(";"));
+
+      // Filas restantes (Solo lista de usuarios a la derecha)
+      if (users && users.length > 1) {
+        for (let i = 1; i < users.length; i++) {
+          const u = users[i];
+          // 9 columnas vacías para la parte del PDV
+          const emptyPdv = ["", "", "", "", "", "", "", "", ""]; 
+          const refData = ["", `${u.nombre} ${u.apellido}`, u.role];
+          rows.push([...emptyPdv, ...refData].join(";"));
+        }
+      }
+
+      // 4. Generar Blob con BOM para Excel
+      const bom = "\uFEFF"; 
+      const csvContent = bom + headers.join(";") + "\n" + rows.join("\n");
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'plantilla_pdv_con_usuarios.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast({ title: "Plantilla descargada", description: "Revisa las columnas K y L para ver los usuarios válidos." });
+
+    } catch (error: any) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo generar la plantilla." });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,36 +173,36 @@ export default function PDVList() {
       }
     };
 
-    reader.readAsText(file); // Leer con encoding default (UTF-8 usualmente)
+    reader.readAsText(file);
   };
 
   const processBatch = async (csvText: string) => {
-    const lines = csvText.split(/\r?\n/); // Soporte para saltos de línea Windows/Unix
-    // Saltamos el encabezado (línea 0)
+    const lines = csvText.split(/\r?\n/);
     const rows = lines.slice(1).filter(line => line.trim() !== '');
     
     if (rows.length === 0) throw new Error("El archivo está vacío o solo tiene encabezados");
 
-    // DETECTAR SEPARADOR INTELIGENTE (coma o punto y coma)
+    // Detección automática de separador
     const firstLine = lines[0];
     const separator = firstLine.includes(';') ? ';' : ',';
 
-    console.log(`Detectado separador: "${separator}"`);
-
-    // 1. Obtener Tenant ID y Usuario Actual
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("No autenticado");
     
     const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
     if (!profile?.tenant_id) throw new Error("Sin organización asignada");
 
-    // 2. Obtener lista de usuarios para mapear responsables (Cache simple)
+    // Cache de usuarios para mapeo rápido
     const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true);
     const userMap = new Map(); 
     users?.forEach(u => {
-      // Normalizamos: minúsculas y sin espacios extra
-      const fullName = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
-      userMap.set(fullName, u.id);
+      // Normalizamos clave: "juanperez"
+      const key = `${u.nombre}${u.apellido}`.toLowerCase().replace(/\s+/g, '');
+      userMap.set(key, u.id);
+      
+      // También soportamos "juan perez" con espacios
+      const keySpaced = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
+      userMap.set(keySpaced, u.id);
     });
 
     let successCount = 0;
@@ -161,26 +210,34 @@ export default function PDVList() {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      // Parseo básico
-      const cols = row.split(separator).map(c => c.trim().replace(/^"|"$/g, '')); // Quitar comillas si las hay
+      // Limpiar comillas si Excel las agregó
+      const cols = row.split(separator).map(c => c.trim().replace(/^"|"$/g, ''));
       
-      // Validar longitud mínima (al menos código, nombre, ciudad)
-      if (cols.length < 3) continue; 
+      // Si la columna "codigo_interno" (index 0) está vacía, es una fila de referencia, ignorar.
+      if (!cols[0]) continue;
 
-      const [codigo, nombre, ciudad, direccion, telefono, lat, lng, radio, responsableName] = cols;
+      // Mapeo seguro de columnas
+      const codigo = cols[0];
+      const nombre = cols[1];
+      const ciudad = cols[2];
+      const direccion = cols[3];
+      const telefono = cols[4];
+      const lat = cols[5];
+      const lng = cols[6];
+      const radio = cols[7];
+      const responsableName = cols[8];
 
-      if (!codigo || !nombre || !ciudad) {
-        errors.push(`Fila ${i + 2}: Faltan campos obligatorios (Código, Nombre o Ciudad).`);
+      if (!nombre || !ciudad) {
+        errors.push(`Fila ${i + 2}: Faltan campos obligatorios (Nombre o Ciudad) para el código ${codigo}.`);
         continue;
       }
 
       try {
-        // Insertar PDV
-        // Parsear números con cuidado (reemplazar coma decimal por punto si viene de Excel español)
         const latVal = lat ? parseFloat(lat.replace(',', '.')) : null;
         const lngVal = lng ? parseFloat(lng.replace(',', '.')) : null;
         const radioVal = radio ? parseInt(radio) : 100;
 
+        // Insertar PDV
         const { data: newPdv, error: pdvError } = await supabase.from('pdv').insert({
           tenant_id: profile.tenant_id,
           codigo_interno: codigo,
@@ -196,10 +253,10 @@ export default function PDVList() {
 
         if (pdvError) throw pdvError;
 
-        // Asignar Responsable si existe
+        // Asignar Responsable si se especificó
         if (responsableName && newPdv) {
-          const cleanName = responsableName.toLowerCase().trim();
-          const userId = userMap.get(cleanName);
+          const searchKey = responsableName.toLowerCase().replace(/\s+/g, ''); // quitar espacios para buscar
+          const userId = userMap.get(searchKey) || userMap.get(responsableName.toLowerCase().trim());
           
           if (userId) {
             await supabase.from('pdv_assignments').insert({
@@ -210,15 +267,12 @@ export default function PDVList() {
               created_by: user.id
             });
           } else {
-            // Advertencia no bloqueante
-            errors.push(`Fila ${i + 2}: PDV creado, pero usuario "${responsableName}" no encontrado en el sistema.`);
+            errors.push(`Fila ${i + 2}: PDV creado, pero el usuario "${responsableName}" no coincide con nadie en el sistema.`);
           }
         }
 
         successCount++;
       } catch (err: any) {
-        console.error(err);
-        // Mejorar mensaje de error duplicado
         let msg = err.message;
         if (err.code === '23505') msg = "El código interno o nombre ya existe.";
         errors.push(`Fila ${i + 2} (${codigo}): ${msg}`);
@@ -230,19 +284,17 @@ export default function PDVList() {
     if (errors.length > 0) {
       toast({
         variant: "default",
-        title: "Carga Finalizada con Observaciones",
-        description: `Creados: ${successCount}. Errores: ${errors.length}. Revisa los detalles.`,
-        duration: 6000
+        title: "Carga completada con observaciones",
+        description: `Creados: ${successCount}. Errores: ${errors.length}.`,
       });
-      // Mostrar errores en consola por ahora (podríamos hacer un modal de errores)
-      console.warn("Errores de carga:", errors);
-      alert(`Se encontraron errores en algunas filas:\n${errors.slice(0, 5).join('\n')}\n${errors.length > 5 ? '...' : ''}`);
+      alert(`Reporte de Carga:\n\nSe crearon ${successCount} PDVs.\n\nErrores encontrados:\n${errors.join('\n')}`);
+    } else if (successCount > 0) {
+      toast({ title: "Carga Exitosa", description: `Se crearon ${successCount} puntos de venta.` });
     } else {
-      toast({ title: "Carga Masiva Exitosa", description: `Se procesaron ${successCount} registros correctamente.` });
+      toast({ variant: "destructive", title: "Sin datos", description: "No se encontraron registros válidos. Verifica el separador (; o ,)." });
     }
   };
 
-  // Filtrado local
   const filteredPDVs = pdvs.filter(pdv => 
     pdv.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
     pdv.codigo_interno.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -265,8 +317,9 @@ export default function PDVList() {
             onChange={handleFileUpload} 
           />
           
-          <Button variant="outline" onClick={downloadTemplate} title="Descargar plantilla CSV">
-            <Download className="w-4 h-4 mr-2" /> Plantilla
+          <Button variant="outline" onClick={downloadTemplate} disabled={isDownloading} title="Descargar plantilla con lista de usuarios">
+            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />} 
+            Plantilla
           </Button>
           
           <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
