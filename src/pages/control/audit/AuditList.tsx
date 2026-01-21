@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, CheckCircle2, AlertTriangle, Eye, Clock, MapPin, Camera, Box, FileText, Mail, MessageSquareText } from "lucide-react";
+import { MultiSelect } from "@/components/ui/multi-select";
+import { Search, Filter, CheckCircle2, Eye, Clock, MapPin, Camera, Box, FileText, Mail, MessageSquareText, CalendarIcon, X } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -16,11 +17,32 @@ export default function AuditList() {
   const { toast } = useToast();
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("todos"); // Default cambiado a 'todos'
   
+  // --- ESTADOS DE FILTROS ---
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  
+  const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
+  const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [selectedExecutionStatus, setSelectedExecutionStatus] = useState<string[]>([]);
+  const [selectedAuditStatus, setSelectedAuditStatus] = useState<string[]>(["pendiente"]); // Default: Pendientes
+
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Opciones de filtros estáticos
+  const executionStatusOptions = [
+    { label: "A Tiempo", value: "completada_a_tiempo" },
+    { label: "Vencida", value: "completada_vencida" },
+    { label: "Completada (Sin tiempo)", value: "completada" },
+  ];
+
+  const auditStatusOptions = [
+    { label: "Pendiente Revisión", value: "pendiente" },
+    { label: "Aprobado", value: "aprobado" },
+    { label: "Rechazado", value: "rechazado" },
+  ];
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -31,6 +53,7 @@ export default function AuditList() {
         .select(`
           *,
           routine_templates (
+            id,
             nombre, 
             prioridad, 
             gps_obligatorio, 
@@ -41,19 +64,16 @@ export default function AuditList() {
             enviar_email,
             responder_email
           ),
-          pdv (nombre, ciudad),
-          profiles:completado_por (nombre, apellido)
+          pdv (id, nombre, ciudad),
+          profiles:completado_por (id, nombre, apellido)
         `)
+        // Traemos solo las que ya se completaron (para auditar)
         .in('estado', ['completada', 'completada_a_tiempo', 'completada_vencida']) 
         .order('completado_at', { ascending: false });
 
-      if (statusFilter !== 'todos') {
-        if (statusFilter === 'pendiente') {
-           query = query.or('audit_status.is.null,audit_status.eq.pendiente');
-        } else {
-           query = query.eq('audit_status', statusFilter);
-        }
-      }
+      // Aplicar filtro de fechas si existen en la consulta inicial para optimizar
+      if (dateFrom) query = query.gte('completado_at', dateFrom);
+      if (dateTo) query = query.lte('completado_at', dateTo + 'T23:59:59');
 
       const { data, error } = await query;
 
@@ -74,21 +94,77 @@ export default function AuditList() {
 
   useEffect(() => {
     fetchTasks();
-  }, [statusFilter]);
+  }, [dateFrom, dateTo]); // Recargar si cambian las fechas base
+
+  // --- OPCIONES DINÁMICAS PARA FILTROS (Memoized) ---
+  const pdvOptions = useMemo(() => {
+    const map = new Map();
+    tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
+  }, [tasks]);
+
+  const routineOptions = useMemo(() => {
+    const map = new Map();
+    tasks.forEach(t => { if (t.routine_templates) map.set(t.routine_templates.id, t.routine_templates.nombre); });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
+  }, [tasks]);
+
+  const userOptions = useMemo(() => {
+    const map = new Map();
+    tasks.forEach(t => { 
+      if (t.profiles) {
+        map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`);
+      }
+    });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
+  }, [tasks]);
+
+  // --- FILTRADO EN MEMORIA ---
+  const filteredTasks = tasks.filter(t => {
+    // 1. Filtro PDV
+    if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
+
+    // 2. Filtro Rutina
+    if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
+
+    // 3. Filtro Usuario
+    if (selectedUsers.length > 0 && (!t.profiles || !selectedUsers.includes(t.profiles.id))) return false;
+
+    // 4. Filtro Estado Ejecución
+    if (selectedExecutionStatus.length > 0 && !selectedExecutionStatus.includes(t.estado)) return false;
+
+    // 5. Filtro Estado Auditoría
+    if (selectedAuditStatus.length > 0) {
+      // Manejo especial para "pendiente" ya que puede ser null o string 'pendiente'
+      const status = t.audit_status || 'pendiente';
+      if (!selectedAuditStatus.includes(status)) return false;
+    }
+
+    return true;
+  });
 
   const handleReview = (task: any) => {
     setSelectedTask(task);
     setIsModalOpen(true);
   };
 
-  const filteredTasks = tasks.filter(t => {
-    const searchLower = searchTerm.toLowerCase();
-    const pdvName = t.pdv?.nombre?.toLowerCase() || "";
-    const routineName = t.routine_templates?.nombre?.toLowerCase() || "";
-    const userName = t.profiles ? `${t.profiles.nombre} ${t.profiles.apellido}`.toLowerCase() : "";
-    
-    return pdvName.includes(searchLower) || routineName.includes(searchLower) || userName.includes(searchLower);
-  });
+  const clearFilters = () => {
+    setSelectedPdvs([]);
+    setSelectedRoutines([]);
+    setSelectedUsers([]);
+    setSelectedExecutionStatus([]);
+    setSelectedAuditStatus(["pendiente"]); // Volver al default útil
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const hasActiveFilters = 
+    selectedPdvs.length > 0 || 
+    selectedRoutines.length > 0 || 
+    selectedUsers.length > 0 || 
+    selectedExecutionStatus.length > 0 || 
+    (selectedAuditStatus.length > 0 && (selectedAuditStatus.length !== 1 || !selectedAuditStatus.includes('pendiente'))) ||
+    dateFrom || dateTo;
 
   return (
     <div className="space-y-6">
@@ -97,34 +173,101 @@ export default function AuditList() {
         <p className="text-muted-foreground">Revisión y aprobación de tareas ejecutadas en campo.</p>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col sm:flex-row gap-4 space-y-0">
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por PDV, Rutina o Usuario..."
-              className="pl-8"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <div className="w-full sm:w-[200px]">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Estado Auditoría" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos</SelectItem>
-                <SelectItem value="pendiente">Pendientes</SelectItem>
-                <SelectItem value="aprobado">Aprobados</SelectItem>
-                <SelectItem value="rechazado">Rechazados</SelectItem>
-              </SelectContent>
-            </Select>
+      {/* --- PANEL DE FILTROS --- */}
+      <Card className="bg-muted/20 border-primary/10">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium text-primary">
+              <Filter className="w-4 h-4" /> Filtros Avanzados
+            </div>
+            {hasActiveFilters && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={clearFilters} 
+                className="text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+              >
+                <X className="w-3 h-3 mr-1" /> Limpiar Filtros
+              </Button>
+            )}
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
+        <CardContent className="px-4 pb-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            
+            {/* Rango de Fechas */}
+            <div className="space-y-1">
+              <Label className="text-xs">Desde</Label>
+              <div className="relative">
+                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
+                <Input 
+                  type="date" 
+                  className="h-8 pl-7 text-xs bg-background" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)} 
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Hasta</Label>
+              <div className="relative">
+                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
+                <Input 
+                  type="date" 
+                  className="h-8 pl-7 text-xs bg-background" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)} 
+                />
+              </div>
+            </div>
+
+            {/* Selectores */}
+            <div className="space-y-1">
+              <Label className="text-xs">Estado Auditoría</Label>
+              <MultiSelect 
+                options={auditStatusOptions} 
+                selected={selectedAuditStatus} 
+                onChange={setSelectedAuditStatus} 
+                placeholder="Estado..."
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Puntos de Venta</Label>
+              <MultiSelect 
+                options={pdvOptions} 
+                selected={selectedPdvs} 
+                onChange={setSelectedPdvs} 
+                placeholder="Todos los PDV"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Rutinas</Label>
+              <MultiSelect 
+                options={routineOptions} 
+                selected={selectedRoutines} 
+                onChange={setSelectedRoutines} 
+                placeholder="Todas las Rutinas"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Ejecución</Label>
+              <MultiSelect 
+                options={executionStatusOptions} 
+                selected={selectedExecutionStatus} 
+                onChange={setSelectedExecutionStatus} 
+                placeholder="A tiempo / Vencida"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <div className="rounded-md border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -139,12 +282,19 @@ export default function AuditList() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">Cargando...</TableCell>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      <div className="flex justify-center items-center gap-2">
+                        <Clock className="w-4 h-4 animate-spin text-primary" /> Cargando...
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ) : filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No hay tareas que coincidan con los filtros.
+                    <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center">
+                        <Search className="w-8 h-8 mb-2 opacity-20" />
+                        <p>No se encontraron tareas con los filtros seleccionados.</p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
