@@ -1,13 +1,17 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
-import { Clock, MapPin, CheckCircle2, ArrowRight, Filter, X, Calendar as CalendarIcon, Eye } from "lucide-react";
+import { 
+  Clock, MapPin, CheckCircle2, Filter, X, 
+  Calendar as CalendarIcon, Eye, Camera, Mail, 
+  MessageSquareText, Box, AlertTriangle, FileText,
+  Repeat, CalendarDays, CalendarRange
+} from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -27,7 +31,6 @@ export default function TasksList() {
 
   const fetchTasks = async () => {
     setLoading(true);
-    // Traer tareas (filtradas por RLS en backend automáticamente)
     const { data, error } = await supabase
       .from('task_instances')
       .select(`
@@ -37,10 +40,14 @@ export default function TasksList() {
           nombre,
           descripcion,
           prioridad,
+          frecuencia,
           gps_obligatorio,
           fotos_obligatorias,
           min_fotos,
-          comentario_obligatorio
+          comentario_obligatorio,
+          requiere_inventario,
+          archivo_obligatorio,
+          enviar_email
         ),
         pdv (
           id,
@@ -73,25 +80,18 @@ export default function TasksList() {
   };
 
   // --- LÓGICA DE FILTROS ---
-
-  // 1. Obtener listas únicas para los selects
   const uniquePdvs = useMemo(() => {
     const pdvMap = new Map();
-    tasks.forEach(t => {
-      if (t.pdv) pdvMap.set(t.pdv.id, t.pdv.nombre);
-    });
+    tasks.forEach(t => { if (t.pdv) pdvMap.set(t.pdv.id, t.pdv.nombre); });
     return Array.from(pdvMap.entries()).map(([id, nombre]) => ({ id, nombre }));
   }, [tasks]);
 
   const uniqueRoutines = useMemo(() => {
     const routineMap = new Map();
-    tasks.forEach(t => {
-      if (t.routine_templates) routineMap.set(t.routine_templates.id, t.routine_templates.nombre);
-    });
+    tasks.forEach(t => { if (t.routine_templates) routineMap.set(t.routine_templates.id, t.routine_templates.nombre); });
     return Array.from(routineMap.entries()).map(([id, nombre]) => ({ id, nombre }));
   }, [tasks]);
 
-  // 2. Aplicar filtros
   const filteredTasks = tasks.filter(t => {
     const matchesDate = filterDate ? t.fecha_programada === filterDate : true;
     const matchesPdv = filterPdv !== "all" ? t.pdv?.id === filterPdv : true;
@@ -99,29 +99,12 @@ export default function TasksList() {
     return matchesDate && matchesPdv && matchesRoutine;
   });
 
-  // 3. Separar en pendientes y completadas (usando la lista FILTRADA)
   const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
-  const completedTasks = filteredTasks.filter(t => t.estado === 'completada' || t.estado === 'completada_vencida');
+  const completedTasks = filteredTasks.filter(t => t.estado === 'completada' || t.estado === 'completada_vencida' || t.estado === 'incumplida');
 
-  // --- LÓGICA DE BARRA DE PROGRESO ---
   const totalFiltered = filteredTasks.length;
   const totalCompleted = completedTasks.length;
   const progressPercentage = totalFiltered > 0 ? Math.round((totalCompleted / totalFiltered) * 100) : 0;
-
-  // Colores dinámicos
-  const getProgressColor = (percent: number) => {
-    if (percent < 45) return "bg-red-500";
-    if (percent < 90) return "bg-yellow-500";
-    return "bg-green-500";
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'alta': return 'text-orange-600 bg-orange-100 border-orange-200';
-      case 'critica': return 'text-red-600 bg-red-100 border-red-200';
-      default: return 'text-blue-600 bg-blue-100 border-blue-200';
-    }
-  };
 
   const clearFilters = () => {
     setFilterDate("");
@@ -130,6 +113,155 @@ export default function TasksList() {
   };
 
   const hasActiveFilters = filterDate || filterPdv !== "all" || filterRoutine !== "all";
+
+  // --- HELPERS VISUALES ---
+
+  const getPriorityStyles = (priority: string) => {
+    switch (priority) {
+      case 'critica': return { 
+        badge: 'bg-red-600 text-white border-red-700 hover:bg-red-700', 
+        border: 'border-l-4 border-l-red-600' 
+      };
+      case 'alta': return { 
+        badge: 'bg-orange-500 text-white border-orange-600 hover:bg-orange-600', 
+        border: 'border-l-4 border-l-orange-500' 
+      };
+      case 'media': return { 
+        badge: 'bg-yellow-500 text-white border-yellow-600 hover:bg-yellow-600', 
+        border: 'border-l-4 border-l-yellow-500' 
+      };
+      default: return { 
+        badge: 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700', 
+        border: 'border-l-4 border-l-emerald-600' 
+      };
+    }
+  };
+
+  const getFrequencyIcon = (freq: string) => {
+    switch (freq) {
+      case 'diaria': return <Repeat className="w-3 h-3" />;
+      case 'semanal': return <CalendarDays className="w-3 h-3" />;
+      default: return <CalendarRange className="w-3 h-3" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completada': return "bg-green-100 text-green-700 border-green-200";
+      case 'completada_vencida': return "bg-yellow-100 text-yellow-700 border-yellow-200";
+      case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
+      default: return "bg-gray-100 text-gray-700 border-gray-200";
+    }
+  };
+
+  // Componente de Tarjeta de Tarea
+  const TaskCard = ({ task }: { task: any }) => {
+    const r = task.routine_templates || {};
+    const styles = getPriorityStyles(task.prioridad_snapshot);
+    const isCompleted = task.estado === 'completada' || task.estado === 'completada_vencida';
+
+    return (
+      <Card className={`flex flex-col h-full hover:shadow-lg transition-shadow duration-200 ${styles.border}`}>
+        <CardHeader className="p-4 pb-2 space-y-2">
+          <div className="flex justify-between items-start">
+            <Badge className={`uppercase text-[10px] font-bold px-2 py-0.5 rounded-sm ${styles.badge}`}>
+              {task.prioridad_snapshot}
+            </Badge>
+            <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase font-medium bg-muted px-2 py-0.5 rounded-full">
+              {getFrequencyIcon(r.frecuencia)}
+              {r.frecuencia}
+            </div>
+          </div>
+          
+          <div>
+            <h3 className="font-bold text-lg leading-tight line-clamp-2" title={r.nombre}>
+              {r.nombre}
+            </h3>
+            <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
+              <MapPin className="w-3 h-3 shrink-0" />
+              <span className="truncate">{task.pdv?.nombre}</span>
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-4 pt-2 flex-1">
+          {/* Info de Tiempos y Estado */}
+          <div className="flex justify-between items-center bg-muted/30 p-2 rounded-md mb-3">
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <span>Vence: {task.hora_limite_snapshot?.slice(0,5)}</span>
+            </div>
+            {isCompleted ? (
+              <Badge variant="outline" className={getStatusColor(task.estado)}>
+                {task.estado === 'completada' ? 'A Tiempo' : 'Vencida'}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="bg-white">Pendiente</Badge>
+            )}
+          </div>
+
+          {/* Iconos de Requisitos */}
+          <div className="flex gap-3 text-muted-foreground justify-center py-2 border-t border-b border-dashed border-gray-100">
+            {r.gps_obligatorio && (
+              <div className="flex flex-col items-center gap-0.5" title="Requiere GPS">
+                <MapPin className="w-4 h-4 text-blue-500" />
+                <span className="text-[9px]">GPS</span>
+              </div>
+            )}
+            {r.fotos_obligatorias && (
+              <div className="flex flex-col items-center gap-0.5" title={`Fotos: ${r.min_fotos}`}>
+                <Camera className="w-4 h-4 text-purple-500" />
+                <span className="text-[9px]">FOTO</span>
+              </div>
+            )}
+            {r.comentario_obligatorio && (
+              <div className="flex flex-col items-center gap-0.5" title="Comentario Obligatorio">
+                <MessageSquareText className="w-4 h-4 text-orange-500" />
+                <span className="text-[9px]">NOTA</span>
+              </div>
+            )}
+            {r.requiere_inventario && (
+              <div className="flex flex-col items-center gap-0.5" title="Inventario">
+                <Box className="w-4 h-4 text-indigo-500" />
+                <span className="text-[9px]">INV</span>
+              </div>
+            )}
+            {r.archivo_obligatorio && (
+              <div className="flex flex-col items-center gap-0.5" title="Archivo">
+                <FileText className="w-4 h-4 text-cyan-500" />
+                <span className="text-[9px]">DOC</span>
+              </div>
+            )}
+            {r.enviar_email && (
+              <div className="flex flex-col items-center gap-0.5" title="Email">
+                <Mail className="w-4 h-4 text-pink-500" />
+                <span className="text-[9px]">MAIL</span>
+              </div>
+            )}
+          </div>
+        </CardContent>
+
+        <CardFooter className="p-3 bg-muted/10">
+          <Button 
+            className="w-full shadow-sm hover:shadow transition-all" 
+            variant={isCompleted ? "secondary" : "default"}
+            size="sm"
+            onClick={() => handleStartTask(task)}
+          >
+            {isCompleted ? (
+              <>
+                <Eye className="w-4 h-4 mr-2" /> Ver Detalle
+              </>
+            ) : (
+              <>
+                Ver <ArrowRight className="w-4 h-4 ml-2" />
+              </>
+            )}
+          </Button>
+        </CardFooter>
+      </Card>
+    );
+  };
 
   return (
     <div className="space-y-6 pb-20">
@@ -142,23 +274,15 @@ export default function TasksList() {
         </div>
       </div>
 
-      {/* SECCIÓN DE FILTROS Y PROGRESO */}
+      {/* FILTROS Y PROGRESO */}
       <div className="bg-card border rounded-lg p-4 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row gap-4">
-          {/* Filtro Fecha */}
           <div className="flex-1 min-w-[150px]">
             <div className="relative">
               <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                type="date" 
-                className="pl-8" 
-                value={filterDate} 
-                onChange={(e) => setFilterDate(e.target.value)} 
-              />
+              <Input type="date" className="pl-8" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
             </div>
           </div>
-
-          {/* Filtro PDV */}
           <div className="flex-1 min-w-[200px]">
             <Select value={filterPdv} onValueChange={setFilterPdv}>
               <SelectTrigger>
@@ -167,14 +291,10 @@ export default function TasksList() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos los PDV</SelectItem>
-                {uniquePdvs.map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
-                ))}
+                {uniquePdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-
-          {/* Filtro Rutina */}
           <div className="flex-1 min-w-[200px]">
             <Select value={filterRoutine} onValueChange={setFilterRoutine}>
               <SelectTrigger>
@@ -183,14 +303,10 @@ export default function TasksList() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas las Rutinas</SelectItem>
-                {uniqueRoutines.map(r => (
-                  <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>
-                ))}
+                {uniqueRoutines.map(r => <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-
-          {/* Botón Limpiar */}
           {hasActiveFilters && (
             <Button variant="ghost" size="icon" onClick={clearFilters} title="Limpiar filtros">
               <X className="w-4 h-4" />
@@ -198,21 +314,16 @@ export default function TasksList() {
           )}
         </div>
 
-        {/* BARRA DE PROGRESO */}
         <div className="space-y-1">
           <div className="flex justify-between text-sm font-medium">
-            <span>Progreso del listado</span>
-            <span className={
-              progressPercentage < 45 ? "text-red-600" : 
-              progressPercentage < 90 ? "text-yellow-600" : "text-green-600"
-            }>
-              {progressPercentage}% ({totalCompleted}/{totalFiltered})
+            <span>Progreso diario</span>
+            <span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>
+              {progressPercentage}%
             </span>
           </div>
-          {/* Custom Progress Bar para controlar el color dinámico */}
-          <div className="h-3 w-full bg-secondary rounded-full overflow-hidden">
+          <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
             <div 
-              className={`h-full transition-all duration-500 ease-in-out ${getProgressColor(progressPercentage)}`}
+              className={`h-full transition-all duration-500 ease-in-out ${progressPercentage < 50 ? 'bg-orange-500' : 'bg-green-500'}`}
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
@@ -220,91 +331,40 @@ export default function TasksList() {
       </div>
 
       <Tabs defaultValue="pending" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-4">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="pending">Pendientes ({pendingTasks.length})</TabsTrigger>
           <TabsTrigger value="history">Historial ({completedTasks.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pending" className="space-y-4">
+        <TabsContent value="pending" className="space-y-6">
           {loading ? (
             <div className="text-center py-10">Cargando tareas...</div>
           ) : pendingTasks.length === 0 ? (
-            <div className="text-center py-10 flex flex-col items-center text-muted-foreground">
-              <CheckCircle2 className="w-12 h-12 mb-2 text-green-500/50" />
-              <p>
-                {hasActiveFilters 
-                  ? "No hay tareas pendientes con estos filtros." 
-                  : "¡Todo al día! No tienes tareas pendientes."}
-              </p>
+            <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
+              <CheckCircle2 className="w-12 h-12 mb-3 text-green-500/50" />
+              <h3 className="text-lg font-medium">¡Todo listo!</h3>
+              <p className="text-muted-foreground">No hay tareas pendientes con los filtros actuales.</p>
             </div>
           ) : (
-            pendingTasks.map((task) => (
-              <Card key={task.id} className="border-l-4 border-l-primary hover:shadow-md transition-shadow">
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <Badge variant="outline" className={`mb-2 capitalize ${getPriorityColor(task.prioridad_snapshot)}`}>
-                        {task.prioridad_snapshot}
-                      </Badge>
-                      <CardTitle className="text-lg">{task.routine_templates?.nombre}</CardTitle>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge variant="secondary" className="font-normal text-xs">
-                        {format(new Date(task.fecha_programada), "dd/MM")}
-                      </Badge>
-                      {task.routine_templates?.gps_obligatorio && (
-                        <div title="Requiere GPS">
-                          <MapPin className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <CardDescription className="flex items-center gap-2">
-                    <Clock className="w-3 h-3" />
-                    Vence: {task.hora_limite_snapshot?.slice(0,5)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pb-2">
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {task.pdv?.nombre} - {task.pdv?.ciudad}
-                  </p>
-                </CardContent>
-                <CardFooter>
-                  <Button className="w-full" onClick={() => handleStartTask(task)}>
-                    Ver <Eye className="w-4 h-4 ml-2" />
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {pendingTasks.map((task) => (
+                <TaskCard key={task.id} task={task} />
+              ))}
+            </div>
           )}
         </TabsContent>
 
-        <TabsContent value="history" className="space-y-4">
+        <TabsContent value="history" className="space-y-6">
           {completedTasks.length === 0 ? (
-            <div className="text-center py-10 text-muted-foreground">No hay tareas completadas con estos filtros.</div>
+            <div className="text-center py-16 text-muted-foreground bg-muted/20 rounded-lg border-2 border-dashed">
+              No hay historial disponible con estos filtros.
+            </div>
           ) : (
-             completedTasks.map((task) => (
-              <Card key={task.id} className="bg-muted/40">
-                <CardHeader className="pb-2">
-                   <div className="flex justify-between items-center">
-                    <div className="flex flex-col">
-                      <CardTitle className="text-base text-muted-foreground line-through decoration-slate-400">
-                        {task.routine_templates?.nombre}
-                      </CardTitle>
-                      <span className="text-xs text-muted-foreground">{task.pdv?.nombre}</span>
-                    </div>
-                    <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100">
-                      Completada
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                   <p className="text-xs text-muted-foreground">
-                    Finalizada el {task.completado_at ? format(new Date(task.completado_at), "dd/MM/yyyy HH:mm") : '-'}
-                  </p>
-                </CardContent>
-              </Card>
-            ))
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {completedTasks.map((task) => (
+                <TaskCard key={task.id} task={task} />
+              ))}
+            </div>
           )}
         </TabsContent>
       </Tabs>
