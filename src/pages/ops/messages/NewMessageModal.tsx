@@ -12,8 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, ClipboardList } from "lucide-react";
+import { MultiSelect } from "@/components/ui/multi-select";
 
-// Esquema actualizado con validación condicional
+// Esquema actualizado
 const messageSchema = z.object({
   asunto: z.string().min(1, "El asunto es obligatorio"),
   cuerpo: z.string().min(1, "El mensaje no puede estar vacío"),
@@ -21,7 +22,7 @@ const messageSchema = z.object({
   prioridad: z.enum(["normal", "alta"]),
   requiere_confirmacion: z.boolean().default(false),
   recipient_type: z.enum(["all", "role", "pdv", "user"]),
-  recipient_id: z.string().optional(),
+  recipient_id: z.union([z.string(), z.array(z.string())]), // Ahora acepta array o string
   rutina_id: z.string().optional(),
 }).refine((data) => {
   // Si es tarea flash, la rutina es obligatoria
@@ -32,6 +33,18 @@ const messageSchema = z.object({
 }, {
   message: "Debe seleccionar una rutina para la Tarea Flash",
   path: ["rutina_id"],
+}).refine((data) => {
+  // Validación de destinatario
+  if (data.recipient_type !== 'all') {
+    if (Array.isArray(data.recipient_id)) {
+      return data.recipient_id.length > 0;
+    }
+    return !!data.recipient_id;
+  }
+  return true;
+}, {
+  message: "Seleccione al menos un destinatario",
+  path: ["recipient_id"]
 });
 
 type MessageFormValues = z.infer<typeof messageSchema>;
@@ -52,9 +65,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     { id: 'director', name: 'Directores' },
     { id: 'auditor', name: 'Auditores' }
   ]);
-  const [pdvs, setPdvs] = useState<any[]>([]);
+  const [pdvOptions, setPdvOptions] = useState<{label: string, value: string}[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [routines, setRoutines] = useState<any[]>([]); // Estado para rutinas
+  const [routines, setRoutines] = useState<any[]>([]);
 
   const form = useForm<MessageFormValues>({
     resolver: zodResolver(messageSchema),
@@ -71,20 +84,22 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   });
 
   const recipientType = form.watch("recipient_type");
-  const messageType = form.watch("tipo"); // Observamos el tipo
+  const messageType = form.watch("tipo");
 
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
         // Cargar PDVs
         const { data: pdvData } = await supabase.from('pdv').select('id, nombre, ciudad').eq('activo', true);
-        if (pdvData) setPdvs(pdvData);
+        if (pdvData) {
+          setPdvOptions(pdvData.map(p => ({ label: `${p.nombre} (${p.ciudad})`, value: p.id })));
+        }
 
         // Cargar Usuarios
         const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido, role').eq('activo', true);
         if (userData) setUsers(userData);
 
-        // Cargar Rutinas (Solo activas)
+        // Cargar Rutinas
         const { data: routineData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
         if (routineData) setRoutines(routineData);
       };
@@ -93,7 +108,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     }
   }, [open]);
 
-  // Efecto para autocompletar asunto si selecciona tarea flash
+  // Autocompletar asunto en Tarea Flash
   useEffect(() => {
     if (messageType === 'tarea_flash' && !form.getValues('asunto')) {
       form.setValue('asunto', '🚨 Tarea Flash Prioritaria');
@@ -102,14 +117,27 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     }
   }, [messageType]);
 
-  const onSubmit = async (values: MessageFormValues) => {
-    if (values.recipient_type !== 'all' && !values.recipient_id) {
-      form.setError('recipient_id', { message: 'Debe seleccionar un destinatario específico' });
-      return;
-    }
+  // Resetear recipient_id al cambiar el tipo
+  useEffect(() => {
+    form.setValue("recipient_id", recipientType === 'pdv' ? [] : "");
+  }, [recipientType]);
 
+  const onSubmit = async (values: MessageFormValues) => {
     setIsLoading(true);
     try {
+      let finalRecipientId: string | null = null;
+
+      // Lógica para formatear el recipient_id según el tipo
+      if (values.recipient_type === 'all') {
+        finalRecipientId = null;
+      } else if (values.recipient_type === 'pdv') {
+        // Si es PDV, convertimos el array a JSON string para la función SQL
+        finalRecipientId = JSON.stringify(values.recipient_id);
+      } else {
+        // Para usuario o rol es un string simple
+        finalRecipientId = values.recipient_id as string;
+      }
+
       const { error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -117,13 +145,19 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_prioridad: values.prioridad,
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
-        p_recipient_id: values.recipient_type === 'all' ? null : values.recipient_id,
-        p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null // Enviamos rutina si aplica
+        p_recipient_id: finalRecipientId,
+        p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null
       });
 
       if (error) throw error;
 
-      toast({ title: "Mensaje Enviado", description: "Se ha notificado a los destinatarios." });
+      toast({ 
+        title: "Enviado Correctamente", 
+        description: values.tipo === 'tarea_flash' 
+          ? "Se ha enviado el mensaje y generado la tarea para los usuarios." 
+          : "El mensaje ha sido enviado." 
+      });
+      
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
@@ -204,7 +238,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                         </SelectContent>
                       </Select>
                       <FormDescription className="text-orange-700/80 text-xs">
-                        Esta rutina deberá ser ejecutada inmediatamente por los receptores.
+                        Esta rutina será asignada automáticamente en "Mis Tareas" a los destinatarios.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -223,14 +257,15 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     <Select 
                       onValueChange={(val) => {
                         field.onChange(val);
-                        form.setValue("recipient_id", ""); 
+                        // Resetear ID al cambiar tipo
+                        form.setValue("recipient_id", val === 'pdv' ? [] : ""); 
                       }} 
                       defaultValue={field.value}
                     >
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
+                        <SelectItem value="pdv">Por PDV (Múltiple)</SelectItem>
                         <SelectItem value="role">Por Rol</SelectItem>
-                        <SelectItem value="pdv">Por PDV</SelectItem>
                         <SelectItem value="user">Usuario Específico</SelectItem>
                         <SelectItem value="all">Todos (Global)</SelectItem>
                       </SelectContent>
@@ -239,35 +274,38 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                 )}
               />
 
-              {recipientType === 'role' && (
-                <FormField
-                  control={form.control}
-                  name="recipient_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Seleccione Rol..." /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </FormItem>
-                  )}
-                />
-              )}
-
               {recipientType === 'pdv' && (
                 <FormField
                   control={form.control}
                   name="recipient_id"
                   render={({ field }) => (
                     <FormItem>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Seleccione PDV..." /></SelectTrigger></FormControl>
+                      <MultiSelect 
+                        options={pdvOptions} 
+                        selected={Array.isArray(field.value) ? field.value : []} 
+                        onChange={field.onChange} 
+                        placeholder="Seleccionar PDVs..."
+                        className="bg-background"
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {recipientType === 'role' && (
+                <FormField
+                  control={form.control}
+                  name="recipient_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Select onValueChange={field.onChange} value={field.value as string}>
+                        <FormControl><SelectTrigger><SelectValue placeholder="Seleccione Rol..." /></SelectTrigger></FormControl>
                         <SelectContent>
-                          {pdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
+                          {roles.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -279,7 +317,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   name="recipient_id"
                   render={({ field }) => (
                     <FormItem>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value as string}>
                         <FormControl><SelectTrigger><SelectValue placeholder="Busque usuario..." /></SelectTrigger></FormControl>
                         <SelectContent>
                           {users.map(u => (
@@ -287,6 +325,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
