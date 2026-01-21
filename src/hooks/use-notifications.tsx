@@ -11,7 +11,7 @@ export function useNotifications() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // 1. Query principal para obtener el conteo
+  // 1. Query principal (Estado base)
   const { data: unreadCount = 0, refetch } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
     queryFn: async () => {
@@ -22,41 +22,50 @@ export function useNotifications() {
         .eq('user_id', user.id)
         .eq('leido', false);
       
-      if (error) {
-        console.error("Error fetching notifications:", error);
-        return 0;
-      }
+      if (error) return 0;
       return count || 0;
     },
     enabled: !!user,
-    staleTime: 1000 * 60 * 5, // 5 minutos de caché si no hay eventos
   });
 
-  // 2. Suscripción a cambios en tiempo real (INSERT/UPDATE/DELETE)
+  // 2. Suscripción Realtime Inteligente
   useEffect(() => {
     if (!user) return;
 
     const channel = supabase
-      .channel('notifications-realtime')
+      .channel('realtime-notifications-global')
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: '*', // Escuchar todo (INSERT, UPDATE, DELETE)
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          // Invalidar query para forzar recarga del contador
-          queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-
-          // Si es un mensaje nuevo, mostrar toast
+          // --- Lógica Optimista ---
+          
+          // Caso 1: Nuevo mensaje (Incrementar)
           if (payload.eventType === 'INSERT') {
             const newNotif = payload.new as any;
+            
+            // Actualizar caché inmediatamente
+            queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: number = 0) => old + 1);
+            
+            // Mostrar alerta visual
             toast({
               title: "Nuevo Mensaje",
-              description: newNotif.title,
+              description: newNotif.title || "Has recibido una notificación",
             });
+          } 
+          
+          // Caso 2: Mensaje leído/borrado (Decrementar o Recalcular)
+          else if (
+            (payload.eventType === 'UPDATE' && payload.new.leido === true) || 
+            payload.eventType === 'DELETE'
+          ) {
+            // Invalida para asegurar el número exacto real desde BD
+            queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
           }
         }
       )
