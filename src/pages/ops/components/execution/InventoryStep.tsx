@@ -1,30 +1,36 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Package, AlertCircle } from "lucide-react";
+import { Loader2, Package } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 interface InventoryStepProps {
   categoriesIds: string[];
-  savedData?: any[]; // Prop para recibir datos guardados
+  savedData?: any[]; 
   onChange: (data: any[]) => void;
 }
 
 export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryStepProps) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Estado local para los conteos: { [productId]: { fisico: string, esperado: string } }
   const [counts, setCounts] = useState<Record<string, { fisico: string, esperado: string }>>({});
+  
+  // Ref para controlar si ya inicializamos con los datos guardados y evitar re-renders por cambios de referencia
+  const dataInitialized = useRef(false);
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    let isMounted = true;
+
+    const fetchProductsAndInit = async () => {
       setLoading(true);
-      if (categoriesIds.length === 0) {
-        setProducts([]);
-        setLoading(false);
+      
+      if (!categoriesIds || categoriesIds.length === 0) {
+        if (isMounted) {
+          setProducts([]);
+          setLoading(false);
+        }
         return;
       }
 
@@ -42,14 +48,13 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
         .eq('activo', true)
         .order('nombre');
 
-      if (data) {
+      if (data && isMounted) {
         setProducts(data);
         
-        // Inicializar conteos
+        // Inicializar conteos basados en savedData (SOLO UNA VEZ o cuando cambian los productos)
         const initialCounts: any = {};
-        
-        // Mapa de datos guardados para acceso rápido
         const savedMap = new Map();
+        
         if (savedData && savedData.length > 0) {
           savedData.forEach(row => {
             savedMap.set(row.producto_id, { fisico: row.fisico, esperado: row.esperado });
@@ -60,8 +65,8 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
           const saved = savedMap.get(p.id);
           if (saved) {
              initialCounts[p.id] = { 
-                 fisico: saved.fisico !== null ? saved.fisico.toString() : "", 
-                 esperado: saved.esperado !== null ? saved.esperado.toString() : "0" 
+                 fisico: saved.fisico !== null ? String(saved.fisico) : "", 
+                 esperado: saved.esperado !== null ? String(saved.esperado) : "0" 
              };
           } else {
              initialCounts[p.id] = { fisico: "", esperado: "" };
@@ -69,31 +74,24 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
         });
         
         setCounts(initialCounts);
-        
-        // IMPORTANTE: Si cargamos datos, notificamos al padre de inmediato para que el estado
-        // del formulario principal esté sincronizado, si no el usuario tendría que editar algo 
-        // para que se guarde de nuevo.
-        if (savedData && savedData.length > 0) {
-           const submissionData = Object.entries(initialCounts).map(([pid, val]: any) => {
-              const fis = val.fisico === "" ? 0 : Number(val.fisico);
-              const esp = val.esperado === "" ? 0 : Number(val.esperado);
-              return {
-                producto_id: pid,
-                fisico: fis,
-                esperado: esp,
-                diferencia: fis - esp
-              };
-            });
-            onChange(submissionData);
-        }
+        dataInitialized.current = true;
       }
-      setLoading(false);
+      
+      if (isMounted) setLoading(false);
     };
 
-    fetchProducts();
-  }, [categoriesIds, savedData]); // Re-run if savedData comes in later
+    fetchProductsAndInit();
 
-  // Agrupar productos por categoría
+    return () => { isMounted = false; };
+    // Dependencias: Solo recargar si cambian las categorías. 
+    // Quitamos savedData para evitar el loop. La hidratación inicial ocurre en el fetch.
+  }, [JSON.stringify(categoriesIds)]); 
+
+  // Escuchar cambios en savedData SOLO si llegan después (ej. carga asíncrona tardía del padre)
+  // pero con cuidado de no sobrescribir si el usuario ya editó.
+  // En este diseño, asumimos que el padre carga todo antes de montar o al mismo tiempo.
+  // Para evitar complejidad y bugs de sobreescritura, confiamos en la carga inicial.
+
   const groupedProducts = useMemo(() => {
     const groups: Record<string, any[]> = {};
     products.forEach(p => {
@@ -119,7 +117,7 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
     setCounts(newCounts);
 
     // Preparar datos para el padre
-    const submissionData = Object.entries(newCounts).map(([pid, val]) => {
+    const submissionData = Object.entries(newCounts).map(([pid, val]: any) => {
       const fis = val.fisico === "" ? 0 : Number(val.fisico);
       const esp = val.esperado === "" ? 0 : Number(val.esperado);
       
@@ -134,25 +132,14 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
     onChange(submissionData);
   };
 
-  // Cálculos de Totales
   const totalItems = products.length;
-  // Item contado si tiene al menos uno de los dos valores
-  const itemsCounted = Object.values(counts).filter(c => c.fisico !== "" || c.esperado !== "").length;
+  const itemsCounted = Object.values(counts).filter((c: any) => c.fisico !== "" || c.esperado !== "").length;
   
-  const totalDiff = Object.values(counts).reduce((acc, curr) => {
+  const totalDiff = Object.values(counts).reduce((acc: number, curr: any) => {
     const fis = curr.fisico === "" ? 0 : Number(curr.fisico);
     const esp = curr.esperado === "" ? 0 : Number(curr.esperado);
     return acc + (fis - esp);
   }, 0);
-
-  // Lista de productos con diferencias para el footer
-  const productsWithDiff = products.filter(p => {
-    const c = counts[p.id];
-    if (!c || (c.fisico === "" && c.esperado === "")) return false;
-    const fis = c.fisico === "" ? 0 : Number(c.fisico);
-    const esp = c.esperado === "" ? 0 : Number(c.esperado);
-    return (fis - esp) !== 0;
-  });
 
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
 
@@ -189,8 +176,6 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
                 const fisNum = count.fisico === "" ? 0 : Number(count.fisico);
                 const espNum = count.esperado === "" ? 0 : Number(count.esperado);
                 const diff = fisNum - espNum;
-                
-                // Mostrar diferencia solo si se han ingresado datos
                 const showDiff = count.fisico !== "" && count.esperado !== "";
 
                 return (
@@ -200,8 +185,6 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
                       <div className="text-[10px] text-muted-foreground font-mono">{prod.codigo_sku}</div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground text-center py-2">{prod.unidad}</TableCell>
-                    
-                    {/* Input Físico */}
                     <TableCell className="p-1 bg-blue-50/30 border-r border-l border-blue-100">
                       <Input 
                         type="number" 
@@ -212,8 +195,6 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
                         onChange={(e) => handleInputChange(prod.id, 'fisico', e.target.value)}
                       />
                     </TableCell>
-                    
-                    {/* Input Sistema (Editable) */}
                     <TableCell className="p-1 bg-gray-50/50">
                       <Input 
                         type="number" 
@@ -224,8 +205,6 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
                         onChange={(e) => handleInputChange(prod.id, 'esperado', e.target.value)}
                       />
                     </TableCell>
-                    
-                    {/* Diferencia */}
                     <TableCell className="text-right py-2">
                       {showDiff ? (
                         <span className={`text-xs font-bold px-2 py-1 rounded ${
@@ -247,39 +226,13 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
         </Card>
       ))}
 
-      {/* Footer Totalizador */}
-      <div className="sticky bottom-0 bg-background border-t p-4 rounded-lg shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 flex flex-col gap-3">
-        
-        {productsWithDiff.length > 0 && (
-           <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar border-b pb-2">
-             <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Detalle de Diferencias</p>
-             {productsWithDiff.map(p => {
-               const c = counts[p.id];
-               const diff = (c.fisico === "" ? 0 : Number(c.fisico)) - (c.esperado === "" ? 0 : Number(c.esperado));
-               
-               return (
-                 <div key={p.id} className="flex justify-between items-center text-xs py-0.5">
-                   <span className="truncate font-medium text-foreground/80 w-3/4">{p.nombre}</span>
-                   <span className={`font-bold ${diff < 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                     {diff > 0 ? '+' : ''}{diff}
-                   </span>
-                 </div>
-               )
-             })}
-           </div>
-        )}
-
+      <div className="sticky bottom-0 bg-background border-t p-4 rounded-lg shadow-sm z-10 flex flex-col gap-3">
         <div className="flex justify-between items-center pt-1">
           <div className="flex gap-4 text-xs">
             <div>
               <span className="text-muted-foreground">Progreso:</span>
               <span className="font-bold ml-1">{itemsCounted} / {totalItems}</span>
             </div>
-            {itemsCounted < totalItems && (
-              <div className="text-orange-600 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" /> Incompleto
-              </div>
-            )}
           </div>
           <div className="text-sm flex items-center gap-2">
             <span className="text-muted-foreground font-medium">Total Diferencia:</span>

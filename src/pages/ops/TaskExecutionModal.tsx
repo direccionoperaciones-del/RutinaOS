@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, CheckSquare } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 
@@ -26,10 +26,15 @@ interface TaskExecutionModalProps {
 
 export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: TaskExecutionModalProps) {
   const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
+  
+  // Estado de carga inicial (hidratación de datos)
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
+  
+  // Estado de procesos (subida/guardado)
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
-  // --- STATE (Datos del Formulario) ---
   const [formData, setFormData] = useState<{
     gps: { lat: number, lng: number, valid: boolean } | null;
     email_send: boolean;
@@ -51,54 +56,73 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const routine = task?.routine_templates;
   const pdv = task?.pdv;
 
-  // 1. Construir Schema Dinámico
   const schema: TaskField[] = useMemo(() => {
     return buildTaskSchema(routine, pdv);
   }, [routine, pdv]);
 
-  // Reset y Carga inicial
+  // Efecto ÚNICO de carga al abrir
   useEffect(() => {
     if (open && task) {
-      // Inicializar con datos de la tarea si ya existen (modo ver/editar)
+      loadTaskData();
+    } else {
+      // Reset al cerrar
       setFormData({
-        gps: task.gps_latitud ? { lat: task.gps_latitud, lng: task.gps_longitud, valid: task.gps_en_rango } : null,
-        email_send: false, // TODO: Persistir estos flags si es necesario en BD
+        gps: null,
+        email_send: false,
         email_respond: false,
         files: [],
         photos: [],
         inventory: [],
-        comments: task.comentario || ""
+        comments: ""
       });
-      fetchTaskDetails();
+      setIsInitializing(true);
+      setInitError(null);
     }
-  }, [open, task]);
+  }, [open, task?.id]); // Dependencia clave: task.id (si cambia la tarea, recarga)
 
-  const fetchTaskDetails = async () => {
-    if (!task) return;
+  const loadTaskData = async () => {
+    setIsInitializing(true);
+    setInitError(null);
     
-    // 1. Cargar Evidencias
-    const { data: filesData } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
-    
-    // 2. Cargar Inventario Guardado
-    let inventoryData: any[] = [];
-    if (routine?.requiere_inventario) {
-      const { data: invRows } = await supabase
-        .from('inventory_submission_rows')
+    try {
+      // 1. Cargar Evidencias
+      const { data: filesData, error: filesError } = await supabase
+        .from('evidence_files')
         .select('*')
         .eq('task_id', task.id);
       
-      if (invRows) inventoryData = invRows;
+      if (filesError) throw filesError;
+
+      // 2. Cargar Inventario
+      let inventoryData: any[] = [];
+      if (routine?.requiere_inventario) {
+        const { data: invRows, error: invError } = await supabase
+          .from('inventory_submission_rows')
+          .select('*')
+          .eq('task_id', task.id);
+        
+        if (invError) throw invError;
+        if (invRows) inventoryData = invRows;
+      }
+
+      // 3. Hidratar Estado
+      setFormData({
+        gps: task.gps_latitud ? { lat: task.gps_latitud, lng: task.gps_longitud, valid: task.gps_en_rango } : null,
+        email_send: false, // Estos flags no se guardaban en la BD en versiones anteriores, asumimos false
+        email_respond: false,
+        files: filesData?.filter(f => f.tipo === 'archivo') || [],
+        photos: filesData?.filter(f => f.tipo === 'foto') || [],
+        inventory: inventoryData,
+        comments: task.comentario || ""
+      });
+
+    } catch (error: any) {
+      console.error("Error loading task data:", error);
+      setInitError("No se pudieron cargar los datos de la tarea. Por favor, intenta de nuevo.");
+    } finally {
+      setIsInitializing(false);
     }
-
-    setFormData(prev => ({
-      ...prev,
-      files: filesData?.filter(f => f.tipo === 'archivo') || [],
-      photos: filesData?.filter(f => f.tipo === 'foto') || [],
-      inventory: inventoryData
-    }));
   };
-
-  // --- HANDLERS GENÉRICOS ---
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'foto' | 'archivo') => {
     const files = event.target.files; 
@@ -125,12 +149,19 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       });
 
       await Promise.all(uploadPromises);
+      
+      // Recargar SOLO las evidencias para no resetear inputs de usuario
+      const { data: newFiles } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
+      
+      setFormData(prev => ({
+        ...prev,
+        files: newFiles?.filter(f => f.tipo === 'archivo') || [],
+        photos: newFiles?.filter(f => f.tipo === 'foto') || []
+      }));
 
       toast({ title: "Subida completada", description: `Se han guardado ${files.length} archivo(s).` });
-      fetchTaskDetails(); // Recargar para ver los nuevos archivos
     } catch (error: any) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivos" });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setIsUploading(false);
       event.target.value = ""; 
@@ -138,22 +169,25 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleDeleteEvidence = async (id: string, path: string) => {
-    if (!confirm("¿Borrar?")) return;
-    await supabase.storage.from('evidence').remove([path]);
-    await supabase.from('evidence_files').delete().eq('id', id);
-    
-    setFormData(prev => ({
-      ...prev,
-      files: prev.files.filter(f => f.id !== id),
-      photos: prev.photos.filter(f => f.id !== id)
-    }));
+    if (!confirm("¿Borrar archivo?")) return;
+    try {
+      await supabase.storage.from('evidence').remove([path]);
+      await supabase.from('evidence_files').delete().eq('id', id);
+      
+      setFormData(prev => ({
+        ...prev,
+        files: prev.files.filter(f => f.id !== id),
+        photos: prev.photos.filter(f => f.id !== id)
+      }));
+    } catch (error) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo borrar el archivo." });
+    }
   };
 
   const handleComplete = async () => {
-    // 2. Validación Dinámica
     for (const field of schema) {
       let valueToValidate;
-      
       switch (field.id) {
         case 'gps': valueToValidate = formData.gps; break;
         case 'email_send': valueToValidate = formData.email_send; break;
@@ -163,7 +197,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         case 'comments': valueToValidate = formData.comments; break;
         default: valueToValidate = null;
       }
-
       const error = field.validate(valueToValidate);
       if (error) {
         toast({ variant: "destructive", title: "Falta información", description: error });
@@ -171,36 +204,29 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       }
     }
 
-    setIsLoading(true);
+    setIsProcessing(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No auth");
+      if (!user) throw new Error("No autenticado");
 
-      // A. Guardar Inventario (Upsert/Insert)
+      // Guardar Inventario
       if (formData.inventory.length > 0) {
-        // Primero borramos anteriores para evitar duplicados complejos o lógica de diff
         await supabase.from('inventory_submission_rows').delete().eq('task_id', task.id);
-
         const inventoryRows = formData.inventory.map(row => ({
           task_id: task.id,
           producto_id: row.producto_id,
           esperado: row.esperado,
           fisico: row.fisico,
         }));
-        
-        const { error: invError } = await supabase
-          .from('inventory_submission_rows')
-          .insert(inventoryRows);
-        
+        const { error: invError } = await supabase.from('inventory_submission_rows').insert(inventoryRows);
         if (invError) throw invError;
       }
 
-      // B. Calcular Estado
+      // Actualizar Tarea
       const now = new Date();
       const limitDate = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
       const finalStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
 
-      // C. Actualizar Tarea
       const { error } = await supabase
         .from('task_instances')
         .update({
@@ -224,14 +250,12 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      console.error(error);
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
-      setIsLoading(false);
+      setIsProcessing(false);
     }
   };
 
-  // --- RENDERER ---
   const renderField = (field: TaskField) => {
     switch (field.type) {
       case 'location':
@@ -240,9 +264,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             key={field.id}
             pdv={pdv} 
             required={field.required} 
-            // Si ya hay GPS guardado, pasamos null para que LocationStep intente validar de nuevo si quiere, 
-            // pero mejor sería pasarle el valor inicial si queremos mostrar "Ya validado".
-            // Por simplicidad del componente LocationStep, lo dejamos re-validar o mostrar estado.
             onLocationVerified={(lat, lng, valid) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid } }))} 
           />
         );
@@ -296,7 +317,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           <InventoryStep 
             key={field.id}
             categoriesIds={field.constraints?.categories || []}
-            savedData={formData.inventory} // Pasamos la data cargada
+            savedData={formData.inventory} 
             onChange={(data) => setFormData(prev => ({ ...prev, inventory: data }))}
           />
         );
@@ -316,8 +337,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           </div>
         );
 
-      default:
-        return null;
+      default: return null;
     }
   };
 
@@ -335,18 +355,31 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           <DialogDescription>{routine.descripcion}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {schema.map(field => renderField(field))}
-        </div>
+        {isInitializing ? (
+          <div className="py-20 flex flex-col items-center justify-center text-muted-foreground">
+            <Loader2 className="w-10 h-10 animate-spin mb-4" />
+            <p>Cargando datos de la tarea...</p>
+          </div>
+        ) : initError ? (
+          <div className="py-10 flex flex-col items-center justify-center text-destructive">
+            <AlertCircle className="w-10 h-10 mb-4" />
+            <p className="mb-4">{initError}</p>
+            <Button variant="outline" onClick={loadTaskData}>Reintentar</Button>
+          </div>
+        ) : (
+          <div className="space-y-6 py-4">
+            {schema.map(field => renderField(field))}
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button 
             onClick={handleComplete} 
-            disabled={isLoading || isUploading}
+            disabled={isInitializing || isProcessing || isUploading || !!initError}
             className="bg-green-600 hover:bg-green-700"
           >
-            {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+            {isProcessing && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
             {task.estado === 'pendiente' ? 'Finalizar Tarea' : 'Actualizar Tarea'}
           </Button>
         </DialogFooter>
