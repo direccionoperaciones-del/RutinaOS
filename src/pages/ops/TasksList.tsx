@@ -12,7 +12,7 @@ import {
   Calendar as CalendarIcon, Eye, Camera, Mail, 
   MessageSquareText, Box, FileText,
   Repeat, CalendarDays, CalendarRange, ArrowRight,
-  User, Filter, Loader2
+  User, Filter, Loader2, RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -30,8 +30,10 @@ export default function TasksList() {
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
   // --- ESTADOS DE FILTROS ---
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  // CORRECCIÓN 1: Inicializar fechas en HOY para evitar traer todo el historial innecesariamente
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [dateFrom, setDateFrom] = useState<string>(todayStr);
+  const [dateTo, setDateTo] = useState<string>(todayStr);
   
   // Arrays para selección múltiple
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
@@ -39,12 +41,12 @@ export default function TasksList() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
   const fetchTasks = async () => {
-    // Si todavía está cargando el perfil, no hacemos nada aún
     if (loadingProfile || !profile || !user) return;
     
     setLoading(true);
 
     try {
+      // Base Query
       let query = supabase
         .from('task_instances')
         .select(`
@@ -80,9 +82,13 @@ export default function TasksList() {
           )
         `);
 
+      // CORRECCIÓN 2: Aplicar filtro de fecha en BD (Performance y Corrección Lógica)
+      if (dateFrom) query = query.gte('fecha_programada', dateFrom);
+      if (dateTo) query = query.lte('fecha_programada', dateTo);
+
       // --- LOGICA DE VISIBILIDAD POR ROL ---
       if (profile.role === 'administrador') {
-        // 1. Obtener los PDVs asignados a este administrador
+        // Obtener PDVs asignados vigentes
         const { data: myAssignments } = await supabase
           .from('pdv_assignments')
           .select('pdv_id')
@@ -91,23 +97,22 @@ export default function TasksList() {
         
         const myPdvIds = myAssignments?.map(a => a.pdv_id) || [];
 
+        // Construir filtro OR robusto
+        // Lógica: Ver tareas donde (Soy el PDV asignado) O (Soy el responsable explícito)
+        let orConditions = [`responsable_id.eq.${user.id}`, `completado_por.eq.${user.id}`];
+        
         if (myPdvIds.length > 0) {
-          // Ver tareas de MIS PDVs O donde soy responsable explícito O donde yo completé
-          // Usamos sintaxis 'or' de PostgREST con filtro IN para PDVs
-          const pdvFilter = `pdv_id.in.(${myPdvIds.join(',')})`;
-          const userFilter = `responsable_id.eq.${user.id},completado_por.eq.${user.id}`;
-          
-          query = query.or(`${pdvFilter},${userFilter}`);
-        } else {
-          // Si no tiene PDV asignado, fallback a solo asignación directa
-          query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+          // Sintaxis correcta para IN en query string de Supabase
+          orConditions.push(`pdv_id.in.(${myPdvIds.join(',')})`);
         }
+        
+        query = query.or(orConditions.join(','));
       } 
-      // Si es Director/Lider/Auditor, ve todo (limitado por RLS de tenant)
+      // Si es Director/Lider/Auditor, ve todo (limitado por RLS de tenant implícito)
 
       const { data, error } = await query
-        .order('fecha_programada', { ascending: false })
-        .order('prioridad_snapshot', { ascending: false });
+        .order('prioridad_snapshot', { ascending: false }) // Prioridad crítica primero
+        .order('hora_limite_snapshot', { ascending: true }); // Las que vencen antes primero
 
       if (error) throw error;
       setTasks(data || []);
@@ -124,7 +129,7 @@ export default function TasksList() {
     if (!loadingProfile && profile) {
       fetchTasks();
     }
-  }, [loadingProfile, profile]); // Ejecutar cuando el perfil esté listo
+  }, [loadingProfile, profile, dateFrom, dateTo]); // Recargar si cambian las fechas
 
   const handleStartTask = (task: any) => {
     setSelectedTask(task);
@@ -154,12 +159,8 @@ export default function TasksList() {
     return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
-  // --- FILTRADO DE DATOS ---
+  // --- FILTRADO EN MEMORIA (Secundario) ---
   const filteredTasks = tasks.filter(t => {
-    // Filtro Fecha (Rango)
-    if (dateFrom && t.fecha_programada < dateFrom) return false;
-    if (dateTo && t.fecha_programada > dateTo) return false;
-
     // Filtro PDV (Multi)
     if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
 
@@ -193,14 +194,16 @@ export default function TasksList() {
   const progressPercentage = totalFiltered > 0 ? Math.round((totalCompleted / totalFiltered) * 100) : 0;
 
   const clearFilters = () => {
-    setDateFrom("");
-    setDateTo("");
+    // Resetear a HOY, no a vacío
+    const today = new Date().toISOString().split('T')[0];
+    setDateFrom(today);
+    setDateTo(today);
     setSelectedPdvs([]);
     setSelectedRoutines([]);
     setSelectedUsers([]);
   };
 
-  const hasActiveFilters = dateFrom || dateTo || selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
+  const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
 
   // --- HELPERS VISUALES ---
   const getPriorityStyles = (priority: string) => {
@@ -336,6 +339,9 @@ export default function TasksList() {
           <CheckCircle2 className="w-12 h-12 mb-3 text-muted-foreground/50" />
           <h3 className="text-lg font-medium">Sin tareas</h3>
           <p className="text-muted-foreground">{emptyMessage}</p>
+          <Button variant="link" onClick={fetchTasks} className="mt-2">
+            <RefreshCw className="w-4 h-4 mr-2" /> Recargar
+          </Button>
         </div>
       );
     }
@@ -362,8 +368,14 @@ export default function TasksList() {
       {/* --- PANEL DE FILTROS AVANZADOS --- */}
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            <Filter className="w-4 h-4" /> Filtros de Búsqueda
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium text-primary">
+              <Filter className="w-4 h-4" /> Filtros de Búsqueda
+            </div>
+            {/* Botón de recarga manual siempre útil */}
+            <Button variant="ghost" size="icon" onClick={fetchTasks} title="Recargar Tareas">
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
@@ -438,7 +450,7 @@ export default function TasksList() {
                 onClick={clearFilters} 
                 className="text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
               >
-                <X className="w-3 h-3 mr-1" /> Limpiar Filtros
+                <X className="w-3 h-3 mr-1" /> Restablecer (Hoy)
               </Button>
             </div>
           )}
@@ -473,19 +485,19 @@ export default function TasksList() {
         </TabsList>
 
         <TabsContent value="all" className="space-y-6">
-          <TaskGrid items={allTasks} emptyMessage="No hay tareas para mostrar." />
+          <TaskGrid items={allTasks} emptyMessage="No hay tareas asignadas para hoy." />
         </TabsContent>
 
         <TabsContent value="pending" className="space-y-6">
-          <TaskGrid items={pendingTasks} emptyMessage="¡Todo al día! No hay tareas pendientes." />
+          <TaskGrid items={pendingTasks} emptyMessage="¡Todo al día! No hay tareas pendientes para hoy." />
         </TabsContent>
 
         <TabsContent value="overdue" className="space-y-6">
-          <TaskGrid items={overdueTasks} emptyMessage="No tienes tareas vencidas ni incumplidas." />
+          <TaskGrid items={overdueTasks} emptyMessage="No tienes tareas vencidas hoy." />
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">
-          <TaskGrid items={historyTasks} emptyMessage="No hay historial disponible con estos filtros." />
+          <TaskGrid items={historyTasks} emptyMessage="No hay historial completado hoy." />
         </TabsContent>
       </Tabs>
 
