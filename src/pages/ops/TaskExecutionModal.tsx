@@ -94,7 +94,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       setIsInitializing(true);
       setInitError(null);
     }
-  }, [open, task?.id]); // Dependencia clave: task.id (si cambia la tarea, recarga)
+  }, [open, task?.id]);
 
   const loadTaskData = async () => {
     setIsInitializing(true);
@@ -124,7 +124,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       // 3. Hidratar Estado
       setFormData({
         gps: task.gps_latitud ? { lat: task.gps_latitud, lng: task.gps_longitud, valid: task.gps_en_rango } : null,
-        email_send: false, // Estos flags no se guardaban en la BD en versiones anteriores, asumimos false
+        email_send: false,
         email_respond: false,
         files: filesData?.filter(f => f.tipo === 'archivo') || [],
         photos: filesData?.filter(f => f.tipo === 'foto') || [],
@@ -166,7 +166,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       await Promise.all(uploadPromises);
       
-      // Recargar SOLO las evidencias para no resetear inputs de usuario
       const { data: newFiles } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
       
       setFormData(prev => ({
@@ -238,15 +237,27 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         if (invError) throw invError;
       }
 
-      // Actualizar Tarea
+      // Actualizar Tarea y Estado
       const now = new Date();
-      const limitDate = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
-      
-      // Si la tarea estaba pendiente, calculamos si venció. Si ya estaba completa, mantenemos el estado (salvo que sea un edit)
       let newStatus = task.estado;
       
       if (isTaskPending) {
-         newStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
+         try {
+           // Construcción segura de fecha límite
+           const limitTimeStr = task.hora_limite_snapshot || "23:59:00";
+           const limitDateStr = `${task.fecha_programada}T${limitTimeStr}`;
+           const limitDate = new Date(limitDateStr);
+           
+           // Si la fecha es inválida, asumimos que está a tiempo para no bloquear
+           if (isNaN(limitDate.getTime())) {
+             console.warn("Fecha límite inválida, asumiendo a tiempo:", limitDateStr);
+             newStatus = 'completada_a_tiempo';
+           } else {
+             newStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
+           }
+         } catch (e) {
+           newStatus = 'completada_a_tiempo'; // Fallback seguro
+         }
       }
 
       const { error } = await supabase
@@ -272,7 +283,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: error.message || "Error al guardar" });
     } finally {
       setIsProcessing(false);
     }
