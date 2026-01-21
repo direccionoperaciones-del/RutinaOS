@@ -2,10 +2,9 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, FileSpreadsheet, Loader2, CalendarRange } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ReportsPage() {
@@ -25,9 +24,11 @@ export default function ReportsPage() {
     const csvContent = [
       headers.join(','), // Header row
       ...data.map(row => headers.map(fieldName => {
-        // Manejar strings con comas o saltos de línea
+        // Manejar strings con comas o saltos de línea y valores nulos
         let val = row[fieldName];
-        if (typeof val === 'string') {
+        if (val === null || val === undefined) {
+          val = "";
+        } else if (typeof val === 'string') {
           val = `"${val.replace(/"/g, '""')}"`; // Escapar comillas
         }
         return val;
@@ -79,6 +80,7 @@ export default function ReportsPage() {
       downloadCSV(flattened, `reporte_tareas_${dateFrom}_${dateTo}`);
       toast({ title: "Reporte Generado", description: "La descarga ha comenzado." });
     } catch (error: any) {
+      console.error(error);
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setLoading(false);
@@ -88,8 +90,6 @@ export default function ReportsPage() {
   const generateAuditReport = async () => {
     setLoading(true);
     try {
-      // Simulado: aquí conectarías con tabla de auditoría si quisieras más detalle
-      // Por ahora usamos task_instances que tiene el estado de auditoría
       const { data, error } = await supabase
         .from('task_instances')
         .select(`
@@ -98,7 +98,8 @@ export default function ReportsPage() {
           audit_at,
           audit_notas,
           routine_templates (nombre),
-          pdv (nombre)
+          pdv (nombre),
+          auditor:audit_by (nombre, apellido) 
         `)
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo)
@@ -111,7 +112,8 @@ export default function ReportsPage() {
         PDV: item.pdv?.nombre,
         Rutina: item.routine_templates?.nombre,
         Estado_Auditoria: item.audit_status,
-        Fecha_Auditoria: item.audit_at,
+        Fecha_Auditoria: item.audit_at ? new Date(item.audit_at).toLocaleString() : '',
+        Auditor: item.auditor ? `${item.auditor.nombre} ${item.auditor.apellido}` : 'Sistema',
         Notas: item.audit_notas
       }));
 
@@ -119,6 +121,55 @@ export default function ReportsPage() {
       toast({ title: "Reporte Generado", description: "La descarga ha comenzado." });
 
     } catch (error: any) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateInventoryReport = async () => {
+    setLoading(true);
+    try {
+      // Consultamos las filas de inventario y unimos con la tarea padre para saber fecha y PDV
+      const { data, error } = await supabase
+        .from('inventory_submission_rows')
+        .select(`
+          fisico,
+          esperado,
+          diferencia,
+          created_at,
+          inventory_products (nombre, codigo_sku, unidad),
+          task_instances!inner (
+            fecha_programada,
+            pdv (nombre, ciudad),
+            routine_templates (nombre)
+          )
+        `)
+        .gte('task_instances.fecha_programada', dateFrom)
+        .lte('task_instances.fecha_programada', dateTo);
+
+      if (error) throw error;
+
+      const flattened = data.map((item: any) => ({
+        Fecha: item.task_instances?.fecha_programada,
+        PDV: item.task_instances?.pdv?.nombre,
+        Ciudad: item.task_instances?.pdv?.ciudad,
+        Rutina: item.task_instances?.routine_templates?.nombre,
+        SKU: item.inventory_products?.codigo_sku,
+        Producto: item.inventory_products?.nombre,
+        Unidad: item.inventory_products?.unidad,
+        Fisico: item.fisico,
+        Sistema: item.esperado,
+        Diferencia: item.diferencia,
+        Hora_Registro: new Date(item.created_at).toLocaleTimeString()
+      }));
+
+      downloadCSV(flattened, `reporte_inventarios_${dateFrom}_${dateTo}`);
+      toast({ title: "Reporte Generado", description: "Descargando detalle de inventarios." });
+
+    } catch (error: any) {
+      console.error(error);
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setLoading(false);
@@ -175,11 +226,11 @@ export default function ReportsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+              <CheckCircle2 className="w-5 h-5 text-blue-600" />
               Auditoría y Calidad
             </CardTitle>
             <CardDescription>
-              Log de revisiones, aprobaciones, rechazos y notas de auditoría.
+              Log de revisiones con detalle del auditor y notas de rechazo.
             </CardDescription>
           </CardHeader>
           <CardFooter>
@@ -190,20 +241,21 @@ export default function ReportsPage() {
           </CardFooter>
         </Card>
 
-         {/* Reporte Inventarios (Placeholder) */}
-         <Card className="opacity-60">
+         {/* Reporte Inventarios */}
+         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileSpreadsheet className="w-5 h-5 text-orange-600" />
               Inventarios
             </CardTitle>
             <CardDescription>
-              Histórico de conteos y diferencias (Próximamente).
+              Histórico detallado de conteos, SKU, diferencias y stock físico vs sistema.
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button className="w-full" variant="secondary" disabled>
-              Próximamente
+            <Button className="w-full" variant="outline" onClick={generateInventoryReport} disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Download className="w-4 h-4 mr-2"/>}
+              Descargar CSV
             </Button>
           </CardFooter>
         </Card>
