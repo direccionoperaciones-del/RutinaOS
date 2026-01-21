@@ -11,9 +11,9 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
     queryFn: async () => {
       if (!user) throw new Error("No autenticado");
 
-      // Construcción de la consulta base CORRECTA a task_instances
+      // Base query
       let query = supabase
-        .from('task_instances') // ✅ Nombre de tabla corregido
+        .from('task_instances')
         .select(`
           *,
           routine_templates (
@@ -29,16 +29,30 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
 
-      // Filtro específico para Administradores (ver solo lo propio)
+      // Admin filter logic: Show tasks for my PDVs OR tasks I completed
       if (profile?.role === 'administrador') {
-        // Lógica: Tareas donde soy el responsable O tareas que yo completé
-        query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+        // 1. Get my active PDVs
+        const { data: assignments } = await supabase
+          .from('pdv_assignments')
+          .select('pdv_id')
+          .eq('user_id', user.id)
+          .eq('vigente', true);
+        
+        const myPdvIds = assignments?.map(a => a.pdv_id) || [];
+        
+        if (myPdvIds.length > 0) {
+          // Filter by PDV list OR completed_by me
+          // Syntax: pdv_id.in.(ids),completado_por.eq.id
+          query = query.or(`pdv_id.in.(${myPdvIds.join(',')}),completado_por.eq.${user.id}`);
+        } else {
+          // If no PDV assigned, only show what I completed
+          query = query.eq('completado_por', user.id);
+        }
       }
       
-      // Ordenamiento por prioridad y hora
       const { data, error } = await query
-        .order('prioridad_snapshot', { ascending: false }) // Critica primero
-        .order('hora_limite_snapshot', { ascending: true }); // Las que vencen antes primero
+        .order('prioridad_snapshot', { ascending: false })
+        .order('hora_limite_snapshot', { ascending: true });
 
       if (error) {
         console.error("Error fetching tasks:", error);
