@@ -79,7 +79,7 @@ export default function AssignmentList() {
   const downloadTemplate = async () => {
     setIsDownloading(true);
     try {
-      toast({ title: "Generando plantilla...", description: "Consultando rutinas y PDVs activos..." });
+      toast({ title: "Generando plantilla...", description: "Consultando rutinas y responsables activos..." });
 
       // 1. Obtener Rutinas Activas
       const { data: routines } = await supabase
@@ -88,38 +88,38 @@ export default function AssignmentList() {
         .eq('activo', true)
         .order('nombre');
 
-      // 2. Obtener PDVs Activos (Consulta simple para asegurar datos)
-      const { data: pdvs, error: pdvError } = await supabase
+      // 2. Obtener TODOS los PDVs Activos
+      const { data: pdvs } = await supabase
         .from('pdv')
         .select('id, codigo_interno, nombre, ciudad')
         .eq('activo', true)
         .order('codigo_interno');
 
-      if (pdvError) throw pdvError;
-
-      // 3. Obtener Responsables Vigentes (Consulta separada para evitar problemas de join)
-      const { data: assignments } = await supabase
+      // 3. Obtener Asignaciones VIGENTES (Responsables actuales)
+      const { data: activeAssignments } = await supabase
         .from('pdv_assignments')
-        .select('pdv_id, profiles(nombre, apellido)')
+        .select(`
+          pdv_id,
+          profiles (nombre, apellido)
+        `)
         .eq('vigente', true);
-      
-      // Crear mapa de responsables: PDV_ID -> Nombre Responsable
-      const responsibleMap = new Map();
-      assignments?.forEach((a: any) => {
+
+      // Crear mapa: ID_PDV -> Nombre Responsable
+      const responsibleMap = new Map<string, string>();
+      activeAssignments?.forEach((a: any) => {
         if (a.profiles) {
           responsibleMap.set(a.pdv_id, `${a.profiles.nombre} ${a.profiles.apellido}`);
         }
       });
 
-      // 4. Construir CSV con alineación garantizada
-      // Columnas: A, B | C, D, E | F, G | H, I, J | K, L, M
+      // 4. Construir CSV con Separadores Claros
       const headers = [
         "NOMBRE_RUTINA", 
         "CODIGO_PDV", 
-        "", "", "", // Gap 1
+        "", "", "", // 3 columnas separadoras
         "--- REF: RUTINAS (COPIAR NOMBRE) ---", 
         "FRECUENCIA",
-        "", "", "", // Gap 2
+        "", "", "", // 3 columnas separadoras
         "--- REF: PDVS (COPIAR CODIGO) ---",
         "NOMBRE PDV",
         "RESPONSABLE ACTUAL"
@@ -127,61 +127,48 @@ export default function AssignmentList() {
 
       let csvContent = headers.join(";") + "\n";
 
-      // Determinar máximo de filas necesarias
-      const maxRows = Math.max(routines?.length || 0, pdvs?.length || 0, 2); // Mínimo 2 filas para ejemplos
+      // Fila de Ejemplo
+      const exRoutine = routines?.[0]?.nombre || "Apertura de Caja";
+      const exPdv = pdvs?.[0]?.codigo_interno || "PDV-001";
+      
+      const maxRows = Math.max(routines?.length || 0, pdvs?.length || 0);
 
-      // Helper para limpiar strings
-      const clean = (str: string) => str ? str.replace(/;/g, ',').trim() : '';
-
+      // Iterar para llenar las filas
       for (let i = 0; i < maxRows; i++) {
-        const parts = [];
+        let row = "";
 
         // BLOQUE 1: DATOS DE CARGA (Cols A, B)
-        // Fila 0: Ejemplo válido real
         if (i === 0) {
-          const exRoutine = routines?.[0]?.nombre || "Nombre Rutina";
-          const exPdv = pdvs?.[0]?.codigo_interno || "CODIGO";
-          parts.push(exRoutine);
-          parts.push(exPdv);
+          row += `${exRoutine};${exPdv}`; 
         } else {
-          parts.push(""); // A
-          parts.push(""); // B
+          row += `;`; // A y B vacíos
         }
 
-        // GAP 1 (Cols C, D, E)
-        parts.push("");
-        parts.push("");
-        parts.push("");
+        // SEPARADOR 1 (Cols C, D, E)
+        row += ";;;";
 
         // BLOQUE 2: REFERENCIA RUTINAS (Cols F, G)
         if (routines && i < routines.length) {
-          parts.push(clean(routines[i].nombre));
-          parts.push(clean(routines[i].frecuencia));
+          row += `${routines[i].nombre};${routines[i].frecuencia}`;
         } else {
-          parts.push("");
-          parts.push("");
+          row += `;`; 
         }
 
-        // GAP 2 (Cols H, I, J)
-        parts.push("");
-        parts.push("");
-        parts.push("");
+        // SEPARADOR 2 (Cols H, I, J)
+        row += ";;;";
 
         // BLOQUE 3: REFERENCIA PDVS (Cols K, L, M)
         if (pdvs && i < pdvs.length) {
           const p = pdvs[i];
+          // Buscar responsable en el mapa que construimos con assignments vigentes
           const responsable = responsibleMap.get(p.id) || "Sin asignar";
-          
-          parts.push(clean(p.codigo_interno));
-          parts.push(`${clean(p.nombre)} (${clean(p.ciudad)})`);
-          parts.push(clean(responsable));
+
+          row += `${p.codigo_interno};${p.nombre} (${p.ciudad});${responsable}`;
         } else {
-          parts.push("");
-          parts.push("");
-          parts.push("");
+          row += `;;`; 
         }
 
-        csvContent += parts.join(";") + "\n";
+        csvContent += row + "\n";
       }
 
       const bom = "\uFEFF";
@@ -194,11 +181,11 @@ export default function AssignmentList() {
       link.click();
       document.body.removeChild(link);
 
-      toast({ title: "Descarga completa", description: "Usa las columnas K, L, M como referencia." });
+      toast({ title: "Descarga completa", description: "Usa las columnas de referencia para llenar los datos exactos." });
 
     } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: "Error generando la plantilla: " + error.message });
+      toast({ variant: "destructive", title: "Error", description: "Error generando la plantilla." });
     } finally {
       setIsDownloading(false);
     }
@@ -242,10 +229,12 @@ export default function AssignmentList() {
     if (!profile?.tenant_id) throw new Error("Sin tenant.");
 
     // 1. Cargar Mapas de IDs para validación rápida
+    // Mapa Rutinas: Nombre -> ID
     const { data: dbRoutines } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true);
     const routineMap = new Map();
     dbRoutines?.forEach(r => routineMap.set(r.nombre.toLowerCase().trim(), r.id));
 
+    // Mapa PDVs: Código -> ID
     const { data: dbPdvs } = await supabase.from('pdv').select('id, codigo_interno').eq('activo', true);
     const pdvMap = new Map();
     dbPdvs?.forEach(p => pdvMap.set(p.codigo_interno.toLowerCase().trim(), p.id));
@@ -260,7 +249,7 @@ export default function AssignmentList() {
       const routineName = cols[0];
       const pdvCode = cols[1];
 
-      // Ignorar filas vacías o de solo referencia
+      // Ignorar filas de solo referencia (donde no hay datos a la izquierda)
       if (!routineName || !pdvCode) continue;
 
       const routineId = routineMap.get(routineName.toLowerCase());
