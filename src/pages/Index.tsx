@@ -1,17 +1,15 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Activity, CheckCircle2, AlertTriangle, Clock, TrendingUp, BarChart3, Filter, X, Calendar as CalendarIcon, Search } from "lucide-react";
-import { format, subDays, parseISO, startOfDay, endOfDay } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { MultiSelect } from "@/components/ui/multi-select";
 
 // Componente Tarjeta KPI
 const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }: any) => (
@@ -38,26 +36,24 @@ const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }
 );
 
 const Index = () => {
-  const navigate = useNavigate();
-  
   // --- ESTADOS DE FILTROS ---
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
   
-  const [filterPdv, setFilterPdv] = useState("all");
-  const [filterRoutine, setFilterRoutine] = useState("all");
-  const [filterUser, setFilterUser] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
-  const [filterStatus, setFilterStatus] = useState("all");
+  // Ahora son arrays para soportar selección múltiple
+  const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
+  const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [selectedPriorities, setSelectedPriorities] = useState<string[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
 
   // --- ESTADOS DE DATOS ---
   const [loading, setLoading] = useState(true);
-  const [loadingFilters, setLoadingFilters] = useState(true);
   
-  // Listas para dropdowns
-  const [pdvs, setPdvs] = useState<any[]>([]);
-  const [routines, setRoutines] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  // Opciones para los multiselects {label, value}
+  const [pdvOptions, setPdvOptions] = useState<{label: string, value: string}[]>([]);
+  const [routineOptions, setRoutineOptions] = useState<{label: string, value: string}[]>([]);
+  const [userOptions, setUserOptions] = useState<{label: string, value: string}[]>([]);
 
   // Datos procesados
   const [stats, setStats] = useState({
@@ -70,17 +66,30 @@ const Index = () => {
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
 
-  // 1. CARGAR OPCIONES DE FILTROS (Solo una vez)
+  const priorityOptions = [
+    { label: "Baja", value: "baja" },
+    { label: "Media", value: "media" },
+    { label: "Alta", value: "alta" },
+    { label: "Crítica", value: "critica" },
+  ];
+
+  const statusOptions = [
+    { label: "Pendiente/Proceso", value: "pendiente" },
+    { label: "Completada a Tiempo", value: "completada_a_tiempo" },
+    { label: "Completada Vencida", value: "completada_vencida" },
+    { label: "Incumplida", value: "incumplida" },
+  ];
+
+  // 1. CARGAR OPCIONES (Solo una vez)
   useEffect(() => {
     const loadFilterOptions = async () => {
       const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
       const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
       const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
       
-      setPdvs(pdvData || []);
-      setRoutines(routData || []);
-      setUsers(userData || []);
-      setLoadingFilters(false);
+      setPdvOptions(pdvData?.map(p => ({ label: p.nombre, value: p.id })) || []);
+      setRoutineOptions(routData?.map(r => ({ label: r.nombre, value: r.id })) || []);
+      setUserOptions(userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []);
     };
     loadFilterOptions();
   }, []);
@@ -105,16 +114,25 @@ const Index = () => {
       .gte('fecha_programada', dateFrom)
       .lte('fecha_programada', dateTo);
 
-    // Aplicar Filtros Dinámicos
-    if (filterPdv !== 'all') query = query.eq('pdv_id', filterPdv);
-    if (filterRoutine !== 'all') query = query.eq('rutina_id', filterRoutine);
-    if (filterUser !== 'all') query = query.eq('completado_por', filterUser); // Nota: Solo filtra tareas YA completadas por este usuario
-    if (filterPriority !== 'all') query = query.eq('prioridad_snapshot', filterPriority);
+    // Aplicar Filtros Dinámicos MULTIPLES (.in)
+    if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+    if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
+    if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
+    if (selectedPriorities.length > 0) query = query.in('prioridad_snapshot', selectedPriorities);
     
-    // Filtro de Estado Manual (además del query)
-    if (filterStatus !== 'all') {
-      if (filterStatus === 'pendiente') query = query.in('estado', ['pendiente', 'en_proceso']);
-      else query = query.eq('estado', filterStatus);
+    // Filtro de Estado Especial
+    if (selectedStatus.length > 0) {
+      const statusesToFilter = [];
+      // Si seleccionaron "pendiente", incluimos tambien "en_proceso"
+      if (selectedStatus.includes("pendiente")) {
+        statusesToFilter.push("pendiente", "en_proceso");
+      }
+      // Agregamos el resto tal cual
+      selectedStatus.forEach(s => {
+        if (s !== "pendiente") statusesToFilter.push(s);
+      });
+      
+      query = query.in('estado', statusesToFilter);
     }
 
     const { data: tasks, error } = await query;
@@ -127,7 +145,7 @@ const Index = () => {
 
     // --- PROCESAMIENTO DE KPIs ---
     const total = tasks.length;
-    const completed = tasks.filter(t => t.estado === 'completada' || t.estado === 'completada_vencida').length;
+    const completed = tasks.filter(t => t.estado === 'completada' || t.estado === 'completada_a_tiempo' || t.estado === 'completada_vencida').length;
     const pending = tasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
     const compliance = total > 0 ? Math.round((completed / total) * 100) : 0;
     
@@ -144,12 +162,12 @@ const Index = () => {
       criticalPending: critical,
     });
 
-    // --- ACTIVIDAD RECIENTE (Top 10 del filtro actual) ---
+    // --- ACTIVIDAD RECIENTE (Top 10) ---
     const activity = [...tasks]
       .sort((a, b) => {
         const dateA = new Date(a.completado_at || a.created_at).getTime();
         const dateB = new Date(b.completado_at || b.created_at).getTime();
-        return dateB - dateA; // Más recientes primero
+        return dateB - dateA;
       })
       .slice(0, 10);
     setRecentActivity(activity);
@@ -179,29 +197,27 @@ const Index = () => {
     setLoading(false);
   };
 
-  // Trigger fetch cuando cambian los filtros
   useEffect(() => {
     fetchDashboardData();
-  }, [dateFrom, dateTo, filterPdv, filterRoutine, filterUser, filterPriority, filterStatus]);
+  }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, selectedPriorities, selectedStatus]);
 
   const clearFilters = () => {
-    setFilterPdv("all");
-    setFilterRoutine("all");
-    setFilterUser("all");
-    setFilterPriority("all");
-    setFilterStatus("all");
-    // Resetear fechas a HOY
+    setSelectedPdvs([]);
+    setSelectedRoutines([]);
+    setSelectedUsers([]);
+    setSelectedPriorities([]);
+    setSelectedStatus([]);
     const today = new Date().toISOString().split('T')[0];
     setDateFrom(today);
     setDateTo(today);
   };
 
   const hasActiveFilters = 
-    filterPdv !== "all" || 
-    filterRoutine !== "all" || 
-    filterUser !== "all" || 
-    filterPriority !== "all" ||
-    filterStatus !== "all";
+    selectedPdvs.length > 0 || 
+    selectedRoutines.length > 0 || 
+    selectedUsers.length > 0 || 
+    selectedPriorities.length > 0 ||
+    selectedStatus.length > 0;
 
   return (
     <div className="space-y-6 pb-20">
@@ -228,7 +244,7 @@ const Index = () => {
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            <Filter className="w-4 h-4" /> Filtros de Análisis
+            <Filter className="w-4 h-4" /> Filtros de Análisis (Selección Múltiple)
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
@@ -236,59 +252,62 @@ const Index = () => {
             {/* Fechas */}
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
-              <Input type="date" className="h-8 text-xs" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input type="date" className="h-8 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
-              <Input type="date" className="h-8 text-xs" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input type="date" className="h-8 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
 
-            {/* Selectores */}
+            {/* Selectores Múltiples */}
             <div className="space-y-1">
-              <Label className="text-xs">Punto de Venta</Label>
-              <Select value={filterPdv} onValueChange={setFilterPdv}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {pdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Rutina</Label>
-              <Select value={filterRoutine} onValueChange={setFilterRoutine}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  {routines.map(r => <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Puntos de Venta</Label>
+              <MultiSelect 
+                options={pdvOptions} 
+                selected={selectedPdvs} 
+                onChange={setSelectedPdvs} 
+                placeholder="Todos los PDV"
+              />
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Administrador/Usuario</Label>
-              <Select value={filterUser} onValueChange={setFilterUser}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {users.map(u => <SelectItem key={u.id} value={u.id}>{u.nombre} {u.apellido}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Rutinas</Label>
+              <MultiSelect 
+                options={routineOptions} 
+                selected={selectedRoutines} 
+                onChange={setSelectedRoutines} 
+                placeholder="Todas las Rutinas"
+              />
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Prioridad / Alerta</Label>
-              <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="baja">Baja</SelectItem>
-                  <SelectItem value="media">Media</SelectItem>
-                  <SelectItem value="alta">Alta</SelectItem>
-                  <SelectItem value="critica">🔴 Crítica</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Usuarios</Label>
+              <MultiSelect 
+                options={userOptions} 
+                selected={selectedUsers} 
+                onChange={setSelectedUsers} 
+                placeholder="Todos los Usuarios"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Prioridad / Estado</Label>
+              <div className="flex gap-1">
+                 <MultiSelect 
+                  options={priorityOptions} 
+                  selected={selectedPriorities} 
+                  onChange={setSelectedPriorities} 
+                  placeholder="Prioridad"
+                  className="w-1/2"
+                />
+                 <MultiSelect 
+                  options={statusOptions} 
+                  selected={selectedStatus} 
+                  onChange={setSelectedStatus} 
+                  placeholder="Estado"
+                  className="w-1/2"
+                />
+              </div>
             </div>
           </div>
         </CardContent>
@@ -399,7 +418,7 @@ const Index = () => {
                 recentActivity.map((task) => (
                   <div key={task.id} className="flex items-center group p-2 hover:bg-muted/50 rounded-md transition-colors">
                     <div className="mr-3">
-                      {task.estado === 'completada' ? (
+                      {task.estado.startsWith('completada') ? (
                         <CheckCircle2 className="w-5 h-5 text-green-500" />
                       ) : task.estado === 'incumplida' ? (
                         <X className="w-5 h-5 text-red-500" />
