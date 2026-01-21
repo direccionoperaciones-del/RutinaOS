@@ -17,18 +17,18 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 1. Obtener parámetros (fecha objetivo, por defecto hoy)
+    // 1. Obtener parámetros
     const { date } = await req.json().catch(() => ({ date: null }))
     const targetDate = date ? new Date(date) : new Date()
-    const dayOfWeek = targetDate.getDay() // 0 = Domingo, 1 = Lunes...
+    const dayOfWeek = targetDate.getDay() // 0 = Domingo
     const dayOfMonth = targetDate.getDate()
     
-    // Formato YYYY-MM-DD para la base de datos
+    // Formato YYYY-MM-DD
     const dateStr = targetDate.toISOString().split('T')[0]
 
-    console.log(`Generando tareas para: ${dateStr} (Dia semana: ${dayOfWeek})`)
+    console.log(`Generando tareas para: ${dateStr} (Dia mes: ${dayOfMonth})`)
 
-    // 2. Obtener todas las asignaciones activas junto con su configuración de rutina
+    // 2. Obtener asignaciones activas con configuración completa de rutina
     const { data: assignments, error: assignError } = await supabase
       .from('routine_assignments')
       .select(`
@@ -43,7 +43,10 @@ serve(async (req) => {
           prioridad,
           hora_inicio,
           hora_limite,
-          fechas_especificas
+          fechas_especificas,
+          vencimiento_dia_mes,
+          corte_1_limite,
+          corte_2_limite
         )
       `)
       .eq('estado', 'activa')
@@ -53,17 +56,16 @@ serve(async (req) => {
 
     const tasksToCreate = []
 
-    // 3. Filtrar cuáles aplican para hoy
+    // 3. Filtrar
     for (const assignment of assignments) {
       const rutina = assignment.routine_templates
       let shouldGenerate = false
+      let calculatedDate = dateStr; // Por defecto es hoy
 
       if (!rutina) continue
 
-      // Lógica de Frecuencias
       switch (rutina.frecuencia) {
         case 'diaria':
-          // Aplica si dias_ejecucion está vacío (todos los días) o si incluye hoy
           if (!rutina.dias_ejecucion || rutina.dias_ejecucion.length === 0) {
             shouldGenerate = true
           } else if (rutina.dias_ejecucion.includes(dayOfWeek)) {
@@ -72,18 +74,52 @@ serve(async (req) => {
           break
         
         case 'semanal':
-          // Solo si el día de la semana coincide
           if (rutina.dias_ejecucion && rutina.dias_ejecucion.includes(dayOfWeek)) {
             shouldGenerate = true
           }
           break
 
         case 'mensual':
-           // Simplificado: Si es el día 1 del mes (o lógica más compleja futura)
-           if (dayOfMonth === 1) shouldGenerate = true
+           // LOGICA MEJORADA:
+           // Generar si hoy es <= al día de vencimiento.
+           // Ej: Vence el 25. Si hoy es 1, 10 o 21, intentamos generar.
+           // La BD bloqueará duplicados gracias al constraint UNIQUE(assignment_id, fecha_programada).
+           // PERO, para evitar duplicados diarios (tarea dia 21, tarea dia 22...), 
+           // fijamos la "fecha_programada" al día 1 del mes para tareas mensuales.
+           // Así, si ejecutas el script el día 21, intentará crear la tarea con fecha 01. Si ya existe, no hace nada.
+           
+           const limitDay = rutina.vencimiento_dia_mes || 31;
+           if (dayOfMonth <= limitDay) {
+             shouldGenerate = true;
+             // Fijamos fecha al día 1 del mes actual para mantener unicidad mensual
+             const year = targetDate.getFullYear();
+             const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
+             calculatedDate = `${year}-${month}-01`;
+           }
+           break
+           
+        case 'quincenal':
+           // Corte 1 (Días 1-15)
+           if (dayOfMonth <= (rutina.corte_1_limite || 15)) {
+             shouldGenerate = true;
+             const year = targetDate.getFullYear();
+             const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
+             calculatedDate = `${year}-${month}-01`; // Fijar al inicio quincena 1
+           }
+           // Corte 2 (Días 16-Fin)
+           else if (dayOfMonth >= 16 && dayOfMonth <= 31) {
+             shouldGenerate = true;
+             const year = targetDate.getFullYear();
+             const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
+             calculatedDate = `${year}-${month}-16`; // Fijar al inicio quincena 2
+           }
            break
 
-        // TODO: Implementar lógica quincenal y fechas específicas
+        case 'fechas_especificas':
+           if (rutina.fechas_especificas && rutina.fechas_especificas.includes(dateStr)) {
+             shouldGenerate = true
+           }
+           break
       }
 
       if (shouldGenerate) {
@@ -92,7 +128,7 @@ serve(async (req) => {
           assignment_id: assignment.id,
           rutina_id: assignment.rutina_id,
           pdv_id: assignment.pdv_id,
-          fecha_programada: dateStr,
+          fecha_programada: calculatedDate, // Usar fecha calculada (ej: 1ro del mes)
           estado: 'pendiente',
           prioridad_snapshot: rutina.prioridad,
           hora_inicio_snapshot: rutina.hora_inicio,
@@ -101,12 +137,12 @@ serve(async (req) => {
       }
     }
 
-    // 4. Insertar masivamente (ignorar duplicados gracias a UNIQUE constraint)
+    // 4. Insertar masivamente
     if (tasksToCreate.length > 0) {
       const { error: insertError } = await supabase
         .from('task_instances')
         .upsert(tasksToCreate, { 
-          onConflict: 'assignment_id,fecha_programada',
+          onConflict: 'assignment_id,fecha_programada', // Clave compuesta vital
           ignoreDuplicates: true 
         })
       
@@ -116,7 +152,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Proceso finalizado. ${tasksToCreate.length} tareas procesadas para ${dateStr}.` 
+        message: `Proceso finalizado. ${tasksToCreate.length} intenciones de tarea procesadas.` 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
