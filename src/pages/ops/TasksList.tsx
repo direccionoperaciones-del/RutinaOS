@@ -10,7 +10,6 @@ import { es } from "date-fns/locale";
 export default function TasksList() {
   const { data: tasks, isLoading, error } = useMyTasks();
 
-  // Loading State
   if (isLoading) {
     return (
       <div className="flex h-[50vh] items-center justify-center">
@@ -19,7 +18,6 @@ export default function TasksList() {
     );
   }
 
-  // Error State
   if (error) {
     return (
       <Alert variant="destructive" className="m-4">
@@ -32,7 +30,6 @@ export default function TasksList() {
     );
   }
 
-  // Empty State (Si no hay error pero tampoco datos)
   if (!tasks || tasks.length === 0) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -41,9 +38,9 @@ export default function TasksList() {
     );
   }
 
-  // Filtrado de Tareas
-  const pendingTasks = tasks.filter((t) => t.status === "pendiente" || t.status === "en_proceso");
-  const completedTasks = tasks.filter((t) => t.status === "completada" || t.status === "completada_a_tiempo" || t.status === "completada_vencida");
+  // Filter based on 'estado' column
+  const pendingTasks = tasks.filter((t) => t.estado === "pendiente" || t.estado === "en_proceso");
+  const completedTasks = tasks.filter((t) => t.estado?.startsWith("completada") || t.estado === "incumplida");
 
   return (
     <div className="space-y-6 p-4">
@@ -56,17 +53,17 @@ export default function TasksList() {
 
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="all">Todas ({tasks.length})</TabsTrigger>
           <TabsTrigger value="pending">Pendientes ({pendingTasks.length})</TabsTrigger>
+          <TabsTrigger value="all">Todas ({tasks.length})</TabsTrigger>
           <TabsTrigger value="completed">Realizadas ({completedTasks.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="all" className="space-y-4 mt-4">
-          <TaskGrid tasks={tasks} />
-        </TabsContent>
-        
         <TabsContent value="pending" className="space-y-4 mt-4">
           <TaskGrid tasks={pendingTasks} emptyMsg="¡Todo al día! No hay tareas pendientes." />
+        </TabsContent>
+
+        <TabsContent value="all" className="space-y-4 mt-4">
+          <TaskGrid tasks={tasks} />
         </TabsContent>
         
         <TabsContent value="completed" className="space-y-4 mt-4">
@@ -77,7 +74,6 @@ export default function TasksList() {
   );
 }
 
-// Subcomponente para renderizar la grilla
 function TaskGrid({ tasks, emptyMsg = "No hay tareas." }: { tasks: any[], emptyMsg?: string }) {
   if (tasks.length === 0) {
     return <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg">{emptyMsg}</div>;
@@ -86,25 +82,27 @@ function TaskGrid({ tasks, emptyMsg = "No hay tareas." }: { tasks: any[], emptyM
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {tasks.map((task) => (
-        <Card key={task.id} className="hover:shadow-md transition-shadow">
+        <Card key={task.id} className="hover:shadow-md transition-shadow cursor-pointer">
           <CardHeader className="pb-2">
             <div className="flex justify-between items-start">
-              <Badge variant={task.status.includes('completada') ? "secondary" : "default"}>
-                {task.status.replace(/_/g, ' ')}
+              <Badge variant={task.estado?.includes('completada') ? "secondary" : "default"} className="capitalize">
+                {task.estado?.replace(/_/g, ' ')}
               </Badge>
-              {task.completed_at && (
+              {task.completado_at && (
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
               )}
             </div>
             <CardTitle className="text-lg mt-2 line-clamp-2">
-              {task.routine?.nombre || "Tarea sin nombre"}
+              {task.rutina?.nombre || "Tarea sin nombre"}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4" />
-                <span>{format(new Date(task.scheduled_date), "PPP", { locale: es })}</span>
+                <span>
+                  {task.fecha_programada ? format(new Date(task.fecha_programada), "PPP", { locale: es }) : 'Sin fecha'}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4" />
