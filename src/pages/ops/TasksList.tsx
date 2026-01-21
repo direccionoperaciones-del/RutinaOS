@@ -178,109 +178,109 @@ export default function TasksList() {
 
     return (
       <Card className={`flex flex-col h-full hover:shadow-lg transition-shadow duration-200 ${styles.border}`}>
-        <CardHeader className="p-4 pb-2 space-y-2">
+        <CardHeader className="p-3 pb-1 space-y-1"> {/* Padding reducido para compacidad */}
           <div className="flex justify-between items-start">
-            <Badge className={`uppercase text-[10px] font-bold px-2 py-0.5 rounded-sm ${styles.badge}`}>
+            <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${styles.badge}`}>
               {task.prioridad_snapshot}
             </Badge>
-            <div className="flex items-center gap-1 text-[10px] text-muted-foreground uppercase font-medium bg-muted px-2 py-0.5 rounded-full">
+            <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-medium bg-muted px-1.5 py-0 rounded-full">
               {getFrequencyIcon(r.frecuencia)}
               {r.frecuencia}
             </div>
           </div>
           
           <div>
-            <h3 className="font-bold text-lg leading-tight line-clamp-2" title={r.nombre}>
+            <h3 className="font-bold text-base leading-tight line-clamp-2" title={r.nombre}>
               {r.nombre}
             </h3>
-            <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
               <MapPin className="w-3 h-3 shrink-0" />
               <span className="truncate">{task.pdv?.nombre}</span>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="p-4 pt-2 flex-1">
+        <CardContent className="p-3 pt-2 flex-1">
           {/* Info de Tiempos y Estado */}
-          <div className="flex justify-between items-center bg-muted/30 p-2 rounded-md mb-3">
-            <div className="flex items-center gap-2 text-xs font-medium">
-              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+          <div className="flex justify-between items-center bg-muted/30 p-1.5 rounded-md mb-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium">
+              <Clock className="w-3 h-3 text-muted-foreground" />
               <span>Vence: {task.hora_limite_snapshot?.slice(0,5)}</span>
             </div>
             {isCompleted ? (
-              <Badge variant="outline" className={getStatusColor(task.estado)}>
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getStatusColor(task.estado)}`}>
                 {task.estado === 'completada' ? 'A Tiempo' : 'Vencida'}
               </Badge>
             ) : task.estado === 'incumplida' ? (
-              <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200">Incumplida</Badge>
+              <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Incumplida</Badge>
             ) : isLate ? (
-              <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-200">Retrasada</Badge>
+              <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-200 text-[10px] px-1.5 py-0">Retrasada</Badge>
             ) : (
-              <Badge variant="outline" className="bg-white">Pendiente</Badge>
+              <Badge variant="outline" className="bg-white text-[10px] px-1.5 py-0">Pendiente</Badge>
             )}
           </div>
 
           {/* Iconos de Requisitos */}
-          <div className="flex gap-3 text-muted-foreground justify-center py-2 border-t border-b border-dashed border-gray-100">
+          <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
             {r.gps_obligatorio && (
               <div className="flex flex-col items-center gap-0.5" title="Requiere GPS">
-                <MapPin className="w-4 h-4 text-blue-500" />
-                <span className="text-[9px]">GPS</span>
+                <MapPin className="w-3 h-3 text-blue-500" />
+                <span className="text-[8px]">GPS</span>
               </div>
             )}
             {r.fotos_obligatorias && (
               <div className="flex flex-col items-center gap-0.5" title={`Fotos: ${r.min_fotos}`}>
-                <Camera className="w-4 h-4 text-purple-500" />
-                <span className="text-[9px]">FOTO</span>
+                <Camera className="w-3 h-3 text-purple-500" />
+                <span className="text-[8px]">FOTO</span>
               </div>
             )}
             {r.comentario_obligatorio && (
               <div className="flex flex-col items-center gap-0.5" title="Comentario Obligatorio">
-                <MessageSquareText className="w-4 h-4 text-orange-500" />
-                <span className="text-[9px]">NOTA</span>
+                <MessageSquareText className="w-3 h-3 text-orange-500" />
+                <span className="text-[8px]">NOTA</span>
               </div>
             )}
             {r.requiere_inventario && (
               <div className="flex flex-col items-center gap-0.5" title="Inventario">
-                <Box className="w-4 h-4 text-indigo-500" />
-                <span className="text-[9px]">INV</span>
+                <Box className="w-3 h-3 text-indigo-500" />
+                <span className="text-[8px]">INV</span>
               </div>
             )}
             {r.archivo_obligatorio && (
               <div className="flex flex-col items-center gap-0.5" title="Archivo">
-                <FileText className="w-4 h-4 text-cyan-500" />
-                <span className="text-[9px]">DOC</span>
+                <FileText className="w-3 h-3 text-cyan-500" />
+                <span className="text-[8px]">DOC</span>
               </div>
             )}
             {r.enviar_email && (
               <div className="flex flex-col items-center gap-0.5" title="Enviar Email">
-                <Mail className="w-4 h-4 text-pink-500" />
-                <span className="text-[9px]">MAIL</span>
+                <Mail className="w-3 h-3 text-pink-500" />
+                <span className="text-[8px]">MAIL</span>
               </div>
             )}
             {r.responder_email && (
               <div className="flex flex-col items-center gap-0.5" title="Responder Email">
-                <Mail className="w-4 h-4 text-teal-500" />
-                <span className="text-[9px]">RESP</span>
+                <Mail className="w-3 h-3 text-teal-500" />
+                <span className="text-[8px]">RESP</span>
               </div>
             )}
           </div>
         </CardContent>
 
-        <CardFooter className="p-3 bg-muted/10">
+        <CardFooter className="p-2 bg-muted/10">
           <Button 
-            className="w-full shadow-sm hover:shadow transition-all" 
+            className="w-full h-8 text-xs shadow-sm hover:shadow transition-all" 
             variant={isCompleted || task.estado === 'incumplida' ? "secondary" : "default"}
             size="sm"
             onClick={() => handleStartTask(task)}
           >
             {(isCompleted || task.estado === 'incumplida') ? (
               <>
-                <Eye className="w-4 h-4 mr-2" /> Ver Detalle
+                <Eye className="w-3 h-3 mr-1.5" /> Ver Detalle
               </>
             ) : (
               <>
-                Ver <ArrowRight className="w-4 h-4 ml-2" />
+                Ver <ArrowRight className="w-3 h-3 ml-1.5" />
               </>
             )}
           </Button>
@@ -303,7 +303,8 @@ export default function TasksList() {
       );
     }
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      // Grid actualizado para ser más denso horizontalmente
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {items.map((task) => (
           <TaskCard key={task.id} task={task} />
         ))}
