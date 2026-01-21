@@ -10,6 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 // Componente Tarjeta KPI
 const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }: any) => (
@@ -36,6 +37,8 @@ const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }
 );
 
 const Index = () => {
+  const { profile, user, loading: loadingUser } = useCurrentUser();
+
   // --- ESTADOS DE FILTROS ---
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
@@ -80,22 +83,29 @@ const Index = () => {
     { label: "Incumplida", value: "incumplida" },
   ];
 
-  // 1. CARGAR OPCIONES (Solo una vez)
+  // 1. CARGAR OPCIONES
   useEffect(() => {
     const loadFilterOptions = async () => {
       const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
       const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
-      const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
       
       setPdvOptions(pdvData?.map(p => ({ label: p.nombre, value: p.id })) || []);
       setRoutineOptions(routData?.map(r => ({ label: r.nombre, value: r.id })) || []);
-      setUserOptions(userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []);
+
+      // Solo cargar usuarios si NO es administrador (el admin no filtra por otros)
+      if (profile?.role !== 'administrador') {
+        const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
+        setUserOptions(userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []);
+      }
     };
-    loadFilterOptions();
-  }, []);
+    
+    if (profile) loadFilterOptions();
+  }, [profile]);
 
   // 2. CARGAR DASHBOARD (Cada vez que cambian los filtros)
   const fetchDashboardData = async () => {
+    if (!profile || !user) return;
+    
     setLoading(true);
 
     let query = supabase
@@ -114,24 +124,30 @@ const Index = () => {
       .gte('fecha_programada', dateFrom)
       .lte('fecha_programada', dateTo);
 
-    // Aplicar Filtros Dinámicos MULTIPLES (.in)
+    // --- RESTRICCIÓN DE SEGURIDAD PARA ADMINISTRADOR ---
+    if (profile.role === 'administrador') {
+      // El administrador SOLO ve sus tareas (asignadas o completadas por él)
+      // Usamos responsable_id para lo pendiente y completado_por para lo histórico
+      query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+    } else {
+      // Si no es admin, permitimos el filtro de usuarios del UI
+      if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
+    }
+
+    // Aplicar Filtros Dinámicos Comunes
     if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
     if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
-    if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
     if (selectedPriorities.length > 0) query = query.in('prioridad_snapshot', selectedPriorities);
     
     // Filtro de Estado Especial
     if (selectedStatus.length > 0) {
       const statusesToFilter = [];
-      // Si seleccionaron "pendiente", incluimos tambien "en_proceso"
       if (selectedStatus.includes("pendiente")) {
         statusesToFilter.push("pendiente", "en_proceso");
       }
-      // Agregamos el resto tal cual
       selectedStatus.forEach(s => {
         if (s !== "pendiente") statusesToFilter.push(s);
       });
-      
       query = query.in('estado', statusesToFilter);
     }
 
@@ -145,7 +161,7 @@ const Index = () => {
 
     // --- PROCESAMIENTO DE KPIs ---
     const total = tasks.length;
-    const completed = tasks.filter(t => t.estado === 'completada' || t.estado === 'completada_a_tiempo' || t.estado === 'completada_vencida').length;
+    const completed = tasks.filter(t => t.estado.startsWith('completada')).length;
     const pending = tasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
     const compliance = total > 0 ? Math.round((completed / total) * 100) : 0;
     
@@ -199,7 +215,7 @@ const Index = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, selectedPriorities, selectedStatus]);
+  }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, selectedPriorities, selectedStatus, profile, user]);
 
   const clearFilters = () => {
     setSelectedPdvs([]);
@@ -225,7 +241,9 @@ const Index = () => {
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Dashboard Operativo</h2>
           <p className="text-muted-foreground">
-            Monitoreo en tiempo real y análisis de cumplimiento.
+            {profile?.role === 'administrador' 
+              ? "Tus métricas de desempeño personal." 
+              : "Monitoreo en tiempo real y análisis de cumplimiento global."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -244,7 +262,7 @@ const Index = () => {
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            <Filter className="w-4 h-4" /> Filtros de Análisis (Selección Múltiple)
+            <Filter className="w-4 h-4" /> Filtros de Análisis
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
@@ -280,15 +298,18 @@ const Index = () => {
               />
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Usuarios</Label>
-              <MultiSelect 
-                options={userOptions} 
-                selected={selectedUsers} 
-                onChange={setSelectedUsers} 
-                placeholder="Todos los Usuarios"
-              />
-            </div>
+            {/* El filtro de USUARIOS solo se muestra si NO es administrador */}
+            {profile?.role !== 'administrador' && (
+              <div className="space-y-1">
+                <Label className="text-xs">Usuarios</Label>
+                <MultiSelect 
+                  options={userOptions} 
+                  selected={selectedUsers} 
+                  onChange={setSelectedUsers} 
+                  placeholder="Todos los Usuarios"
+                />
+              </div>
+            )}
 
             <div className="space-y-1">
               <Label className="text-xs">Prioridad / Estado</Label>
@@ -356,7 +377,7 @@ const Index = () => {
               <TrendingUp className="w-5 h-5" />
               Tendencia de Ejecución
             </CardTitle>
-            <CardDescription>Comportamiento diario según filtros aplicados.</CardDescription>
+            <CardDescription>Comportamiento diario.</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <div className="h-[300px] w-full">
@@ -399,7 +420,7 @@ const Index = () => {
         <Card className="col-span-3 flex flex-col">
           <CardHeader>
             <CardTitle>Detalle de Actividad</CardTitle>
-            <CardDescription>Últimos registros filtrados</CardDescription>
+            <CardDescription>Últimos registros</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto max-h-[350px]">
             <div className="space-y-4">
