@@ -59,29 +59,43 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   // Reset y Carga inicial
   useEffect(() => {
     if (open && task) {
+      // Inicializar con datos de la tarea si ya existen (modo ver/editar)
       setFormData({
-        gps: null,
-        email_send: false,
+        gps: task.gps_latitud ? { lat: task.gps_latitud, lng: task.gps_longitud, valid: task.gps_en_rango } : null,
+        email_send: false, // TODO: Persistir estos flags si es necesario en BD
         email_respond: false,
         files: [],
         photos: [],
         inventory: [],
-        comments: ""
+        comments: task.comentario || ""
       });
-      fetchEvidence();
+      fetchTaskDetails();
     }
   }, [open, task]);
 
-  const fetchEvidence = async () => {
+  const fetchTaskDetails = async () => {
     if (!task) return;
-    const { data } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
-    if (data) {
-      setFormData(prev => ({
-        ...prev,
-        files: data.filter(f => f.tipo === 'archivo'),
-        photos: data.filter(f => f.tipo === 'foto')
-      }));
+    
+    // 1. Cargar Evidencias
+    const { data: filesData } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
+    
+    // 2. Cargar Inventario Guardado
+    let inventoryData: any[] = [];
+    if (routine?.requiere_inventario) {
+      const { data: invRows } = await supabase
+        .from('inventory_submission_rows')
+        .select('*')
+        .eq('task_id', task.id);
+      
+      if (invRows) inventoryData = invRows;
     }
+
+    setFormData(prev => ({
+      ...prev,
+      files: filesData?.filter(f => f.tipo === 'archivo') || [],
+      photos: filesData?.filter(f => f.tipo === 'foto') || [],
+      inventory: inventoryData
+    }));
   };
 
   // --- HANDLERS GENÉRICOS ---
@@ -113,7 +127,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       await Promise.all(uploadPromises);
 
       toast({ title: "Subida completada", description: `Se han guardado ${files.length} archivo(s).` });
-      fetchEvidence();
+      fetchTaskDetails(); // Recargar para ver los nuevos archivos
     } catch (error: any) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivos" });
@@ -162,8 +176,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No auth");
 
-      // A. Guardar Inventario si aplica
+      // A. Guardar Inventario (Upsert/Insert)
       if (formData.inventory.length > 0) {
+        // Primero borramos anteriores para evitar duplicados complejos o lógica de diff
+        await supabase.from('inventory_submission_rows').delete().eq('task_id', task.id);
+
         const inventoryRows = formData.inventory.map(row => ({
           task_id: task.id,
           producto_id: row.producto_id,
@@ -178,7 +195,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         if (invError) throw invError;
       }
 
-      // B. Calcular Estado (A tiempo vs Vencida)
+      // B. Calcular Estado
       const now = new Date();
       const limitDate = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
       const finalStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
@@ -201,8 +218,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       toast({ 
         title: finalStatus === 'completada_a_tiempo' ? "¡Tarea Completada!" : "Tarea Completada (Vencida)", 
-        description: finalStatus === 'completada_a_tiempo' ? "Registrada exitosamente a tiempo." : "Registrada fuera del horario límite.",
-        variant: finalStatus === 'completada_vencida' ? "default" : "default" // Puedes usar otro variant si quieres warning visual
+        description: "Información guardada correctamente." 
       });
       
       onSuccess();
@@ -224,6 +240,9 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             key={field.id}
             pdv={pdv} 
             required={field.required} 
+            // Si ya hay GPS guardado, pasamos null para que LocationStep intente validar de nuevo si quiere, 
+            // pero mejor sería pasarle el valor inicial si queremos mostrar "Ya validado".
+            // Por simplicidad del componente LocationStep, lo dejamos re-validar o mostrar estado.
             onLocationVerified={(lat, lng, valid) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid } }))} 
           />
         );
@@ -277,6 +296,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           <InventoryStep 
             key={field.id}
             categoriesIds={field.constraints?.categories || []}
+            savedData={formData.inventory} // Pasamos la data cargada
             onChange={(data) => setFormData(prev => ({ ...prev, inventory: data }))}
           />
         );
@@ -327,7 +347,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             className="bg-green-600 hover:bg-green-700"
           >
             {isLoading && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-            Finalizar Tarea
+            {task.estado === 'pendiente' ? 'Finalizar Tarea' : 'Actualizar Tarea'}
           </Button>
         </DialogFooter>
       </DialogContent>

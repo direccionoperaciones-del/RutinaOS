@@ -5,14 +5,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Package, AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface InventoryStepProps {
   categoriesIds: string[];
+  savedData?: any[]; // Prop para recibir datos guardados
   onChange: (data: any[]) => void;
 }
 
-export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
+export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryStepProps) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -44,18 +44,54 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
 
       if (data) {
         setProducts(data);
-        // Inicializar conteos vacíos
+        
+        // Inicializar conteos
         const initialCounts: any = {};
+        
+        // Mapa de datos guardados para acceso rápido
+        const savedMap = new Map();
+        if (savedData && savedData.length > 0) {
+          savedData.forEach(row => {
+            savedMap.set(row.producto_id, { fisico: row.fisico, esperado: row.esperado });
+          });
+        }
+
         data.forEach(p => {
-          initialCounts[p.id] = { fisico: "", esperado: "" };
+          const saved = savedMap.get(p.id);
+          if (saved) {
+             initialCounts[p.id] = { 
+                 fisico: saved.fisico !== null ? saved.fisico.toString() : "", 
+                 esperado: saved.esperado !== null ? saved.esperado.toString() : "0" 
+             };
+          } else {
+             initialCounts[p.id] = { fisico: "", esperado: "" };
+          }
         });
+        
         setCounts(initialCounts);
+        
+        // IMPORTANTE: Si cargamos datos, notificamos al padre de inmediato para que el estado
+        // del formulario principal esté sincronizado, si no el usuario tendría que editar algo 
+        // para que se guarde de nuevo.
+        if (savedData && savedData.length > 0) {
+           const submissionData = Object.entries(initialCounts).map(([pid, val]: any) => {
+              const fis = val.fisico === "" ? 0 : Number(val.fisico);
+              const esp = val.esperado === "" ? 0 : Number(val.esperado);
+              return {
+                producto_id: pid,
+                fisico: fis,
+                esperado: esp,
+                diferencia: fis - esp
+              };
+            });
+            onChange(submissionData);
+        }
       }
       setLoading(false);
     };
 
     fetchProducts();
-  }, [categoriesIds]);
+  }, [categoriesIds, savedData]); // Re-run if savedData comes in later
 
   // Agrupar productos por categoría
   const groupedProducts = useMemo(() => {
@@ -211,10 +247,9 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
         </Card>
       ))}
 
-      {/* Footer Totalizador Mejorado */}
+      {/* Footer Totalizador */}
       <div className="sticky bottom-0 bg-background border-t p-4 rounded-lg shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 flex flex-col gap-3">
         
-        {/* Detalle de diferencias (Scrollable si hay muchas) */}
         {productsWithDiff.length > 0 && (
            <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar border-b pb-2">
              <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Detalle de Diferencias</p>
