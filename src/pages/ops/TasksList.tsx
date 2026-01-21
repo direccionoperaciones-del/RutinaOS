@@ -110,12 +110,12 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
         </div>
 
         <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
-          {r.gps_obligatorio && <MapPin className="w-3 h-3 text-blue-500" title="GPS" />}
-          {r.fotos_obligatorias && <Camera className="w-3 h-3 text-purple-500" title="Fotos" />}
-          {r.requiere_inventario && <Box className="w-3 h-3 text-orange-500" title="Inventario" />}
-          {r.comentario_obligatorio && <MessageSquareText className="w-3 h-3 text-yellow-500" title="Notas" />}
-          {r.archivo_obligatorio && <FileText className="w-3 h-3 text-cyan-500" title="Archivo" />}
-          {(r.enviar_email || r.responder_email) && <Mail className="w-3 h-3 text-pink-500" title="Email" />}
+          {r.gps_obligatorio && <span title="GPS"><MapPin className="w-3 h-3 text-blue-500" /></span>}
+          {r.fotos_obligatorias && <span title="Fotos"><Camera className="w-3 h-3 text-purple-500" /></span>}
+          {r.requiere_inventario && <span title="Inventario"><Box className="w-3 h-3 text-orange-500" /></span>}
+          {r.comentario_obligatorio && <span title="Notas"><MessageSquareText className="w-3 h-3 text-yellow-500" /></span>}
+          {r.archivo_obligatorio && <span title="Archivo"><FileText className="w-3 h-3 text-cyan-500" /></span>}
+          {(r.enviar_email || r.responder_email) && <span title="Email"><Mail className="w-3 h-3 text-pink-500" /></span>}
         </div>
 
         {task.profiles && (
