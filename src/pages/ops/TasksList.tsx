@@ -5,12 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { 
-  Clock, MapPin, CheckCircle2, Filter, X, 
+  Clock, MapPin, CheckCircle2, X, 
   Calendar as CalendarIcon, Eye, Camera, Mail, 
   MessageSquareText, Box, FileText,
-  Repeat, CalendarDays, CalendarRange, ArrowRight
+  Repeat, CalendarDays, CalendarRange, ArrowRight,
+  User, Filter
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -24,13 +26,19 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
-  // Estados de Filtros
-  const [filterDate, setFilterDate] = useState<string>("");
-  const [filterPdv, setFilterPdv] = useState<string>("all");
-  const [filterRoutine, setFilterRoutine] = useState<string>("all");
+  // --- ESTADOS DE FILTROS ---
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  
+  // Arrays para selección múltiple
+  const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
+  const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
   const fetchTasks = async () => {
     setLoading(true);
+    // Traemos un rango amplio por defecto (ej. últimos 30 días) o todo si la BD es pequeña
+    // Para producción idealmente se filtra en backend, pero mantenemos lógica actual mejorada.
     const { data, error } = await supabase
       .from('task_instances')
       .select(`
@@ -58,6 +66,11 @@ export default function TasksList() {
           latitud,
           longitud,
           radio_gps
+        ),
+        profiles:completado_por (
+          id,
+          nombre,
+          apellido
         )
       `)
       .order('fecha_programada', { ascending: false })
@@ -81,24 +94,49 @@ export default function TasksList() {
     setIsExecutionOpen(true);
   };
 
-  // --- LÓGICA DE FILTROS ---
-  const uniquePdvs = useMemo(() => {
-    const pdvMap = new Map();
-    tasks.forEach(t => { if (t.pdv) pdvMap.set(t.pdv.id, t.pdv.nombre); });
-    return Array.from(pdvMap.entries()).map(([id, nombre]) => ({ id, nombre }));
+  // --- LÓGICA DE OPCIONES PARA FILTROS (Memoized) ---
+  const pdvOptions = useMemo(() => {
+    const map = new Map();
+    tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
-  const uniqueRoutines = useMemo(() => {
-    const routineMap = new Map();
-    tasks.forEach(t => { if (t.routine_templates) routineMap.set(t.routine_templates.id, t.routine_templates.nombre); });
-    return Array.from(routineMap.entries()).map(([id, nombre]) => ({ id, nombre }));
+  const routineOptions = useMemo(() => {
+    const map = new Map();
+    tasks.forEach(t => { if (t.routine_templates) map.set(t.routine_templates.id, t.routine_templates.nombre); });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
+  const userOptions = useMemo(() => {
+    const map = new Map();
+    tasks.forEach(t => { 
+      if (t.profiles) {
+        map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`);
+      }
+    });
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
+  }, [tasks]);
+
+  // --- FILTRADO DE DATOS ---
   const filteredTasks = tasks.filter(t => {
-    const matchesDate = filterDate ? t.fecha_programada === filterDate : true;
-    const matchesPdv = filterPdv !== "all" ? t.pdv?.id === filterPdv : true;
-    const matchesRoutine = filterRoutine !== "all" ? t.routine_templates?.id === filterRoutine : true;
-    return matchesDate && matchesPdv && matchesRoutine;
+    // Filtro Fecha (Rango)
+    if (dateFrom && t.fecha_programada < dateFrom) return false;
+    if (dateTo && t.fecha_programada > dateTo) return false;
+
+    // Filtro PDV (Multi)
+    if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
+
+    // Filtro Rutina (Multi)
+    if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
+
+    // Filtro Usuario (Multi)
+    if (selectedUsers.length > 0) {
+      // Si filtramos por usuario, tareas sin usuario (pendientes sin asignar explícitamente en BD) se ocultan
+      // Ojo: completado_por es null si está pendiente.
+      if (!t.completado_por || !selectedUsers.includes(t.completado_por)) return false;
+    }
+
+    return true;
   });
 
   // Categorización de Tareas
@@ -112,10 +150,7 @@ export default function TasksList() {
   );
   
   const historyTasks = filteredTasks.filter(t => 
-    t.estado === 'completada' || 
-    t.estado === 'completada_a_tiempo' || 
-    t.estado === 'completada_vencida' || 
-    t.estado === 'incumplida'
+    t.estado.startsWith('completada') || t.estado === 'incumplida'
   );
 
   const totalFiltered = filteredTasks.length;
@@ -123,33 +158,22 @@ export default function TasksList() {
   const progressPercentage = totalFiltered > 0 ? Math.round((totalCompleted / totalFiltered) * 100) : 0;
 
   const clearFilters = () => {
-    setFilterDate("");
-    setFilterPdv("all");
-    setFilterRoutine("all");
+    setDateFrom("");
+    setDateTo("");
+    setSelectedPdvs([]);
+    setSelectedRoutines([]);
+    setSelectedUsers([]);
   };
 
-  const hasActiveFilters = filterDate || filterPdv !== "all" || filterRoutine !== "all";
+  const hasActiveFilters = dateFrom || dateTo || selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
 
   // --- HELPERS VISUALES ---
-
   const getPriorityStyles = (priority: string) => {
     switch (priority) {
-      case 'critica': return { 
-        badge: 'bg-red-600 text-white border-red-700 hover:bg-red-700', 
-        border: 'border-l-4 border-l-red-600' 
-      };
-      case 'alta': return { 
-        badge: 'bg-orange-500 text-white border-orange-600 hover:bg-orange-600', 
-        border: 'border-l-4 border-l-orange-500' 
-      };
-      case 'media': return { 
-        badge: 'bg-yellow-500 text-white border-yellow-600 hover:bg-yellow-600', 
-        border: 'border-l-4 border-l-yellow-500' 
-      };
-      default: return { 
-        badge: 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700', 
-        border: 'border-l-4 border-l-emerald-600' 
-      };
+      case 'critica': return { badge: 'bg-red-600 text-white border-red-700', border: 'border-l-4 border-l-red-600' };
+      case 'alta': return { badge: 'bg-orange-500 text-white border-orange-600', border: 'border-l-4 border-l-orange-500' };
+      case 'media': return { badge: 'bg-yellow-500 text-white border-yellow-600', border: 'border-l-4 border-l-yellow-500' };
+      default: return { badge: 'bg-emerald-600 text-white border-emerald-700', border: 'border-l-4 border-l-emerald-600' };
     }
   };
 
@@ -163,7 +187,6 @@ export default function TasksList() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completada': // Legacy fallback
       case 'completada_a_tiempo': return "bg-green-100 text-green-700 border-green-200";
       case 'completada_vencida': return "bg-yellow-100 text-yellow-700 border-yellow-200";
       case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
@@ -173,7 +196,6 @@ export default function TasksList() {
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'completada': return "Completada";
       case 'completada_a_tiempo': return "A Tiempo";
       case 'completada_vencida': return "Vencida";
       case 'incumplida': return "Incumplida";
@@ -181,7 +203,6 @@ export default function TasksList() {
     }
   };
 
-  // Componente de Tarjeta de Tarea
   const TaskCard = ({ task }: { task: any }) => {
     const r = task.routine_templates || {};
     const styles = getPriorityStyles(task.prioridad_snapshot);
@@ -213,11 +234,10 @@ export default function TasksList() {
         </CardHeader>
 
         <CardContent className="p-3 pt-2 flex-1">
-          {/* Info de Tiempos y Estado */}
           <div className="flex justify-between items-center bg-muted/30 p-1.5 rounded-md mb-2">
             <div className="flex items-center gap-1.5 text-xs font-medium">
               <Clock className="w-3 h-3 text-muted-foreground" />
-              <span>Vence: {task.hora_limite_snapshot?.slice(0,5)}</span>
+              <span>{task.fecha_programada} | {task.hora_limite_snapshot?.slice(0,5)}</span>
             </div>
             {isCompleted ? (
               <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getStatusColor(task.estado)}`}>
@@ -232,51 +252,21 @@ export default function TasksList() {
             )}
           </div>
 
-          {/* Iconos de Requisitos */}
           <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
-            {r.gps_obligatorio && (
-              <div className="flex flex-col items-center gap-0.5" title="Requiere GPS">
-                <MapPin className="w-3 h-3 text-blue-500" />
-                <span className="text-[8px]">GPS</span>
-              </div>
-            )}
-            {r.fotos_obligatorias && (
-              <div className="flex flex-col items-center gap-0.5" title={`Fotos: ${r.min_fotos}`}>
-                <Camera className="w-3 h-3 text-purple-500" />
-                <span className="text-[8px]">FOTO</span>
-              </div>
-            )}
-            {r.comentario_obligatorio && (
-              <div className="flex flex-col items-center gap-0.5" title="Comentario Obligatorio">
-                <MessageSquareText className="w-3 h-3 text-orange-500" />
-                <span className="text-[8px]">NOTA</span>
-              </div>
-            )}
-            {r.requiere_inventario && (
-              <div className="flex flex-col items-center gap-0.5" title="Inventario">
-                <Box className="w-3 h-3 text-indigo-500" />
-                <span className="text-[8px]">INV</span>
-              </div>
-            )}
-            {r.archivo_obligatorio && (
-              <div className="flex flex-col items-center gap-0.5" title="Archivo">
-                <FileText className="w-3 h-3 text-cyan-500" />
-                <span className="text-[8px]">DOC</span>
-              </div>
-            )}
-            {r.enviar_email && (
-              <div className="flex flex-col items-center gap-0.5" title="Enviar Email">
-                <Mail className="w-3 h-3 text-pink-500" />
-                <span className="text-[8px]">MAIL</span>
-              </div>
-            )}
-            {r.responder_email && (
-              <div className="flex flex-col items-center gap-0.5" title="Responder Email">
-                <Mail className="w-3 h-3 text-teal-500" />
-                <span className="text-[8px]">RESP</span>
-              </div>
-            )}
+            {r.gps_obligatorio && <MapPin className="w-3 h-3 text-blue-500" />}
+            {r.fotos_obligatorias && <Camera className="w-3 h-3 text-purple-500" />}
+            {r.comentario_obligatorio && <MessageSquareText className="w-3 h-3 text-orange-500" />}
+            {r.requiere_inventario && <Box className="w-3 h-3 text-indigo-500" />}
+            {r.archivo_obligatorio && <FileText className="w-3 h-3 text-cyan-500" />}
+            {(r.enviar_email || r.responder_email) && <Mail className="w-3 h-3 text-pink-500" />}
           </div>
+
+          {task.profiles && (
+            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1 bg-muted/20 p-1 rounded">
+              <User className="w-3 h-3" />
+              <span className="truncate">{task.profiles.nombre} {task.profiles.apellido}</span>
+            </div>
+          )}
         </CardContent>
 
         <CardFooter className="p-2 bg-muted/10">
@@ -302,9 +292,7 @@ export default function TasksList() {
   };
 
   const TaskGrid = ({ items, emptyMessage }: { items: any[], emptyMessage: string }) => {
-    if (loading) {
-      return <div className="text-center py-10">Cargando tareas...</div>;
-    }
+    if (loading) return <div className="text-center py-10">Cargando tareas...</div>;
     if (items.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
@@ -334,54 +322,99 @@ export default function TasksList() {
         </div>
       </div>
 
-      {/* FILTROS Y PROGRESO */}
-      <div className="bg-card border rounded-lg p-4 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 min-w-[150px]">
-            <div className="relative">
-              <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input type="date" className="pl-8" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+      {/* --- PANEL DE FILTROS AVANZADOS --- */}
+      <Card className="bg-muted/20 border-primary/10">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-primary">
+            <Filter className="w-4 h-4" /> Filtros de Búsqueda
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            
+            {/* Rango de Fechas */}
+            <div className="space-y-1">
+              <Label className="text-xs">Desde</Label>
+              <div className="relative">
+                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
+                <Input 
+                  type="date" 
+                  className="h-8 pl-7 text-xs bg-background" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)} 
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Hasta</Label>
+              <div className="relative">
+                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
+                <Input 
+                  type="date" 
+                  className="h-8 pl-7 text-xs bg-background" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)} 
+                />
+              </div>
+            </div>
+
+            {/* Selectores Múltiples */}
+            <div className="space-y-1">
+              <Label className="text-xs">Puntos de Venta</Label>
+              <MultiSelect 
+                options={pdvOptions} 
+                selected={selectedPdvs} 
+                onChange={setSelectedPdvs} 
+                placeholder="Todos los PDV"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Rutinas</Label>
+              <MultiSelect 
+                options={routineOptions} 
+                selected={selectedRoutines} 
+                onChange={setSelectedRoutines} 
+                placeholder="Todas las Rutinas"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Usuarios</Label>
+              <MultiSelect 
+                options={userOptions} 
+                selected={selectedUsers} 
+                onChange={setSelectedUsers} 
+                placeholder="Todos los Usuarios"
+              />
             </div>
           </div>
-          <div className="flex-1 min-w-[200px]">
-            <Select value={filterPdv} onValueChange={setFilterPdv}>
-              <SelectTrigger>
-                <MapPin className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Todos los PDV" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los PDV</SelectItem>
-                {uniquePdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <Select value={filterRoutine} onValueChange={setFilterRoutine}>
-              <SelectTrigger>
-                <CheckCircle2 className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Todas las Rutinas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las Rutinas</SelectItem>
-                {uniqueRoutines.map(r => <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="icon" onClick={clearFilters} title="Limpiar filtros">
-              <X className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
 
+          {hasActiveFilters && (
+            <div className="mt-3 flex justify-end">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={clearFilters} 
+                className="text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+              >
+                <X className="w-3 h-3 mr-1" /> Limpiar Filtros
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* --- BARRA DE PROGRESO --- */}
+      <div className="bg-card border rounded-lg p-3 shadow-sm">
         <div className="space-y-1">
-          <div className="flex justify-between text-sm font-medium">
-            <span>Progreso diario</span>
+          <div className="flex justify-between text-xs font-medium">
+            <span>Progreso de tareas (según filtros)</span>
             <span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>
               {progressPercentage}%
             </span>
           </div>
-          <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+          <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
             <div 
               className={`h-full transition-all duration-500 ease-in-out ${progressPercentage < 50 ? 'bg-orange-500' : 'bg-green-500'}`}
               style={{ width: `${progressPercentage}%` }}
@@ -390,6 +423,7 @@ export default function TasksList() {
         </div>
       </div>
 
+      {/* --- TABS --- */}
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-4 mb-6">
           <TabsTrigger value="all">Todas ({allTasks.length})</TabsTrigger>
