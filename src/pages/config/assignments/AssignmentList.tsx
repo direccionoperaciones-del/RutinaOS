@@ -81,57 +81,55 @@ export default function AssignmentList() {
     try {
       toast({ title: "Generando plantilla...", description: "Consultando datos maestros..." });
 
-      // 1. Obtener Rutinas Activas
+      // PASO 1: Obtener Rutinas Activas
       const { data: routines } = await supabase
         .from('routine_templates')
         .select('nombre, frecuencia')
         .eq('activo', true)
         .order('nombre');
 
-      // 2. Obtener PDVs con su responsable ACTIVO (JOIN directo)
-      // Esta consulta trae el PDV y anida SOLO las asignaciones que tengan 'vigente' (aunque el filtro 'eq' en join profundo es complejo en API directa,
-      // traemos el array y filtramos en memoria que es más seguro para este caso)
-      const { data: pdvsData, error: pdvError } = await supabase
+      // PASO 2: Obtener PDVs Activos
+      const { data: pdvs, error: pdvError } = await supabase
         .from('pdv')
-        .select(`
-          id, 
-          codigo_interno, 
-          nombre, 
-          ciudad,
-          pdv_assignments (
-            vigente,
-            profiles (nombre, apellido)
-          )
-        `)
+        .select('id, codigo_interno, nombre, ciudad')
         .eq('activo', true)
         .order('codigo_interno');
 
       if (pdvError) throw pdvError;
 
-      // 3. Procesar PDVs para encontrar el responsable vigente exacto
-      const processedPdvs = pdvsData.map((p: any) => {
-        // Buscamos dentro del array de asignaciones aquella que esté marcada como vigente
-        const activeAssignment = p.pdv_assignments?.find((a: any) => a.vigente === true);
-        
-        let responsableName = "Sin asignar";
-        
-        if (activeAssignment?.profiles) {
-          responsableName = `${activeAssignment.profiles.nombre} ${activeAssignment.profiles.apellido}`;
-        } else if (activeAssignment) {
-          // Caso raro: hay asignación vigente pero no cargó perfil (usuario borrado?)
-          responsableName = "Usuario desconocido";
-        }
+      // PASO 3: Obtener Asignaciones VIGENTES (Solo IDs para evitar error de FK)
+      const { data: activeAssignments } = await supabase
+        .from('pdv_assignments')
+        .select('pdv_id, user_id')
+        .eq('vigente', true);
 
-        return {
-          codigo: p.codigo_interno,
-          nombre: p.nombre,
-          ciudad: p.ciudad,
-          responsable: responsableName
-        };
+      // PASO 4: Obtener Nombres de Usuarios (Basado en los IDs de assignments)
+      // Extraemos IDs únicos para consultar perfiles
+      const userIds = activeAssignments?.map(a => a.user_id).filter(Boolean) || [];
+      const uniqueUserIds = [...new Set(userIds)];
+      
+      let profilesMap = new Map<string, string>();
+      
+      if (uniqueUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, nombre, apellido')
+          .in('id', uniqueUserIds);
+          
+        profiles?.forEach(p => {
+          profilesMap.set(p.id, `${p.nombre} ${p.apellido}`);
+        });
+      }
+
+      // PASO 5: Mapear PDV -> Nombre Responsable
+      const responsibleMap = new Map<string, string>();
+      activeAssignments?.forEach((a: any) => {
+        if (a.user_id && profilesMap.has(a.user_id)) {
+          responsibleMap.set(a.pdv_id, profilesMap.get(a.user_id) || "Desconocido");
+        }
       });
 
-      // 4. Construir CSV
-      // Columnas: A, B | C, D, E | F, G | H, I, J | K, L, M
+      // 6. Construir CSV
       const headers = [
         "NOMBRE_RUTINA", 
         "CODIGO_PDV", 
@@ -147,7 +145,7 @@ export default function AssignmentList() {
       let csvContent = headers.join(";") + "\n";
 
       // Determinar máximo de filas necesarias
-      const maxRows = Math.max(routines?.length || 0, processedPdvs.length, 2); 
+      const maxRows = Math.max(routines?.length || 0, pdvs?.length || 0, 2); 
 
       const clean = (str: string) => str ? str.replace(/;/g, ',').trim() : '';
 
@@ -157,7 +155,7 @@ export default function AssignmentList() {
         // BLOQUE 1: DATOS DE CARGA (Cols A, B) - Ejemplo en fila 0
         if (i === 0) {
           const exRoutine = routines?.[0]?.nombre || "Nombre Rutina";
-          const exPdv = processedPdvs?.[0]?.codigo || "CODIGO";
+          const exPdv = pdvs?.[0]?.codigo_interno || "CODIGO";
           parts.push(exRoutine);
           parts.push(exPdv);
         } else {
@@ -180,11 +178,13 @@ export default function AssignmentList() {
         parts.push(""); parts.push(""); parts.push("");
 
         // BLOQUE 3: REFERENCIA PDVS (Cols K, L, M)
-        if (i < processedPdvs.length) {
-          const p = processedPdvs[i];
-          parts.push(clean(p.codigo));
+        if (pdvs && i < pdvs.length) {
+          const p = pdvs[i];
+          const responsable = responsibleMap.get(p.id) || "Sin asignar";
+          
+          parts.push(clean(p.codigo_interno));
           parts.push(`${clean(p.nombre)} (${clean(p.ciudad)})`);
-          parts.push(clean(p.responsable));
+          parts.push(clean(responsable));
         } else {
           parts.push(""); parts.push(""); parts.push("");
         }
