@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -8,59 +8,49 @@ export function useNotifications() {
   const { toast } = useToast();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // 1. Solicitar permisos al navegador al montar
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission();
-    }
-  }, []);
+  // Función para obtener el conteo actual desde la base de datos
+  const fetchCount = useCallback(async () => {
+    if (!user) return;
+    const { count } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('leido', false);
+    
+    setUnreadCount(count || 0);
+  }, [user]);
 
-  // 2. Cargar conteo inicial y suscribirse
+  // 1. Cargar conteo inicial
+  useEffect(() => {
+    fetchCount();
+  }, [fetchCount]);
+
+  // 2. Suscripción Realtime
   useEffect(() => {
     if (!user) return;
 
-    // Cargar inicial
-    const fetchCount = async () => {
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('leido', false);
-      
-      setUnreadCount(count || 0);
-    };
-
-    fetchCount();
-
-    // Suscripción Realtime
     const channel = supabase
       .channel('public:notifications')
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*', // ✅ Escuchar INSERT, UPDATE y DELETE
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          // Nueva notificación recibida
-          const newNotif = payload.new as any;
-          setUnreadCount((prev) => prev + 1);
-
-          // Alerta visual dentro de la app (Toast)
-          toast({
-            title: "Nuevo Mensaje",
-            description: newNotif.title,
-          });
-
-          // Alerta nativa del navegador (si el usuario no está viendo la pestaña)
-          if (document.hidden && Notification.permission === "granted") {
-            new Notification("Nueva Notificación - Operaciones", {
-              body: newNotif.title,
-              icon: "/favicon.ico" // Ajustar si tienes icono
+          // Si es un mensaje nuevo, mostramos el toast
+          if (payload.eventType === 'INSERT') {
+            const newNotif = payload.new as any;
+            toast({
+              title: "Nuevo Mensaje",
+              description: newNotif.title,
             });
           }
+
+          // ✅ Siempre refrescamos el contador para asegurar consistencia
+          fetchCount();
         }
       )
       .subscribe();
@@ -68,7 +58,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, toast]);
+  }, [user, fetchCount, toast]);
 
-  return { unreadCount };
+  return { unreadCount, refreshNotifications: fetchCount };
 }
