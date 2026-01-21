@@ -13,10 +13,12 @@ import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { NewMessageModal } from "./NewMessageModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useNotifications } from "@/hooks/use-notifications";
 
 export default function MessageList() {
   const { toast } = useToast();
   const { user, profile } = useCurrentUser();
+  const { refreshNotifications } = useNotifications();
   
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
   const [sentMessages, setSentMessages] = useState<any[]>([]);
@@ -85,6 +87,7 @@ export default function MessageList() {
 
   // Acción: Marcar como leído al abrir acordeón
   const handleOpenMessage = async (msg: any) => {
+    // 1. Marcar el recibo del mensaje como leído si no lo estaba
     if (!msg.leido_at) {
       const now = new Date().toISOString();
       
@@ -93,18 +96,24 @@ export default function MessageList() {
         m.receipt_id === msg.receipt_id ? { ...m, leido_at: now } : m
       ));
 
-      // Actualizar BD
+      // Actualizar BD (message_receipts)
       await supabase
         .from('message_receipts')
         .update({ leido_at: now })
         .eq('id', msg.receipt_id);
-        
-      // También marcar notificación asociada como leída (opcional pero limpio)
-      await supabase
-        .from('notifications')
-        .update({ leido: true })
-        .eq('entity_id', msg.id)
-        .eq('user_id', user.id);
+    }
+
+    // 2. SIEMPRE intentar borrar la notificación asociada para asegurar consistencia
+    // (incluso si el mensaje ya figuraba como leído en message_receipts pero la notificación seguía ahí)
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .update({ leido: true })
+      .eq('entity_id', msg.id) // msg.id es el ID del mensaje
+      .eq('user_id', user.id);
+
+    if (!notifError) {
+      // Forzar actualización del contador de notificaciones en el sidebar
+      refreshNotifications();
     }
   };
 
@@ -118,7 +127,7 @@ export default function MessageList() {
 
     await supabase
       .from('message_receipts')
-      .update({ confirmed_at: now, leido_at: now }) // Aseguramos ambos
+      .update({ confirmado_at: now, leido_at: now }) // Aseguramos ambos
       .eq('id', receiptId);
       
     toast({ title: "Confirmado", description: "Has confirmado la recepción de este mensaje." });
