@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Plus, MapPin, Loader2, Edit, Power, PowerOff } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Search, Plus, MapPin, Loader2, Edit, Power, PowerOff, Download, Upload, FileSpreadsheet } from "lucide-react";
 import { PDVForm } from "./PDVForm";
 import { useToast } from "@/hooks/use-toast";
 
@@ -13,21 +13,38 @@ export default function PDVList() {
   const { toast } = useToast();
   const [pdvs, setPdvs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPDV, setSelectedPDV] = useState<any>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchPDVs = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('pdv')
+      .select(`
+        *,
+        pdv_assignments!inner(
+          profiles(nombre, apellido)
+        )
+      `)
+      // Nota: El left join explícito con asignaciones vigentes es complejo en una sola query simple,
+      // simplificamos trayendo todo y filtrando o ajustando según necesidad.
+      // Para esta vista simple, traemos PDV base.
+      .order('codigo_interno', { ascending: true });
+      
+    // Re-fetch simple para evitar problemas de joins complejos si no están configurados
+    const { data: simpleData, error: simpleError } = await supabase
+      .from('pdv')
       .select('*')
       .order('codigo_interno', { ascending: true });
     
-    if (error) {
+    if (simpleError) {
       toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los PDVs" });
     } else {
-      setPdvs(data || []);
+      setPdvs(simpleData || []);
     }
     setLoading(false);
   };
@@ -61,6 +78,153 @@ export default function PDVList() {
     }
   };
 
+  // --- LOGICA DE PLANTILLA Y CARGA MASIVA ---
+
+  const downloadTemplate = () => {
+    // Encabezados del CSV
+    const headers = [
+      "codigo_interno (Requerido)",
+      "nombre (Requerido)",
+      "ciudad (Requerido)",
+      "direccion",
+      "telefono",
+      "latitud (Ej: 4.6097)",
+      "longitud (Ej: -74.0817)",
+      "radio_gps (Def: 100)",
+      "responsable (Nombre Apellido Exacto)"
+    ];
+
+    const csvContent = headers.join(",") + "\n" + "PDV-001,Tienda Central,Bogotá,Calle 123 #45-67,3001234567,4.6097,-74.0817,100,Juan Perez";
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'plantilla_carga_pdv.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      try {
+        await processBatch(text);
+      } catch (error: any) {
+        toast({ variant: "destructive", title: "Error en carga", description: error.message });
+      } finally {
+        setIsUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  const processBatch = async (csvText: string) => {
+    const lines = csvText.split('\n');
+    // Saltamos el encabezado (línea 0)
+    const rows = lines.slice(1).filter(line => line.trim() !== '');
+    
+    if (rows.length === 0) throw new Error("El archivo está vacío");
+
+    // 1. Obtener Tenant ID y Usuario Actual
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("No autenticado");
+    
+    const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
+    if (!profile?.tenant_id) throw new Error("Sin organización asignada");
+
+    // 2. Obtener lista de usuarios para mapear responsables (Cache simple)
+    const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true);
+    const userMap = new Map(); // Key: "Nombre Apellido", Value: ID
+    users?.forEach(u => {
+      const fullName = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
+      userMap.set(fullName, u.id);
+    });
+
+    let successCount = 0;
+    let errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      // Simple parseo por comas (Nota: falla si hay comas dentro de campos, para V1 asumimos CSV simple)
+      const cols = row.split(',').map(c => c.trim());
+      
+      if (cols.length < 3) continue; // Saltar líneas malformadas
+
+      const [codigo, nombre, ciudad, direccion, telefono, lat, lng, radio, responsableName] = cols;
+
+      if (!codigo || !nombre || !ciudad) {
+        errors.push(`Fila ${i + 2}: Faltan campos obligatorios (Código, Nombre o Ciudad).`);
+        continue;
+      }
+
+      try {
+        // Insertar PDV
+        const { data: newPdv, error: pdvError } = await supabase.from('pdv').insert({
+          tenant_id: profile.tenant_id,
+          codigo_interno: codigo,
+          nombre: nombre,
+          ciudad: ciudad,
+          direccion: direccion || null,
+          telefono: telefono || null,
+          latitud: lat ? parseFloat(lat) : null,
+          longitud: lng ? parseFloat(lng) : null,
+          radio_gps: radio ? parseInt(radio) : 100,
+          activo: true
+        }).select().single();
+
+        if (pdvError) throw pdvError;
+
+        // Asignar Responsable si existe y se encontró
+        if (responsableName && newPdv) {
+          const userId = userMap.get(responsableName.toLowerCase());
+          if (userId) {
+            await supabase.from('pdv_assignments').insert({
+              tenant_id: profile.tenant_id,
+              pdv_id: newPdv.id,
+              user_id: userId,
+              vigente: true,
+              created_by: user.id
+            });
+          } else {
+            // No fallamos toda la fila, solo avisamos que el usuario no se encontró, pero el PDV se creó
+            errors.push(`Fila ${i + 2}: PDV creado, pero usuario "${responsableName}" no encontrado.`);
+          }
+        }
+
+        successCount++;
+      } catch (err: any) {
+        console.error(err);
+        errors.push(`Fila ${i + 2} (${codigo}): ${err.message}`);
+      }
+    }
+
+    fetchPDVs();
+    
+    if (errors.length > 0) {
+      toast({
+        variant: "default", // Usamos default para mostrar resumen mixto
+        title: "Carga Finalizada con Observaciones",
+        description: `Creados: ${successCount}. Errores: ${errors.length}. Revisa la consola o intenta de nuevo los fallidos.`
+      });
+      // Mostrar errores detallados en consola o un modal de errores (aquí simplificado)
+      console.warn("Errores de carga masiva:", errors);
+    } else {
+      toast({ title: "Carga Masiva Exitosa", description: `Se crearon ${successCount} puntos de venta correctamente.` });
+    }
+  };
+
   // Filtrado local
   const filteredPDVs = pdvs.filter(pdv => 
     pdv.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -75,9 +239,29 @@ export default function PDVList() {
           <h2 className="text-3xl font-bold tracking-tight">Puntos de Venta</h2>
           <p className="text-muted-foreground">Administra tus sucursales y sus ubicaciones.</p>
         </div>
-        <Button onClick={handleCreate}>
-          <Plus className="w-4 h-4 mr-2" /> Nuevo PDV
-        </Button>
+        <div className="flex gap-2">
+          {/* Input oculto para carga */}
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept=".csv" 
+            onChange={handleFileUpload} 
+          />
+          
+          <Button variant="outline" onClick={downloadTemplate} title="Descargar plantilla CSV">
+            <Download className="w-4 h-4 mr-2" /> Plantilla
+          </Button>
+          
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
+            Carga Masiva
+          </Button>
+
+          <Button onClick={handleCreate}>
+            <Plus className="w-4 h-4 mr-2" /> Nuevo PDV
+          </Button>
+        </div>
       </div>
 
       <Card>
