@@ -113,6 +113,7 @@ export default function TasksList() {
   
   const historyTasks = filteredTasks.filter(t => 
     t.estado === 'completada' || 
+    t.estado === 'completada_a_tiempo' || 
     t.estado === 'completada_vencida' || 
     t.estado === 'incumplida'
   );
@@ -162,10 +163,21 @@ export default function TasksList() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completada': return "bg-green-100 text-green-700 border-green-200";
+      case 'completada': // Legacy fallback
+      case 'completada_a_tiempo': return "bg-green-100 text-green-700 border-green-200";
       case 'completada_vencida': return "bg-yellow-100 text-yellow-700 border-yellow-200";
       case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
       default: return "bg-gray-100 text-gray-700 border-gray-200";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'completada': return "Completada";
+      case 'completada_a_tiempo': return "A Tiempo";
+      case 'completada_vencida': return "Vencida";
+      case 'incumplida': return "Incumplida";
+      default: return "Pendiente";
     }
   };
 
@@ -173,12 +185,12 @@ export default function TasksList() {
   const TaskCard = ({ task }: { task: any }) => {
     const r = task.routine_templates || {};
     const styles = getPriorityStyles(task.prioridad_snapshot);
-    const isCompleted = task.estado === 'completada' || task.estado === 'completada_vencida';
+    const isCompleted = task.estado.startsWith('completada');
     const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
 
     return (
       <Card className={`flex flex-col h-full hover:shadow-lg transition-shadow duration-200 ${styles.border}`}>
-        <CardHeader className="p-3 pb-1 space-y-1"> {/* Padding reducido para compacidad */}
+        <CardHeader className="p-3 pb-1 space-y-1"> 
           <div className="flex justify-between items-start">
             <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${styles.badge}`}>
               {task.prioridad_snapshot}
@@ -209,7 +221,7 @@ export default function TasksList() {
             </div>
             {isCompleted ? (
               <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${getStatusColor(task.estado)}`}>
-                {task.estado === 'completada' ? 'A Tiempo' : 'Vencida'}
+                {getStatusLabel(task.estado)}
               </Badge>
             ) : task.estado === 'incumplida' ? (
               <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Incumplida</Badge>
@@ -303,7 +315,6 @@ export default function TasksList() {
       );
     }
     return (
-      // Grid actualizado para ser más denso horizontalmente
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {items.map((task) => (
           <TaskCard key={task.id} task={task} />

@@ -87,12 +87,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   // --- HANDLERS GENÉRICOS ---
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'foto' | 'archivo') => {
-    const files = event.target.files; // ✅ Obtener lista de archivos
+    const files = event.target.files; 
     if (!files || files.length === 0 || !task) return;
 
     setIsUploading(true);
     try {
-      // ✅ Procesar múltiples archivos en paralelo
       const uploadPromises = Array.from(files).map(async (file) => {
         const fileExt = file.name.split('.').pop();
         const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
@@ -120,7 +119,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivos" });
     } finally {
       setIsUploading(false);
-      event.target.value = ""; // Reset input
+      event.target.value = ""; 
     }
   };
 
@@ -129,7 +128,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     await supabase.storage.from('evidence').remove([path]);
     await supabase.from('evidence_files').delete().eq('id', id);
     
-    // Actualizar estado local
     setFormData(prev => ({
       ...prev,
       files: prev.files.filter(f => f.id !== id),
@@ -180,12 +178,17 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         if (invError) throw invError;
       }
 
-      // B. Actualizar Tarea
+      // B. Calcular Estado (A tiempo vs Vencida)
+      const now = new Date();
+      const limitDate = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
+      const finalStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
+
+      // C. Actualizar Tarea
       const { error } = await supabase
         .from('task_instances')
         .update({
-          estado: 'completada', 
-          completado_at: new Date().toISOString(),
+          estado: finalStatus, 
+          completado_at: now.toISOString(),
           completado_por: user.id,
           gps_latitud: formData.gps?.lat,
           gps_longitud: formData.gps?.lng,
@@ -196,7 +199,12 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       if (error) throw error;
 
-      toast({ title: "¡Tarea Completada!", description: "Registrada exitosamente." });
+      toast({ 
+        title: finalStatus === 'completada_a_tiempo' ? "¡Tarea Completada!" : "Tarea Completada (Vencida)", 
+        description: finalStatus === 'completada_a_tiempo' ? "Registrada exitosamente a tiempo." : "Registrada fuera del horario límite.",
+        variant: finalStatus === 'completada_vencida' ? "default" : "default" // Puedes usar otro variant si quieres warning visual
+      });
+      
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
