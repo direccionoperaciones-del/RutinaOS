@@ -1,15 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, CheckCircle2, AlertTriangle, Clock, TrendingUp, BarChart3, Plus, Mail, CalendarOff } from "lucide-react";
-import { format, subDays, startOfDay, parseISO } from "date-fns";
+import { Activity, CheckCircle2, AlertTriangle, Clock, TrendingUp, BarChart3, Filter, X, Calendar as CalendarIcon, Search } from "lucide-react";
+import { format, subDays, parseISO, startOfDay, endOfDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNavigate } from "react-router-dom";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
-const StatCard = ({ title, value, description, icon: Icon, colorClass }: any) => (
+// Componente Tarjeta KPI
+const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }: any) => (
   <Card>
     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
       <CardTitle className="text-sm font-medium">
@@ -18,209 +23,325 @@ const StatCard = ({ title, value, description, icon: Icon, colorClass }: any) =>
       <Icon className={`h-4 w-4 ${colorClass || "text-muted-foreground"}`} />
     </CardHeader>
     <CardContent>
-      <div className="text-2xl font-bold">{value}</div>
-      <p className="text-xs text-muted-foreground">
-        {description}
-      </p>
+      {loading ? (
+        <Skeleton className="h-8 w-20" />
+      ) : (
+        <>
+          <div className="text-2xl font-bold">{value}</div>
+          <p className="text-xs text-muted-foreground">
+            {description}
+          </p>
+        </>
+      )}
     </CardContent>
   </Card>
 );
 
 const Index = () => {
   const navigate = useNavigate();
+  
+  // --- ESTADOS DE FILTROS ---
+  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+  
+  const [filterPdv, setFilterPdv] = useState("all");
+  const [filterRoutine, setFilterRoutine] = useState("all");
+  const [filterUser, setFilterUser] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+
+  // --- ESTADOS DE DATOS ---
   const [loading, setLoading] = useState(true);
+  const [loadingFilters, setLoadingFilters] = useState(true);
+  
+  // Listas para dropdowns
+  const [pdvs, setPdvs] = useState<any[]>([]);
+  const [routines, setRoutines] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+
+  // Datos procesados
   const [stats, setStats] = useState({
     totalTasks: 0,
     completedTasks: 0,
     pendingTasks: 0,
     compliance: 0,
     criticalPending: 0,
-    avgTime: "0m"
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
-  const [userRole, setUserRole] = useState<string>("");
 
+  // 1. CARGAR OPCIONES DE FILTROS (Solo una vez)
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
+    const loadFilterOptions = async () => {
+      const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
+      const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+      const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
       
-      // Get User Role for permissions
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-        setUserRole(profile?.role || "");
-      }
-
-      const today = new Date().toISOString().split('T')[0];
-      const sevenDaysAgo = subDays(new Date(), 6).toISOString().split('T')[0];
-
-      // 1. Fetch Tareas de Hoy (Stats Cards)
-      const { data: tasksToday } = await supabase
-        .from('task_instances')
-        .select(`
-          id,
-          estado,
-          prioridad_snapshot,
-          completado_at,
-          created_at,
-          routine_templates (nombre),
-          pdv (nombre),
-          profiles:completado_por (nombre)
-        `)
-        .eq('fecha_programada', today);
-
-      if (tasksToday) {
-        const total = tasksToday.length;
-        const completed = tasksToday.filter(t => t.estado === 'completada').length;
-        const pending = total - completed;
-        const compliance = total > 0 ? Math.round((completed / total) * 100) : 0;
-        
-        const critical = tasksToday.filter(t => 
-          (t.prioridad_snapshot === 'alta' || t.prioridad_snapshot === 'critica') && 
-          t.estado !== 'completada'
-        ).length;
-
-        setStats({
-          totalTasks: total,
-          completedTasks: completed,
-          pendingTasks: pending,
-          compliance,
-          criticalPending: critical,
-          avgTime: "15m"
-        });
-
-        // Actividad Reciente
-        const sorted = [...tasksToday].sort((a, b) => {
-          const dateA = new Date(a.completado_at || a.created_at).getTime();
-          const dateB = new Date(b.completado_at || b.created_at).getTime();
-          return dateB - dateA;
-        }).slice(0, 5);
-        setRecentActivity(sorted);
-      }
-
-      // 2. Fetch Datos para Gráfico (Últimos 7 días)
-      const { data: tasksWeek } = await supabase
-        .from('task_instances')
-        .select('fecha_programada, estado')
-        .gte('fecha_programada', sevenDaysAgo)
-        .lte('fecha_programada', today);
-
-      if (tasksWeek) {
-        // Agrupar por fecha
-        const grouped = tasksWeek.reduce((acc: any, curr) => {
-          const date = curr.fecha_programada;
-          if (!acc[date]) {
-            acc[date] = { date, total: 0, completed: 0 };
-          }
-          acc[date].total++;
-          if (curr.estado === 'completada') {
-            acc[date].completed++;
-          }
-          return acc;
-        }, {});
-
-        // Formatear para Recharts (rellenando días vacíos si es necesario, aquí simplificado)
-        // Convertimos a array y ordenamos
-        const chartArray = Object.values(grouped).sort((a: any, b: any) => 
-          new Date(a.date).getTime() - new Date(b.date).getTime()
-        ).map((item: any) => ({
-          name: format(parseISO(item.date), 'EEE d', { locale: es }), // Ej: Lun 20
-          Total: item.total,
-          Completadas: item.completed,
-          Pendientes: item.total - item.completed
-        }));
-
-        setChartData(chartArray);
-      }
-
-      setLoading(false);
+      setPdvs(pdvData || []);
+      setRoutines(routData || []);
+      setUsers(userData || []);
+      setLoadingFilters(false);
     };
-
-    fetchData();
-
-    // Suscripción Realtime
-    const channel = supabase
-      .channel('dashboard-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_instances' }, () => fetchData())
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    loadFilterOptions();
   }, []);
 
-  if (loading) {
-    return <div className="p-8 flex justify-center"><Skeleton className="h-[500px] w-full rounded-xl" /></div>;
-  }
+  // 2. CARGAR DASHBOARD (Cada vez que cambian los filtros)
+  const fetchDashboardData = async () => {
+    setLoading(true);
 
-  const isAdmin = userRole === 'administrador';
+    let query = supabase
+      .from('task_instances')
+      .select(`
+        id,
+        estado,
+        prioridad_snapshot,
+        completado_at,
+        created_at,
+        fecha_programada,
+        routine_templates (nombre),
+        pdv (nombre),
+        profiles:completado_por (nombre, apellido)
+      `)
+      .gte('fecha_programada', dateFrom)
+      .lte('fecha_programada', dateTo);
+
+    // Aplicar Filtros Dinámicos
+    if (filterPdv !== 'all') query = query.eq('pdv_id', filterPdv);
+    if (filterRoutine !== 'all') query = query.eq('rutina_id', filterRoutine);
+    if (filterUser !== 'all') query = query.eq('completado_por', filterUser); // Nota: Solo filtra tareas YA completadas por este usuario
+    if (filterPriority !== 'all') query = query.eq('prioridad_snapshot', filterPriority);
+    
+    // Filtro de Estado Manual (además del query)
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'pendiente') query = query.in('estado', ['pendiente', 'en_proceso']);
+      else query = query.eq('estado', filterStatus);
+    }
+
+    const { data: tasks, error } = await query;
+
+    if (error) {
+      console.error("Error fetching dashboard:", error);
+      setLoading(false);
+      return;
+    }
+
+    // --- PROCESAMIENTO DE KPIs ---
+    const total = tasks.length;
+    const completed = tasks.filter(t => t.estado === 'completada' || t.estado === 'completada_vencida').length;
+    const pending = tasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
+    const compliance = total > 0 ? Math.round((completed / total) * 100) : 0;
+    
+    const critical = tasks.filter(t => 
+      (t.prioridad_snapshot === 'alta' || t.prioridad_snapshot === 'critica') && 
+      (t.estado === 'pendiente' || t.estado === 'incumplida')
+    ).length;
+
+    setStats({
+      totalTasks: total,
+      completedTasks: completed,
+      pendingTasks: pending,
+      compliance,
+      criticalPending: critical,
+    });
+
+    // --- ACTIVIDAD RECIENTE (Top 10 del filtro actual) ---
+    const activity = [...tasks]
+      .sort((a, b) => {
+        const dateA = new Date(a.completado_at || a.created_at).getTime();
+        const dateB = new Date(b.completado_at || b.created_at).getTime();
+        return dateB - dateA; // Más recientes primero
+      })
+      .slice(0, 10);
+    setRecentActivity(activity);
+
+    // --- GRÁFICO (Agrupado por Fecha) ---
+    const groupedData = tasks.reduce((acc: any, curr) => {
+      const date = curr.fecha_programada;
+      if (!acc[date]) {
+        acc[date] = { date, total: 0, completed: 0, failed: 0 };
+      }
+      acc[date].total++;
+      if (curr.estado.startsWith('completada')) acc[date].completed++;
+      if (curr.estado === 'incumplida') acc[date].failed++;
+      return acc;
+    }, {});
+
+    const chartArray = Object.values(groupedData)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map((item: any) => ({
+        name: format(parseISO(item.date), 'dd MMM', { locale: es }),
+        Total: item.total,
+        Completadas: item.completed,
+        Incumplidas: item.failed
+      }));
+
+    setChartData(chartArray);
+    setLoading(false);
+  };
+
+  // Trigger fetch cuando cambian los filtros
+  useEffect(() => {
+    fetchDashboardData();
+  }, [dateFrom, dateTo, filterPdv, filterRoutine, filterUser, filterPriority, filterStatus]);
+
+  const clearFilters = () => {
+    setFilterPdv("all");
+    setFilterRoutine("all");
+    setFilterUser("all");
+    setFilterPriority("all");
+    setFilterStatus("all");
+    // Resetear fechas a HOY
+    const today = new Date().toISOString().split('T')[0];
+    setDateFrom(today);
+    setDateTo(today);
+  };
+
+  const hasActiveFilters = 
+    filterPdv !== "all" || 
+    filterRoutine !== "all" || 
+    filterUser !== "all" || 
+    filterPriority !== "all" ||
+    filterStatus !== "all";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard Operativo</h2>
           <p className="text-muted-foreground">
-            Resumen operativo del {format(new Date(), "EEEE, d 'de' MMMM", { locale: es })}.
+            Monitoreo en tiempo real y análisis de cumplimiento.
           </p>
         </div>
-        
-        {/* Accesos Directos */}
         <div className="flex gap-2">
-          {!isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => navigate('/messages')}>
-              <Mail className="w-4 h-4 mr-2" /> Comunicado
+          {hasActiveFilters && (
+            <Button variant="outline" size="sm" onClick={clearFilters} className="text-destructive hover:text-destructive">
+              <X className="w-4 h-4 mr-2" /> Limpiar Filtros
             </Button>
           )}
-          <Button size="sm" onClick={() => navigate('/tasks')}>
-            <CheckCircle2 className="w-4 h-4 mr-2" /> Mis Tareas
+          <Button size="sm" onClick={fetchDashboardData}>
+            <Search className="w-4 h-4 mr-2" /> Actualizar Datos
           </Button>
         </div>
       </div>
 
-      {/* Stats Overview */}
+      {/* --- BARRA DE FILTROS --- */}
+      <Card className="bg-muted/20 border-primary/10">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-primary">
+            <Filter className="w-4 h-4" /> Filtros de Análisis
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {/* Fechas */}
+            <div className="space-y-1">
+              <Label className="text-xs">Desde</Label>
+              <Input type="date" className="h-8 text-xs" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Hasta</Label>
+              <Input type="date" className="h-8 text-xs" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+
+            {/* Selectores */}
+            <div className="space-y-1">
+              <Label className="text-xs">Punto de Venta</Label>
+              <Select value={filterPdv} onValueChange={setFilterPdv}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {pdvs.map(p => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Rutina</Label>
+              <Select value={filterRoutine} onValueChange={setFilterRoutine}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {routines.map(r => <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Administrador/Usuario</Label>
+              <Select value={filterUser} onValueChange={setFilterUser}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {users.map(u => <SelectItem key={u.id} value={u.id}>{u.nombre} {u.apellido}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Prioridad / Alerta</Label>
+              <Select value={filterPriority} onValueChange={setFilterPriority}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="baja">Baja</SelectItem>
+                  <SelectItem value="media">Media</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="critica">🔴 Crítica</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* --- KPIs --- */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
-          title="Cumplimiento Hoy" 
+          title="Cumplimiento" 
           value={`${stats.compliance}%`} 
-          description={`${stats.completedTasks} de ${stats.totalTasks} tareas`}
+          description="Sobre tareas filtradas"
           icon={Activity}
+          loading={loading}
           colorClass={stats.compliance >= 90 ? "text-green-500" : stats.compliance >= 70 ? "text-yellow-500" : "text-red-500"}
+        />
+        <StatCard 
+          title="Total Tareas" 
+          value={stats.totalTasks}
+          description="Generadas en periodo" 
+          icon={BarChart3}
+          loading={loading}
         />
         <StatCard 
           title="Pendientes" 
           value={stats.pendingTasks}
-          description="Tareas por ejecutar hoy" 
+          description="Por ejecutar" 
           icon={Clock}
           colorClass="text-blue-500"
+          loading={loading}
         />
         <StatCard 
-          title="Alertas Críticas" 
+          title="Alertas Activas" 
           value={stats.criticalPending}
-          description="Tareas de alta prioridad sin cerrar" 
+          description="Críticas sin resolver" 
           icon={AlertTriangle}
           colorClass={stats.criticalPending > 0 ? "text-red-500" : "text-muted-foreground"}
-        />
-        <StatCard 
-          title="Total Programado" 
-          value={stats.totalTasks}
-          description="Carga operativa del día" 
-          icon={BarChart3}
+          loading={loading}
         />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* Gráfico Real */}
+        {/* --- GRÁFICO --- */}
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5" />
-              Rendimiento Semanal
+              Tendencia de Ejecución
             </CardTitle>
-            <CardDescription>Volumen de tareas y cumplimiento de los últimos 7 días.</CardDescription>
+            <CardDescription>Comportamiento diario según filtros aplicados.</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <div className="h-[300px] w-full">
-              {chartData.length > 0 ? (
+              {!loading && chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -236,64 +357,70 @@ const Index = () => {
                       fontSize={12} 
                       tickLine={false} 
                       axisLine={false} 
-                      tickFormatter={(value) => `${value}`} 
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: 'var(--background)', borderRadius: '8px', border: '1px solid var(--border)' }}
                       cursor={{fill: 'var(--muted)'}}
                     />
-                    <Bar dataKey="Completadas" stackId="a" fill="#22c55e" radius={[0, 0, 4, 4]} />
-                    <Bar dataKey="Pendientes" stackId="a" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Completadas" stackId="a" fill="#22c55e" radius={[0, 0, 4, 4]} name="Completadas" />
+                    <Bar dataKey="Incumplidas" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} name="Incumplidas" />
+                    <Bar dataKey="Total" stackId="b" fill="transparent" /> {/* Solo para escala */}
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="h-full flex items-center justify-center text-muted-foreground bg-muted/10 rounded-md border-2 border-dashed">
-                  <p>No hay datos suficientes esta semana</p>
+                  <p>{loading ? "Calculando..." : "No hay datos para graficar en este rango"}</p>
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
+        {/* --- LISTADO ACTIVIDAD --- */}
         <Card className="col-span-3 flex flex-col">
           <CardHeader>
-            <CardTitle>Actividad en Vivo</CardTitle>
-            <CardDescription>Últimos eventos registrados hoy</CardDescription>
+            <CardTitle>Detalle de Actividad</CardTitle>
+            <CardDescription>Últimos registros filtrados</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1">
-            <div className="space-y-6">
-              {recentActivity.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-60">
+          <CardContent className="flex-1 overflow-y-auto max-h-[350px]">
+            <div className="space-y-4">
+              {loading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ) : recentActivity.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-60 py-8">
                   <Activity className="w-10 h-10 mb-2" />
-                  <p className="text-sm">Sin actividad hoy</p>
+                  <p className="text-sm">Sin resultados</p>
                 </div>
               ) : (
                 recentActivity.map((task) => (
-                  <div key={task.id} className="flex items-center group">
-                    <span className="relative flex h-2 w-2 mr-4 shrink-0">
+                  <div key={task.id} className="flex items-center group p-2 hover:bg-muted/50 rounded-md transition-colors">
+                    <div className="mr-3">
                       {task.estado === 'completada' ? (
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        <CheckCircle2 className="w-5 h-5 text-green-500" />
+                      ) : task.estado === 'incumplida' ? (
+                        <X className="w-5 h-5 text-red-500" />
                       ) : (
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500 animate-pulse"></span>
+                        <Clock className="w-5 h-5 text-blue-500" />
                       )}
-                    </span>
-                    <div className="flex-1 space-y-1 overflow-hidden">
-                      <p className="text-sm font-medium leading-none truncate group-hover:text-primary transition-colors">
-                        {task.routine_templates?.nombre}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                        <span>{task.pdv?.nombre}</span>
-                        <span>•</span>
-                        <span className={task.estado === 'completada' ? "text-green-600 font-medium" : ""}>
-                          {task.estado === 'completada' ? 'Completada' : 'Pendiente'}
-                        </span>
-                      </p>
                     </div>
-                    <div className="text-xs text-muted-foreground whitespace-nowrap ml-2 font-mono">
-                       {task.completado_at 
-                        ? format(new Date(task.completado_at), "HH:mm") 
-                        : format(new Date(task.created_at), "HH:mm")}
+                    <div className="flex-1 space-y-1 overflow-hidden">
+                      <div className="flex justify-between">
+                        <p className="text-sm font-medium leading-none truncate">
+                          {task.routine_templates?.nombre}
+                        </p>
+                        <span className="text-[10px] text-muted-foreground">
+                          {format(new Date(task.fecha_programada), 'dd/MM')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                        <span className="font-medium text-foreground">{task.pdv?.nombre}</span>
+                        <span>•</span>
+                        <span>{task.profiles?.nombre || 'Sin asignar'}</span>
+                      </p>
                     </div>
                   </div>
                 ))
