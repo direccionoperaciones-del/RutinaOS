@@ -9,8 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   Clock, MapPin, CheckCircle2, Filter, X, 
   Calendar as CalendarIcon, Eye, Camera, Mail, 
-  MessageSquareText, Box, AlertTriangle, FileText,
-  Repeat, CalendarDays, CalendarRange
+  MessageSquareText, Box, FileText,
+  Repeat, CalendarDays, CalendarRange, ArrowRight
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
