@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Package, AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface InventoryStepProps {
   categoriesIds: string[];
@@ -16,7 +17,6 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
   const [loading, setLoading] = useState(true);
   
   // Estado local para los conteos: { [productId]: { fisico: string, esperado: string } }
-  // Cambiamos 'esperado' a string para manejar inputs vacíos
   const [counts, setCounts] = useState<Record<string, { fisico: string, esperado: string }>>({});
 
   useEffect(() => {
@@ -108,6 +108,15 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
     const esp = curr.esperado === "" ? 0 : Number(curr.esperado);
     return acc + (fis - esp);
   }, 0);
+
+  // Lista de productos con diferencias para el footer
+  const productsWithDiff = products.filter(p => {
+    const c = counts[p.id];
+    if (!c || (c.fisico === "" && c.esperado === "")) return false;
+    const fis = c.fisico === "" ? 0 : Number(c.fisico);
+    const esp = c.esperado === "" ? 0 : Number(c.esperado);
+    return (fis - esp) !== 0;
+  });
 
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
 
@@ -202,24 +211,47 @@ export function InventoryStep({ categoriesIds, onChange }: InventoryStepProps) {
         </Card>
       ))}
 
-      {/* Footer Totalizador */}
-      <div className="sticky bottom-0 bg-background border-t p-4 flex justify-between items-center rounded-lg shadow-sm z-10">
-        <div className="flex gap-4 text-xs">
-          <div>
-            <span className="text-muted-foreground">Progreso:</span>
-            <span className="font-bold ml-1">{itemsCounted} / {totalItems}</span>
-          </div>
-          {itemsCounted < totalItems && (
-            <div className="text-orange-600 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" /> Incompleto
+      {/* Footer Totalizador Mejorado */}
+      <div className="sticky bottom-0 bg-background border-t p-4 rounded-lg shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 flex flex-col gap-3">
+        
+        {/* Detalle de diferencias (Scrollable si hay muchas) */}
+        {productsWithDiff.length > 0 && (
+           <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar border-b pb-2">
+             <p className="text-[10px] uppercase font-bold text-muted-foreground mb-1">Detalle de Diferencias</p>
+             {productsWithDiff.map(p => {
+               const c = counts[p.id];
+               const diff = (c.fisico === "" ? 0 : Number(c.fisico)) - (c.esperado === "" ? 0 : Number(c.esperado));
+               
+               return (
+                 <div key={p.id} className="flex justify-between items-center text-xs py-0.5">
+                   <span className="truncate font-medium text-foreground/80 w-3/4">{p.nombre}</span>
+                   <span className={`font-bold ${diff < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                     {diff > 0 ? '+' : ''}{diff}
+                   </span>
+                 </div>
+               )
+             })}
+           </div>
+        )}
+
+        <div className="flex justify-between items-center pt-1">
+          <div className="flex gap-4 text-xs">
+            <div>
+              <span className="text-muted-foreground">Progreso:</span>
+              <span className="font-bold ml-1">{itemsCounted} / {totalItems}</span>
             </div>
-          )}
-        </div>
-        <div className="text-sm">
-          <span className="text-muted-foreground mr-2">Diferencia Neta:</span>
-          <Badge variant={totalDiff === 0 ? "outline" : totalDiff < 0 ? "destructive" : "default"}>
-            {totalDiff > 0 ? '+' : ''}{totalDiff}
-          </Badge>
+            {itemsCounted < totalItems && (
+              <div className="text-orange-600 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> Incompleto
+              </div>
+            )}
+          </div>
+          <div className="text-sm flex items-center gap-2">
+            <span className="text-muted-foreground font-medium">Total Diferencia:</span>
+            <Badge variant={totalDiff === 0 ? "outline" : totalDiff < 0 ? "destructive" : "default"} className="text-sm px-2">
+              {totalDiff > 0 ? '+' : ''}{totalDiff}
+            </Badge>
+          </div>
         </div>
       </div>
     </div>
