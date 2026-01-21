@@ -143,7 +143,8 @@ const NAV_CONFIG = [
         icon: Calendar, 
         label: "Calendario", 
         path: "/calendar", 
-        roles: ['director', 'lider'] 
+        // CAMBIO AQUÍ: Agregado 'administrador'
+        roles: ['director', 'lider', 'administrador'] 
       },
       { 
         icon: UserCog, 

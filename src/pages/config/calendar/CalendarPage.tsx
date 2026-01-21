@@ -6,35 +6,77 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Loader2, Calendar as CalendarIcon, MapPin, CheckCircle2 } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, MapPin, CheckCircle2, AlertCircle, Clock } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function CalendarPage() {
-  const { tenantId } = useCurrentUser();
+  const { tenantId, profile } = useCurrentUser();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [markedDates, setMarkedDates] = useState<Date[]>([]);
+  
+  // Estados para los marcadores visuales
+  const [statusDates, setStatusDates] = useState<{
+    completed: Date[];
+    failed: Date[];
+    pending: Date[];
+  }>({ completed: [], failed: [], pending: [] });
 
-  // Cargar fechas con tareas para marcar en el calendario (vista mensual)
+  // Cargar estados de fechas para colorear el calendario
   useEffect(() => {
     if (!tenantId) return;
     
-    const fetchMonthTasks = async () => {
-      // Traemos tareas del mes actual y siguiente para los indicadores
-      const { data } = await supabase
+    const fetchCalendarStatus = async () => {
+      // Traemos fecha y estado de las tareas (aumentamos límite para cubrir varios meses)
+      let query = supabase
         .from('task_instances')
-        .select('fecha_programada')
+        .select('fecha_programada, estado')
         .eq('tenant_id', tenantId)
-        .limit(100);
+        .limit(1000); // Límite más alto para historia
+
+      // Si es administrador, filtrar solo lo que le corresponde (sus asignaciones)
+      if (profile?.role === 'administrador') {
+        // Nota: Idealmente esto debería filtrar por asignación directa, pero para el calendario general
+        // solemos querer ver todo lo del PDV. Si necesitamos restricción estricta:
+        // query = query.eq('pdv_id', mi_pdv_id) <-- Requiere saber el PDV del admin
+      }
+
+      const { data } = await query;
       
       if (data) {
-        const dates = data.map(t => new Date(t.fecha_programada + 'T12:00:00')); // T12:00 para evitar problemas de timezone
-        setMarkedDates(dates);
+        const tempStatus: Record<string, { hasFailure: boolean, hasPending: boolean, count: number }> = {};
+
+        data.forEach(t => {
+          const d = t.fecha_programada;
+          if (!tempStatus[d]) tempStatus[d] = { hasFailure: false, hasPending: false, count: 0 };
+          
+          tempStatus[d].count++;
+          if (t.estado === 'incumplida' || t.estado === 'completada_vencida') tempStatus[d].hasFailure = true;
+          if (t.estado === 'pendiente' || t.estado === 'en_proceso') tempStatus[d].hasPending = true;
+        });
+
+        const completed: Date[] = [];
+        const failed: Date[] = [];
+        const pending: Date[] = [];
+
+        Object.entries(tempStatus).forEach(([dateStr, status]) => {
+          // Ajustamos hora a mediodía para evitar problemas de timezone en el calendario
+          const dateObj = new Date(dateStr + 'T12:00:00');
+          
+          if (status.hasFailure) {
+            failed.push(dateObj); // Prioridad: Si hay algo malo, marca rojo
+          } else if (status.hasPending) {
+            pending.push(dateObj); // Si no hay fallos pero sí pendientes, marca gris/azul
+          } else {
+            completed.push(dateObj); // Si no hay fallos ni pendientes, todo verde
+          }
+        });
+
+        setStatusDates({ completed, failed, pending });
       }
     };
-    fetchMonthTasks();
-  }, [tenantId]);
+    fetchCalendarStatus();
+  }, [tenantId, profile]);
 
   // Cargar detalle del día seleccionado
   useEffect(() => {
@@ -44,7 +86,7 @@ export default function CalendarPage() {
       setLoading(true);
       const dateStr = format(date, 'yyyy-MM-dd');
       
-      const { data } = await supabase
+      let query = supabase
         .from('task_instances')
         .select(`
           id,
@@ -58,6 +100,7 @@ export default function CalendarPage() {
         .eq('fecha_programada', dateStr)
         .order('hora_limite_snapshot');
 
+      const { data } = await query;
       setTasks(data || []);
       setLoading(false);
     };
@@ -65,17 +108,17 @@ export default function CalendarPage() {
     fetchDayTasks();
   }, [date, tenantId]);
 
-  // Modificadores para el calendario
+  // Modificadores visuales para el calendario
   const modifiers = {
-    hasTask: markedDates
+    failed: statusDates.failed,
+    completed: statusDates.completed,
+    pending: statusDates.pending
   };
   
-  const modifiersStyles = {
-    hasTask: {
-      fontWeight: 'bold',
-      textDecoration: 'underline',
-      color: 'var(--primary)'
-    }
+  const modifiersClassNames = {
+    failed: "bg-red-100 text-red-700 font-bold hover:bg-red-200 rounded-md",
+    completed: "bg-green-100 text-green-700 font-bold hover:bg-green-200 rounded-md",
+    pending: "bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 rounded-md"
   };
 
   return (
@@ -86,22 +129,44 @@ export default function CalendarPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-[400px_1fr]">
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle>Navegación</CardTitle>
-          </CardHeader>
-          <CardContent className="flex justify-center">
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={setDate}
-              modifiers={modifiers}
-              modifiersStyles={modifiersStyles}
-              className="rounded-md border shadow p-4"
-              locale={es}
-            />
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card className="h-fit">
+            <CardHeader>
+              <CardTitle>Navegación</CardTitle>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={setDate}
+                modifiers={modifiers}
+                modifiersClassNames={modifiersClassNames}
+                className="rounded-md border shadow p-4 w-full"
+                locale={es}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Leyenda */}
+          <Card>
+            <CardContent className="p-4 pt-6">
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-green-100 border border-green-200" />
+                  <span>Completado (100%)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-slate-100 border border-slate-200" />
+                  <span>Pendiente / En curso</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-red-100 border border-red-200" />
+                  <span>Con Incumplimientos</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card className="flex flex-col h-[600px]">
           <CardHeader>
@@ -128,46 +193,58 @@ export default function CalendarPage() {
             ) : (
               <ScrollArea className="h-full p-6">
                 <div className="space-y-4">
-                  {tasks.map((task) => (
-                    <div 
-                      key={task.id} 
-                      className={`flex items-start gap-4 p-4 rounded-lg border ${task.estado === 'completada' ? 'bg-green-50/50 border-green-100' : 'bg-card'}`}
-                    >
-                      <div className="mt-1">
-                        {task.estado === 'completada' ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-600" />
-                        ) : (
-                          <div className={`w-5 h-5 rounded-full border-2 ${task.routine_templates?.prioridad === 'critica' ? 'border-red-400' : 'border-gray-300'}`} />
-                        )}
-                      </div>
-                      
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start">
-                          <h4 className="font-semibold text-sm">{task.routine_templates?.nombre}</h4>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            Vence: {task.hora_limite_snapshot?.slice(0,5)}
-                          </span>
+                  {tasks.map((task) => {
+                    const isCompleted = task.estado.startsWith('completada');
+                    const isFailed = task.estado === 'incumplida' || task.estado === 'completada_vencida';
+                    
+                    return (
+                      <div 
+                        key={task.id} 
+                        className={`flex items-start gap-4 p-4 rounded-lg border transition-colors ${
+                          isCompleted ? 'bg-green-50/30 border-green-100' : 
+                          isFailed ? 'bg-red-50/30 border-red-100' : 
+                          'bg-card'
+                        }`}
+                      >
+                        <div className="mt-1">
+                          {isCompleted ? (
+                            <CheckCircle2 className="w-5 h-5 text-green-600" />
+                          ) : isFailed ? (
+                            <AlertCircle className="w-5 h-5 text-red-500" />
+                          ) : (
+                            <div className={`w-5 h-5 rounded-full border-2 ${task.routine_templates?.prioridad === 'critica' ? 'border-red-400' : 'border-gray-300'}`} />
+                          )}
                         </div>
                         
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <MapPin className="w-3 h-3" />
-                          {task.pdv?.nombre} - {task.pdv?.ciudad}
-                        </div>
-
-                        {task.estado === 'completada' && (
-                          <div className="mt-2 text-xs text-green-700 bg-green-100 w-fit px-2 py-0.5 rounded-full">
-                            Completado por: {task.profiles?.nombre} {task.profiles?.apellido}
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-semibold text-sm">{task.routine_templates?.nombre}</h4>
+                            <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {task.hora_limite_snapshot?.slice(0,5)}
+                            </span>
                           </div>
-                        )}
+                          
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            <MapPin className="w-3 h-3" />
+                            {task.pdv?.nombre} - {task.pdv?.ciudad}
+                          </div>
+
+                          {task.estado === 'completada' || task.estado === 'completada_a_tiempo' ? (
+                            <div className="mt-2 text-xs text-green-700 bg-green-100 w-fit px-2 py-0.5 rounded-full">
+                              Completado por: {task.profiles?.nombre} {task.profiles?.apellido}
+                            </div>
+                          ) : null}
+                        </div>
+                        
+                        <div>
+                          <Badge variant="outline" className="capitalize text-[10px]">
+                            {task.routine_templates?.prioridad}
+                          </Badge>
+                        </div>
                       </div>
-                      
-                      <div>
-                        <Badge variant="outline" className="capitalize text-[10px]">
-                          {task.routine_templates?.prioridad}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </ScrollArea>
             )}
