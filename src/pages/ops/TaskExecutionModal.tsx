@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { LocationStep } from "./components/execution/LocationStep";
 import { EmailStep } from "./components/execution/EmailStep";
 import { EvidenceStep } from "./components/execution/EvidenceStep";
+import { InventoryStep } from "./components/execution/InventoryStep"; // Nuevo import
 
 // Logic
 import { buildTaskSchema, TaskField } from "./logic/task-schema";
@@ -35,7 +36,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     email_respond: boolean;
     files: any[];
     photos: any[];
-    inventory: any;
+    inventory: any[]; // Cambiado a array de filas
     comments: string;
   }>({
     gps: null,
@@ -43,7 +44,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     email_respond: false,
     files: [],
     photos: [],
-    inventory: null,
+    inventory: [],
     comments: ""
   });
 
@@ -64,7 +65,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         email_respond: false,
         files: [],
         photos: [],
-        inventory: null,
+        inventory: [],
         comments: ""
       });
       fetchEvidence();
@@ -131,7 +132,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleComplete = async () => {
-    // 2. Validación Dinámica (Loop sobre el schema)
+    // 2. Validación Dinámica
     for (const field of schema) {
       let valueToValidate;
       
@@ -142,22 +143,49 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         case 'files': valueToValidate = formData.files; break;
         case 'photos': valueToValidate = formData.photos; break;
         case 'comments': valueToValidate = formData.comments; break;
+        // Inventario no es obligatorio estricto en schema (puede guardarse parcial), 
+        // pero podríamos validar si está vacío si fuera necesario.
         default: valueToValidate = null;
       }
 
       const error = field.validate(valueToValidate);
       if (error) {
         toast({ variant: "destructive", title: "Falta información", description: error });
-        return; // Detener flujo
+        return; 
       }
     }
 
-    // 3. Persistencia
     setIsLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No auth");
 
+      // A. Guardar Inventario si aplica
+      if (formData.inventory.length > 0) {
+        // Formatear filas para DB
+        const inventoryRows = formData.inventory.map(row => ({
+          task_id: task.id,
+          producto_id: row.producto_id,
+          esperado: row.esperado,
+          fisico: row.fisico,
+          // diferencia es columna generada (STORED) en BD normalmente, 
+          // pero si tu esquema requiere insertarla, la mandamos.
+          // Revisando schema: diferencia es GENERATED ALWAYS, NO debemos enviarla.
+        }));
+
+        // Limpiamos 'diferencia' si es generada, o la dejamos si es columna normal.
+        // Asumiremos inserción segura (Supabase ignora columnas generadas en insert si se omiten, 
+        // pero da error si se envían).
+        // En tu schema MD dice "GENERATED ALWAYS ... STORED". Entonces NO la enviamos.
+        
+        const { error: invError } = await supabase
+          .from('inventory_submission_rows')
+          .insert(inventoryRows);
+        
+        if (invError) throw invError;
+      }
+
+      // B. Actualizar Tarea
       const { error } = await supabase
         .from('task_instances')
         .update({
@@ -177,13 +205,14 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
+      console.error(error);
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- RENDERER (Renderiza componente según tipo) ---
+  // --- RENDERER ---
   const renderField = (field: TaskField) => {
     switch (field.type) {
       case 'location':
@@ -242,16 +271,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       case 'inventory':
         return (
-          <div key={field.id} className="p-4 rounded-lg border bg-orange-50/50 border-orange-100">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold flex items-center gap-2 text-sm text-orange-800">
-                <CheckSquare className="w-4 h-4" /> {field.label}
-              </h4>
-              <Button size="sm" variant="outline" className="h-7 text-xs" disabled>
-                Iniciar ({field.constraints?.categories?.length || 0} Cats)
-              </Button>
-            </div>
-          </div>
+          <InventoryStep 
+            key={field.id}
+            categoriesIds={field.constraints?.categories || []}
+            onChange={(data) => setFormData(prev => ({ ...prev, inventory: data }))}
+          />
         );
 
       case 'text':
@@ -278,7 +302,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="outline" className="capitalize">{routine.prioridad}</Badge>
