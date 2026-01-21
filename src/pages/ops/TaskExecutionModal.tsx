@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { LocationStep } from "./components/execution/LocationStep";
 import { EmailStep } from "./components/execution/EmailStep";
 import { EvidenceStep } from "./components/execution/EvidenceStep";
-import { InventoryStep } from "./components/execution/InventoryStep"; // Nuevo import
+import { InventoryStep } from "./components/execution/InventoryStep";
 
 // Logic
 import { buildTaskSchema, TaskField } from "./logic/task-schema";
@@ -36,7 +36,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     email_respond: boolean;
     files: any[];
     photos: any[];
-    inventory: any[]; // Cambiado a array de filas
+    inventory: any[]; 
     comments: string;
   }>({
     gps: null,
@@ -87,34 +87,40 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   // --- HANDLERS GENÉRICOS ---
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'foto' | 'archivo') => {
-    const file = event.target.files?.[0];
-    if (!file || !task) return;
+    const files = event.target.files; // ✅ Obtener lista de archivos
+    if (!files || files.length === 0 || !task) return;
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
-      
-      const { error: uploadError } = await supabase.storage.from('evidence').upload(fileName, file);
-      if (uploadError) throw uploadError;
+      // ✅ Procesar múltiples archivos en paralelo
+      const uploadPromises = Array.from(files).map(async (file) => {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage.from('evidence').upload(fileName, file);
+        if (uploadError) throw uploadError;
 
-      const { error: dbError } = await supabase.from('evidence_files').insert({
-        task_id: task.id,
-        tipo: type,
-        filename: file.name,
-        storage_path: fileName,
-        size_bytes: file.size,
-        mime_type: file.type
+        const { error: dbError } = await supabase.from('evidence_files').insert({
+          task_id: task.id,
+          tipo: type,
+          filename: file.name,
+          storage_path: fileName,
+          size_bytes: file.size,
+          mime_type: file.type
+        });
+        if (dbError) throw dbError;
       });
-      if (dbError) throw dbError;
 
-      toast({ title: "Subido", description: "Archivo guardado." });
+      await Promise.all(uploadPromises);
+
+      toast({ title: "Subida completada", description: `Se han guardado ${files.length} archivo(s).` });
       fetchEvidence();
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: error.message || "Error al subir archivos" });
     } finally {
       setIsUploading(false);
-      event.target.value = "";
+      event.target.value = ""; // Reset input
     }
   };
 
@@ -143,8 +149,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         case 'files': valueToValidate = formData.files; break;
         case 'photos': valueToValidate = formData.photos; break;
         case 'comments': valueToValidate = formData.comments; break;
-        // Inventario no es obligatorio estricto en schema (puede guardarse parcial), 
-        // pero podríamos validar si está vacío si fuera necesario.
         default: valueToValidate = null;
       }
 
@@ -162,21 +166,12 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       // A. Guardar Inventario si aplica
       if (formData.inventory.length > 0) {
-        // Formatear filas para DB
         const inventoryRows = formData.inventory.map(row => ({
           task_id: task.id,
           producto_id: row.producto_id,
           esperado: row.esperado,
           fisico: row.fisico,
-          // diferencia es columna generada (STORED) en BD normalmente, 
-          // pero si tu esquema requiere insertarla, la mandamos.
-          // Revisando schema: diferencia es GENERATED ALWAYS, NO debemos enviarla.
         }));
-
-        // Limpiamos 'diferencia' si es generada, o la dejamos si es columna normal.
-        // Asumiremos inserción segura (Supabase ignora columnas generadas en insert si se omiten, 
-        // pero da error si se envían).
-        // En tu schema MD dice "GENERATED ALWAYS ... STORED". Entonces NO la enviamos.
         
         const { error: invError } = await supabase
           .from('inventory_submission_rows')

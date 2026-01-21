@@ -61,13 +61,14 @@ export function EvidenceStep({
                 <UploadCloud className="w-8 h-8 text-muted-foreground mb-2" />
               )}
               <p className="text-sm text-muted-foreground">
-                {isUploading ? "Subiendo..." : isPhoto ? "Toca para foto" : "Toca para documento"}
+                {isUploading ? "Subiendo..." : isPhoto ? "Toca para subir fotos (Múltiple)" : "Toca para documentos"}
               </p>
             </div>
             <input 
               type="file" 
               accept={isPhoto ? "image/*" : ".pdf,.doc,.docx,.xls,.xlsx,.txt"} 
               className="hidden" 
+              multiple // ✅ Permitir selección múltiple
               onChange={(e) => onUpload(e, type)} 
               disabled={isUploading} 
             />
