@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 // Sub-components
 import { LocationStep } from "./components/execution/LocationStep";
@@ -26,6 +27,7 @@ interface TaskExecutionModalProps {
 
 export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: TaskExecutionModalProps) {
   const { toast } = useToast();
+  const { profile } = useCurrentUser();
   
   // Estado de carga inicial (hidratación de datos)
   const [isInitializing, setIsInitializing] = useState(true);
@@ -55,6 +57,20 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
   const routine = task?.routine_templates;
   const pdv = task?.pdv;
+
+  // --- LÓGICA DE PERMISOS ---
+  const isTaskPending = task?.estado === 'pendiente' || task?.estado === 'en_proceso';
+  const isTaskCompleted = !isTaskPending;
+  const userRole = profile?.role || '';
+
+  // Definir quién puede editar una tarea ya completada (corregir datos)
+  // Administradores NO pueden editar tareas completadas.
+  const canEditCompleted = ['director', 'lider', 'auditor'].includes(userRole);
+
+  // El botón de acción se muestra si:
+  // 1. La tarea está pendiente (Cualquiera asignado puede finalizarla, incluido admin)
+  // 2. La tarea está completa Y el usuario tiene rol de supervisión
+  const canPerformAction = isTaskPending || canEditCompleted;
 
   const schema: TaskField[] = useMemo(() => {
     return buildTaskSchema(routine, pdv);
@@ -225,14 +241,20 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       // Actualizar Tarea
       const now = new Date();
       const limitDate = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
-      const finalStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
+      
+      // Si la tarea estaba pendiente, calculamos si venció. Si ya estaba completa, mantenemos el estado (salvo que sea un edit)
+      let newStatus = task.estado;
+      
+      if (isTaskPending) {
+         newStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
+      }
 
       const { error } = await supabase
         .from('task_instances')
         .update({
-          estado: finalStatus, 
-          completado_at: now.toISOString(),
-          completado_por: user.id,
+          estado: newStatus, 
+          completado_at: isTaskPending ? now.toISOString() : task.completado_at,
+          completado_por: isTaskPending ? user.id : task.completado_por,
           gps_latitud: formData.gps?.lat,
           gps_longitud: formData.gps?.lng,
           gps_en_rango: formData.gps?.valid,
@@ -243,7 +265,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       if (error) throw error;
 
       toast({ 
-        title: finalStatus === 'completada_a_tiempo' ? "¡Tarea Completada!" : "Tarea Completada (Vencida)", 
+        title: isTaskPending ? "¡Tarea Completada!" : "Tarea Actualizada", 
         description: "Información guardada correctamente." 
       });
       
@@ -350,6 +372,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="outline" className="capitalize">{routine.prioridad}</Badge>
             <span className="text-xs text-muted-foreground">{task.fecha_programada}</span>
+            {isTaskCompleted && <Badge variant="secondary" className="bg-green-100 text-green-800">Completada</Badge>}
           </div>
           <DialogTitle>{routine.nombre}</DialogTitle>
           <DialogDescription>{routine.descripcion}</DialogDescription>
@@ -367,21 +390,33 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             <Button variant="outline" onClick={loadTaskData}>Reintentar</Button>
           </div>
         ) : (
-          <div className="space-y-6 py-4">
+          <div className={`space-y-6 py-4 ${!canPerformAction ? 'opacity-80 pointer-events-none' : ''}`}>
+            {/* Si es solo lectura, mostramos un banner */}
+            {!canPerformAction && (
+              <div className="bg-muted p-3 rounded-md text-sm text-center text-muted-foreground mb-4">
+                Esta tarea ya fue completada. Solo lectura.
+              </div>
+            )}
+            
             {schema.map(field => renderField(field))}
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button 
-            onClick={handleComplete} 
-            disabled={isInitializing || isProcessing || isUploading || !!initError}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {isProcessing && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-            {task.estado === 'pendiente' ? 'Finalizar Tarea' : 'Actualizar Tarea'}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {canPerformAction ? 'Cancelar' : 'Cerrar'}
           </Button>
+          
+          {canPerformAction && (
+            <Button 
+              onClick={handleComplete} 
+              disabled={isInitializing || isProcessing || isUploading || !!initError}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isProcessing && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              {isTaskPending ? 'Finalizar Tarea' : 'Actualizar Tarea'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
