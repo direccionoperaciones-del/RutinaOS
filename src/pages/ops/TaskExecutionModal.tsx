@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { calculateDistance } from "@/utils/geo";
-import { MapPin, Camera, CheckCircle2, AlertTriangle, Loader2, UploadCloud, Trash2, Edit } from "lucide-react";
+import { MapPin, Camera, CheckCircle2, AlertTriangle, Loader2, UploadCloud, Trash2, Edit, FileText, Mail, Paperclip, CheckSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskExecutionModalProps {
   task: any;
@@ -29,6 +30,10 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const [comentario, setComentario] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   
+  // Estados para nuevos requisitos
+  const [emailSentConfirmed, setEmailSentConfirmed] = useState(false);
+  const [emailRespondedConfirmed, setEmailRespondedConfirmed] = useState(false);
+  
   // Configuración de la rutina
   const rutina = task?.routine_templates;
   const pdv = task?.pdv;
@@ -36,6 +41,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const requiresGps = rutina?.gps_obligatorio;
   const requiresComment = rutina?.comentario_obligatorio;
   const requiresPhotos = rutina?.fotos_obligatorias;
+  const requiresFile = rutina?.archivo_obligatorio;
+  const requiresSendEmail = rutina?.enviar_email;
+  const requiresRespondEmail = rutina?.responder_email;
+  const requiresInventory = rutina?.requiere_inventario;
+
   const pdvRadio = pdv?.radio_gps || 100;
 
   useEffect(() => {
@@ -44,9 +54,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       setCurrentLocation(null);
       setDistance(null);
       setGpsError(null);
-      setIsGpsValid(!requiresGps); // Si no requiere GPS, es válido por defecto
+      setIsGpsValid(!requiresGps);
       setComentario("");
       setUploadedFiles([]);
+      setEmailSentConfirmed(false);
+      setEmailRespondedConfirmed(false);
       fetchEvidence();
     }
   }, [open, requiresGps, task]);
@@ -105,7 +117,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     );
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'foto' | 'archivo') => {
     const file = event.target.files?.[0];
     if (!file || !task) return;
 
@@ -124,7 +136,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         .from('evidence_files')
         .insert({
           task_id: task.id,
-          tipo: 'foto',
+          tipo: type,
           filename: file.name,
           storage_path: fileName,
           size_bytes: file.size,
@@ -133,7 +145,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       if (dbError) throw dbError;
 
-      toast({ title: "Foto subida", description: "La evidencia se ha guardado correctamente." });
+      toast({ title: "Archivo subido", description: "La evidencia se ha guardado correctamente." });
       fetchEvidence();
     } catch (error: any) {
       console.error(error);
@@ -165,21 +177,34 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       return;
     }
 
-    if (requiresPhotos && uploadedFiles.length < (rutina.min_fotos || 1)) {
-      toast({ 
-        variant: "destructive", 
-        title: "Evidencia requerida", 
-        description: `Debes subir al menos ${rutina.min_fotos || 1} foto(s).` 
-      });
+    if (requiresPhotos) {
+      const photoCount = uploadedFiles.filter(f => f.tipo === 'foto').length;
+      if (photoCount < (rutina.min_fotos || 1)) {
+        toast({ variant: "destructive", title: "Evidencia faltante", description: `Debes subir al menos ${rutina.min_fotos || 1} foto(s).` });
+        return;
+      }
+    }
+
+    if (requiresFile) {
+      const fileCount = uploadedFiles.filter(f => f.tipo === 'archivo').length;
+      if (fileCount === 0) {
+        toast({ variant: "destructive", title: "Archivo faltante", description: "Debes adjuntar el documento requerido." });
+        return;
+      }
+    }
+
+    if (requiresSendEmail && !emailSentConfirmed) {
+      toast({ variant: "destructive", title: "Requisito pendiente", description: "Debes confirmar que enviaste el correo electrónico." });
+      return;
+    }
+
+    if (requiresRespondEmail && !emailRespondedConfirmed) {
+      toast({ variant: "destructive", title: "Requisito pendiente", description: "Debes confirmar que respondiste el correo electrónico." });
       return;
     }
 
     if (requiresComment && !comentario.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Comentario requerido",
-        description: "Esta rutina exige que ingreses notas de ejecución."
-      });
+      toast({ variant: "destructive", title: "Comentario requerido", description: "Esta rutina exige ingresar notas de ejecución." });
       return;
     }
 
@@ -197,9 +222,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           gps_latitud: currentLocation?.lat,
           gps_longitud: currentLocation?.lng,
           gps_en_rango: isGpsValid,
-          // Aquí podríamos guardar el comentario en un campo 'notas' si existiera en la tabla
-          // Por ahora simulamos que va al campo audit_notas o similar, o lo ignoramos si no hay columna
-          // Idealmente agregamos columna 'comentario_ejecutor' en migration.
+          comentario: comentario // Asumiendo que agregamos esta columna o se usa audit_notas
         })
         .eq('id', task.id);
 
@@ -220,11 +243,15 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     return data.publicUrl;
   };
 
+  // Filtros de evidencias
+  const photos = uploadedFiles.filter(f => f.tipo === 'foto');
+  const docs = uploadedFiles.filter(f => f.tipo === 'archivo');
+
   if (!task) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center gap-2 mb-2">
             <Badge variant="outline" className="capitalize">{rutina.prioridad}</Badge>
@@ -238,13 +265,12 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
         <div className="space-y-6 py-4">
           
-          {/* GPS (Solo visible si es obligatorio) */}
+          {/* 1. GPS */}
           {requiresGps && (
             <div className={`p-4 rounded-lg border ${isGpsValid ? 'bg-green-50 border-green-200' : 'bg-muted/50'}`}>
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold flex items-center gap-2 text-sm">
-                  <MapPin className="w-4 h-4" />
-                  Validación de Ubicación
+                  <MapPin className="w-4 h-4" /> Validación de Ubicación
                 </h4>
                 <Badge variant="destructive" className="text-[10px] h-5">Requerido</Badge>
               </div>
@@ -262,24 +288,16 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
               {gpsError && (
                 <div className="flex items-center gap-2 text-destructive text-sm mb-3 font-medium bg-destructive/10 p-2 rounded">
-                  <AlertTriangle className="w-4 h-4" />
-                  {gpsError}
+                  <AlertTriangle className="w-4 h-4" /> {gpsError}
                 </div>
               )}
 
               {isGpsValid ? (
                  <div className="flex items-center gap-2 text-green-700 font-medium text-sm">
-                   <CheckCircle2 className="w-4 h-4" />
-                   Ubicación Válida
+                   <CheckCircle2 className="w-4 h-4" /> Ubicación Válida
                  </div>
               ) : (
-                <Button 
-                  type="button" 
-                  variant="secondary"
-                  size="sm" 
-                  onClick={getLocation}
-                  disabled={isLoading}
-                >
+                <Button type="button" variant="secondary" size="sm" onClick={getLocation} disabled={isLoading}>
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <MapPin className="w-4 h-4 mr-2"/>}
                   Validar Ubicación
                 </Button>
@@ -287,12 +305,104 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             </div>
           )}
 
-          {/* EVIDENCIA */}
+          {/* 2. CONFIRMACIONES DE CORREO */}
+          {(requiresSendEmail || requiresRespondEmail) && (
+            <div className="p-4 rounded-lg border bg-blue-50/50 border-blue-100 space-y-4">
+              <h4 className="font-semibold flex items-center gap-2 text-sm text-blue-900">
+                <Mail className="w-4 h-4" /> Gestión de Correos
+              </h4>
+              
+              {requiresSendEmail && (
+                <div className="flex items-start space-x-2">
+                  <Checkbox 
+                    id="chk-send-email" 
+                    checked={emailSentConfirmed}
+                    onCheckedChange={(c) => setEmailSentConfirmed(!!c)}
+                  />
+                  <div className="grid gap-1.5 leading-none">
+                    <label htmlFor="chk-send-email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Confirmar envío de correo
+                    </label>
+                    <p className="text-sm text-muted-foreground">Declaro que he enviado el correo electrónico solicitado en la rutina.</p>
+                  </div>
+                </div>
+              )}
+
+              {requiresRespondEmail && (
+                <div className="flex items-start space-x-2">
+                  <Checkbox 
+                    id="chk-respond-email"
+                    checked={emailRespondedConfirmed}
+                    onCheckedChange={(c) => setEmailRespondedConfirmed(!!c)}
+                  />
+                  <div className="grid gap-1.5 leading-none">
+                    <label htmlFor="chk-respond-email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Confirmar respuesta de correo
+                    </label>
+                    <p className="text-sm text-muted-foreground">Declaro que he respondido los correos pendientes relacionados.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3. DOCUMENTOS ADJUNTOS */}
+          {requiresFile && (
+            <div className="p-4 rounded-lg border bg-muted/20">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-semibold flex items-center gap-2 text-sm">
+                  <Paperclip className="w-4 h-4" /> Adjuntar Archivo
+                </h4>
+                <Badge variant="destructive" className="text-[10px]">Requerido</Badge>
+              </div>
+              
+              <div className="space-y-4">
+                {docs.length === 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="relative" disabled={isUploading}>
+                      {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <UploadCloud className="w-4 h-4 mr-2"/>}
+                      Subir Documento
+                      <input 
+                        type="file" 
+                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        onChange={(e) => handleFileUpload(e, 'archivo')}
+                        disabled={isUploading}
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                      />
+                    </Button>
+                    <span className="text-xs text-muted-foreground">PDF, Excel, Word...</span>
+                  </div>
+                )}
+
+                {docs.length > 0 && (
+                  <div className="space-y-2">
+                    {docs.map(file => (
+                      <div key={file.id} className="flex items-center justify-between p-2 bg-background border rounded text-sm">
+                        <div className="flex items-center gap-2 truncate">
+                          <FileText className="w-4 h-4 text-blue-500" />
+                          <span className="truncate max-w-[200px]">{file.filename}</span>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 text-destructive"
+                          onClick={() => handleDeleteEvidence(file.id, file.storage_path)}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 4. EVIDENCIA FOTOGRÁFICA */}
           <div className="p-4 rounded-lg border bg-muted/20">
              <div className="flex items-center justify-between mb-2">
               <h4 className="font-semibold flex items-center gap-2 text-sm">
-                <Camera className="w-4 h-4" />
-                Evidencia Fotográfica
+                <Camera className="w-4 h-4" /> Evidencia Fotográfica
               </h4>
               {requiresPhotos ? (
                 <Badge variant="secondary" className="text-[10px]">Mínimo {rutina.min_fotos || 1}</Badge>
@@ -304,7 +414,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             <div className="space-y-4">
               <div className="flex items-center justify-center w-full">
                 <label 
-                  htmlFor="file-upload" 
+                  htmlFor="photo-upload" 
                   className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer bg-background hover:bg-muted/50 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
                 >
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
@@ -317,13 +427,13 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
                       {isUploading ? "Subiendo..." : "Toca para subir foto"}
                     </p>
                   </div>
-                  <input id="file-upload" type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                  <input id="photo-upload" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'foto')} disabled={isUploading} />
                 </label>
               </div>
 
-              {uploadedFiles.length > 0 && (
+              {photos.length > 0 && (
                 <div className="grid grid-cols-3 gap-2">
-                  {uploadedFiles.map(file => (
+                  {photos.map(file => (
                     <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border bg-background">
                       <img 
                         src={getPublicUrl(file.storage_path)} 
@@ -343,7 +453,24 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             </div>
           </div>
 
-          {/* COMENTARIOS */}
+          {/* 5. INVENTARIO (Placeholder) */}
+          {requiresInventory && (
+            <div className="p-4 rounded-lg border bg-orange-50/50 border-orange-100">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold flex items-center gap-2 text-sm text-orange-800">
+                  <CheckSquare className="w-4 h-4" /> Toma de Inventario
+                </h4>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled>
+                  Iniciar Conteo
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                * Módulo de inventario en construcción. Se permite finalizar sin conteo por ahora.
+              </p>
+            </div>
+          )}
+
+          {/* 6. COMENTARIOS */}
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label>Notas de ejecución</Label>
