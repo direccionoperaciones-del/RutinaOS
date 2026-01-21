@@ -144,7 +144,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   <CheckCircle2 className="w-3 h-3" /> A Tiempo
                 </Badge>
               ) : task.estado === 'completada_vencida' ? (
-                <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100 border-orange-200 gap-1 pl-1">
+                <Badge className="bg-red-100 text-red-800 hover:bg-red-100 border-red-200 gap-1 pl-1">
                   <Clock className="w-3 h-3" /> Vencida
                 </Badge>
               ) : (

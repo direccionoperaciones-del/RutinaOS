@@ -342,7 +342,7 @@ export default function AuditList() {
                             <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">A Tiempo</Badge>
                           )}
                           {task.estado === 'completada_vencida' && (
-                            <Badge className="bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-100">Vencida</Badge>
+                            <Badge className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">Vencida</Badge>
                           )}
                           {task.estado === 'completada' && (
                             <Badge variant="outline">Completada</Badge>

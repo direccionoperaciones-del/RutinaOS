@@ -198,7 +198,8 @@ export default function TasksList() {
     switch (status) {
       case 'completada': return "bg-green-100 text-green-700 border-green-200";
       case 'completada_a_tiempo': return "bg-green-100 text-green-700 border-green-200";
-      case 'completada_vencida': return "bg-yellow-100 text-yellow-700 border-yellow-200";
+      // CAMBIO: Vencida ahora es ROJO, no amarillo
+      case 'completada_vencida': return "bg-red-100 text-red-700 border-red-200"; 
       case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
       default: return "bg-gray-100 text-gray-700 border-gray-200";
     }
@@ -218,6 +219,7 @@ export default function TasksList() {
     const r = task.routine_templates || {};
     const styles = getPriorityStyles(task.prioridad_snapshot);
     const isCompleted = task.estado.startsWith('completada');
+    // Check si está pendiente pero ya venció la hora
     const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
 
     return (
@@ -257,7 +259,8 @@ export default function TasksList() {
             ) : task.estado === 'incumplida' ? (
               <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Incumplida</Badge>
             ) : isLate ? (
-              <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-200 text-[10px] px-1.5 py-0">Retrasada</Badge>
+              // CAMBIO: Etiqueta Roja y texto "Vencida" en lugar de Retrasada
+              <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Vencida</Badge>
             ) : (
               <Badge variant="outline" className="bg-white text-[10px] px-1.5 py-0">Pendiente</Badge>
             )}
