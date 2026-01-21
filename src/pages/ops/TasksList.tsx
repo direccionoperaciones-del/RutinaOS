@@ -20,6 +20,155 @@ import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
+// --- COMPONENTS OUTSIDE TO AVOID RE-DECLARATION ISSUES ---
+
+const getPriorityStyles = (priority: string) => {
+  switch (priority) {
+    case 'critica': return { badge: 'bg-red-600 text-white border-red-700', border: 'border-l-4 border-l-red-600' };
+    case 'alta': return { badge: 'bg-orange-500 text-white border-orange-600', border: 'border-l-4 border-l-orange-500' };
+    case 'media': return { badge: 'bg-yellow-500 text-white border-yellow-600', border: 'border-l-4 border-l-yellow-500' };
+    default: return { badge: 'bg-emerald-600 text-white border-emerald-700', border: 'border-l-4 border-l-emerald-600' };
+  }
+};
+
+const getFrequencyIcon = (freq: string) => {
+  switch (freq) {
+    case 'diaria': return <Repeat className="w-3 h-3" />;
+    case 'semanal': return <CalendarDays className="w-3 h-3" />;
+    default: return <CalendarRange className="w-3 h-3" />;
+  }
+};
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'completada': return "bg-green-100 text-green-700 border-green-200";
+    case 'completada_a_tiempo': return "bg-green-100 text-green-700 border-green-200";
+    case 'completada_vencida': return "bg-red-100 text-red-700 border-red-200"; 
+    case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
+    default: return "bg-gray-100 text-gray-700 border-gray-200";
+  }
+};
+
+const getStatusLabel = (status: string) => {
+  switch (status) {
+    case 'completada': return "Completada";
+    case 'completada_a_tiempo': return "A Tiempo";
+    case 'completada_vencida': return "Vencida";
+    case 'incumplida': return "Incumplida";
+    default: return "Pendiente";
+  }
+};
+
+const getStatusBadge = (task: any) => {
+  const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
+  
+  if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
+  if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Vencida</Badge>;
+  if (task.estado === 'incumplida') return <Badge className="bg-red-100 text-red-700 border-red-200">Incumplida</Badge>;
+  
+  if (isLate) return <Badge className="bg-red-50 text-red-600 border-red-100 animate-pulse">¡Vencida!</Badge>;
+  
+  return <Badge variant="outline" className="bg-white">Pendiente</Badge>;
+};
+
+const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void }) => {
+  const r = task.routine_templates || {};
+  const styles = getPriorityStyles(task.prioridad_snapshot);
+  const isDone = task.estado.startsWith('completada') || task.estado === 'incumplida';
+
+  return (
+    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${styles.border}`}>
+      <CardHeader className="p-3 pb-1 space-y-1"> 
+        <div className="flex justify-between items-start">
+          <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${styles.badge}`}>
+            {task.prioridad_snapshot}
+          </Badge>
+          <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-medium bg-muted px-1.5 py-0 rounded-full">
+            {getFrequencyIcon(r.frecuencia)}
+            {r.frecuencia}
+          </div>
+        </div>
+        
+        <div>
+          <h3 className="font-bold text-base leading-tight line-clamp-2" title={r.nombre}>
+            {r.nombre}
+          </h3>
+          <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
+            <MapPin className="w-3 h-3 shrink-0" />
+            <span className="truncate">{task.pdv?.nombre}</span>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-3 pt-2 flex-1">
+        <div className="flex justify-between items-center bg-muted/30 p-1.5 rounded-md mb-2">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            <Clock className="w-3 h-3 text-muted-foreground" />
+            <span>{task.fecha_programada} | {task.hora_limite_snapshot?.slice(0,5)}</span>
+          </div>
+          {getStatusBadge(task)}
+        </div>
+
+        <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
+          {r.gps_obligatorio && <MapPin className="w-3 h-3 text-blue-500" title="GPS" />}
+          {r.fotos_obligatorias && <Camera className="w-3 h-3 text-purple-500" title="Fotos" />}
+          {r.requiere_inventario && <Box className="w-3 h-3 text-orange-500" title="Inventario" />}
+          {r.comentario_obligatorio && <MessageSquareText className="w-3 h-3 text-yellow-500" title="Notas" />}
+          {r.archivo_obligatorio && <FileText className="w-3 h-3 text-cyan-500" title="Archivo" />}
+          {(r.enviar_email || r.responder_email) && <Mail className="w-3 h-3 text-pink-500" title="Email" />}
+        </div>
+
+        {task.profiles && (
+          <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1 bg-muted/20 p-1 rounded">
+            <User className="w-3 h-3" />
+            <span className="truncate">{task.profiles.nombre} {task.profiles.apellido}</span>
+          </div>
+        )}
+      </CardContent>
+
+      <CardFooter className="p-2 bg-muted/10">
+        <Button 
+          className="w-full h-8 text-xs shadow-sm hover:shadow transition-all" 
+          variant={isDone ? "secondary" : "default"}
+          size="sm"
+          onClick={() => onAction(task)}
+        >
+          {isDone ? (
+            <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
+          ) : (
+            <><ArrowRight className="w-3 h-3 ml-1.5" /> Ejecutar</>
+          )}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+};
+
+const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction }: { items: any[], loading: boolean, onRetry: () => void, emptyMessage: string, onAction: (t: any) => void }) => {
+  if (loading) return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
+  
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
+        <CheckCircle2 className="w-12 h-12 mb-3 text-muted-foreground/50" />
+        <h3 className="text-lg font-medium">Sin tareas</h3>
+        <p className="text-muted-foreground text-sm mb-4">{emptyMessage}</p>
+        <Button variant="link" onClick={onRetry} className="mt-2">
+          <RefreshCw className="w-4 h-4 mr-2" /> Recargar Datos
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+      {items.map((task) => (
+        <TaskCard key={task.id} task={task} onAction={onAction} />
+      ))}
+    </div>
+  );
+};
+
 export default function TasksList() {
   const { toast } = useToast();
   const { profile, user, loading: loadingProfile } = useCurrentUser();
@@ -66,7 +215,6 @@ export default function TasksList() {
 
       // --- LOGICA DE VISIBILIDAD POR ROL ---
       if (profile.role === 'administrador') {
-        // 1. Obtener IDs de PDVs donde el usuario tiene asignación VIGENTE
         const { data: myAssignments } = await supabase
           .from('pdv_assignments')
           .select('pdv_id')
@@ -75,21 +223,16 @@ export default function TasksList() {
         
         const myPdvIds = myAssignments?.map(a => a.pdv_id) || [];
 
-        // 2. Construir filtro: (Es mi PDV) O (Soy el responsable directo) O (Yo la completé)
-        // IMPORTANTE: Si myPdvIds está vacío, no usar .in() vacío porque rompe la query
         if (myPdvIds.length > 0) {
-          // Sintaxis: pdv_id.in.(id1,id2),responsable_id.eq.id
           const pdvFilter = `pdv_id.in.(${myPdvIds.join(',')})`;
           const userFilter = `responsable_id.eq.${user.id}`;
           const completedFilter = `completado_por.eq.${user.id}`;
           
           query = query.or(`${pdvFilter},${userFilter},${completedFilter}`);
         } else {
-          // Si no tiene PDV asignado, solo ve lo que se le asigne directamente
           query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
         }
       } 
-      // Si es Director/Lider/Auditor, ve todo (limitado por RLS de tenant implícito)
 
       const { data, error } = await query
         .order('prioridad_snapshot', { ascending: false })
@@ -147,18 +290,10 @@ export default function TasksList() {
     return true;
   });
 
-  // --- LOGICA DE TABS SIMPLIFICADA ---
+  // --- LOGICA DE TABS ---
   const allTasks = filteredTasks;
-  
-  // Pendientes: No completadas (incluye las vencidas que aún no se han hecho)
-  const pendingTasks = filteredTasks.filter(t => 
-    t.estado === 'pendiente' || t.estado === 'en_proceso'
-  );
-  
-  // Realizadas: Cualquier estado final (Completada ok, Completada tarde, Incumplida/Cerrada)
-  const completedTasks = filteredTasks.filter(t => 
-    t.estado.startsWith('completada') || t.estado === 'incumplida'
-  );
+  const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
+  const completedTasks = filteredTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
 
   const totalFiltered = filteredTasks.length;
   const totalDone = completedTasks.length;
@@ -174,87 +309,6 @@ export default function TasksList() {
   };
 
   const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
-
-  // --- UI COMPONENTS ---
-  const getStatusBadge = (task: any) => {
-    const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
-    
-    if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
-    if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Vencida</Badge>;
-    if (task.estado === 'incumplida') return <Badge className="bg-red-100 text-red-700 border-red-200">Incumplida</Badge>;
-    
-    if (isLate) return <Badge className="bg-red-50 text-red-600 border-red-100 animate-pulse">¡Vencida!</Badge>;
-    
-    return <Badge variant="outline" className="bg-white">Pendiente</Badge>;
-  };
-
-  const TaskCard = ({ task }: { task: any }) => {
-    const r = task.routine_templates || {};
-    const isDone = task.estado.startsWith('completada') || task.estado === 'incumplida';
-
-    return (
-      <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${
-        r.prioridad === 'critica' ? 'border-l-red-500' : 
-        r.prioridad === 'alta' ? 'border-l-orange-500' : 
-        'border-l-blue-500'
-      }`}>
-        <CardHeader className="p-3 pb-1 space-y-1"> 
-          <div className="flex justify-between items-start">
-            <Badge variant="outline" className="uppercase text-[9px] font-bold px-1.5 py-0">
-              {r.prioridad}
-            </Badge>
-            {getStatusBadge(task)}
-          </div>
-          
-          <div>
-            <h3 className="font-bold text-base leading-tight line-clamp-2" title={r.nombre}>
-              {r.nombre}
-            </h3>
-            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-              <MapPin className="w-3 h-3 shrink-0" />
-              <span className="truncate">{task.pdv?.nombre}</span>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-3 pt-2 flex-1">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2 bg-muted/30 p-1.5 rounded">
-            <Clock className="w-3 h-3" />
-            <span>Vence: {task.hora_limite_snapshot?.slice(0,5)}</span>
-          </div>
-
-          <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
-            {r.gps_obligatorio && <MapPin className="w-3 h-3 text-blue-500" title="GPS" />}
-            {r.fotos_obligatorias && <Camera className="w-3 h-3 text-purple-500" title="Fotos" />}
-            {r.requiere_inventario && <Box className="w-3 h-3 text-orange-500" title="Inventario" />}
-            {r.comentario_obligatorio && <MessageSquareText className="w-3 h-3 text-yellow-500" title="Notas" />}
-          </div>
-
-          {task.profiles && (
-            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1 bg-muted/20 p-1 rounded">
-              <User className="w-3 h-3" />
-              <span className="truncate">{task.profiles.nombre} {task.profiles.apellido}</span>
-            </div>
-          )}
-        </CardContent>
-
-        <CardFooter className="p-2 bg-muted/10">
-          <Button 
-            className="w-full h-8 text-xs shadow-sm" 
-            variant={isDone ? "secondary" : "default"}
-            size="sm"
-            onClick={() => handleStartTask(task)}
-          >
-            {isDone ? (
-              <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
-            ) : (
-              <><ArrowRight className="w-3 h-3 ml-1.5" /> Ejecutar</>
-            )}
-          </Button>
-        </CardFooter>
-      </Card>
-    );
-  };
 
   return (
     <div className="space-y-6 pb-20">
@@ -330,7 +384,7 @@ export default function TasksList() {
         </div>
       </div>
 
-      {/* --- TABS SIMPLIFICADOS --- */}
+      {/* --- TABS --- */}
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="all">Todas ({allTasks.length})</TabsTrigger>
@@ -339,15 +393,33 @@ export default function TasksList() {
         </TabsList>
 
         <TabsContent value="all" className="mt-0">
-          <TaskGrid items={allTasks} loading={loading} onRetry={fetchTasks} emptyMessage="No hay tareas para esta fecha." />
+          <TaskGrid 
+            items={allTasks} 
+            loading={loading} 
+            onRetry={fetchTasks} 
+            emptyMessage="No hay tareas para esta fecha." 
+            onAction={handleStartTask} 
+          />
         </TabsContent>
 
         <TabsContent value="pending" className="mt-0">
-          <TaskGrid items={pendingTasks} loading={loading} onRetry={fetchTasks} emptyMessage="¡Todo al día! No tienes tareas pendientes." />
+          <TaskGrid 
+            items={pendingTasks} 
+            loading={loading} 
+            onRetry={fetchTasks} 
+            emptyMessage="¡Todo al día! No tienes tareas pendientes." 
+            onAction={handleStartTask} 
+          />
         </TabsContent>
 
         <TabsContent value="completed" className="mt-0">
-          <TaskGrid items={completedTasks} loading={loading} onRetry={fetchTasks} emptyMessage="No hay tareas completadas aún." />
+          <TaskGrid 
+            items={completedTasks} 
+            loading={loading} 
+            onRetry={fetchTasks} 
+            emptyMessage="No hay tareas completadas aún." 
+            onAction={handleStartTask} 
+          />
         </TabsContent>
       </Tabs>
 
@@ -360,51 +432,3 @@ export default function TasksList() {
     </div>
   );
 }
-
-// Componente auxiliar para Grid o Estado Vacío
-function TaskGrid({ items, loading, onRetry, emptyMessage }: any) {
-  if (loading) return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
-  
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 bg-muted/10 rounded-lg border-2 border-dashed">
-        <CheckCircle2 className="w-12 h-12 mb-3 text-muted-foreground/50" />
-        <h3 className="text-lg font-medium text-foreground">Sin tareas</h3>
-        <p className="text-muted-foreground text-sm mb-4">{emptyMessage}</p>
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          <RefreshCw className="w-4 h-4 mr-2" /> Recargar Datos
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-      {items.map((task: any) => (
-        // Renderizamos TaskCard definido dentro del componente padre para tener acceso al contexto
-        // Pero como TaskCard usa props, lo ideal es pasarlo o definirlo fuera. 
-        // Por simplicidad en este refactor, asumo que TaskList renderiza directo arriba.
-        // Aquí solo mostramos el placeholder de la lógica de renderizado.
-        // En la implementación real de arriba, TaskGrid se usa para organizar el layout.
-        // Nota: React requiere que los componentes estén definidos. 
-        // Para que compile bien, moveremos TaskCard fuera o lo pasaremos como children si fuera genérico.
-        // En este archivo TaskList contiene todo, así que TaskGrid es solo un wrapper visual aquí.
-        null
-      ))}
-      {/* Corrección: El map debe hacerse fuera o pasar el componente */}
-    </div>
-  );
-}
-
-// Sobreescribimos TaskGrid para que funcione correctamente dentro del archivo
-const TaskGrid = ({ items, loading, onRetry, emptyMessage }: any) => {
-  // Necesitamos recrear TaskCard aquí o pasarla como prop, 
-  // para evitar duplicidad de código, copiamos la lógica de renderizado aquí o simplificamos.
-  // La mejor opción es renderizar el grid directamente en el componente padre 
-  // o mover TaskCard fuera. Moveremos TaskCard fuera en una refactorización mayor.
-  // Por ahora, usaremos la lógica inline en el return del padre para mantener consistencia.
-  return null; 
-}; 
-// NOTA: He integrado la lógica de renderizado `TaskGrid` directamente en `TasksList` (ver arriba en TabsContent)
-// para evitar problemas de scope con `handleStartTask`.
-// El componente `TaskGrid` de abajo es solo ilustrativo, usaré la implementación directa en `TasksList`.
