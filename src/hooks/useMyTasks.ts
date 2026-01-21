@@ -11,6 +11,7 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
     queryFn: async () => {
       if (!user) throw new Error("No autenticado");
 
+      // Construcción de la consulta
       let query = supabase
         .from('task_instances')
         .select(`
@@ -26,12 +27,30 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           profiles:completado_por (id, nombre, apellido)
         `);
 
-      // 1. Filtro base: Tareas de la fecha seleccionada O Tareas pendientes (Backlog)
+      // Lógica de Filtro:
+      // 1. Tareas programadas en el rango de fechas
+      // 2. O tareas pendientes antiguas (Backlog)
+      const dateFilter = `fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo}`;
+      const statusFilter = `estado.in.(pendiente,en_proceso)`;
+      
+      // Combinamos: (Rango Fechas) OR (Pendientes)
+      // Nota: Supabase postgrest filter syntax para OR complejo es limitado en cliente JS simple.
+      // Simplificación eficiente: Traer pendientes SIEMPRE + Historial del rango.
+      
+      // Opción A: Usar filtro OR crudo
+      // query = query.or(`and(fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo}),estado.in.(pendiente,en_proceso)`);
+      
+      // Opción B (Más segura): Traer por fecha O estado pendiente
+      // Para que el usuario vea lo que tiene que hacer HOY (pendiente) + lo que hizo HOY.
       query = query.or(`fecha_programada.eq.${dateTo},estado.in.(pendiente,en_proceso)`);
       
-      // 2. Filtros de Rol / Seguridad
+      // Nota sobre Filtro de Fecha: 
+      // Si el usuario selecciona un rango histórico (ej: mes pasado), no querría ver las pendientes de hoy.
+      // Pero para la vista operativa "Mis Tareas", ver el backlog es lo deseado.
+      
+      // --- RESTRICCIÓN DE SEGURIDAD PARA ADMINISTRADOR ---
       if (profile?.role === 'administrador') {
-        // Buscar mis asignaciones explícitas
+        // 1. Obtener mis PDVs activos
         const { data: assignments } = await supabase
           .from('pdv_assignments')
           .select('pdv_id')
@@ -40,32 +59,29 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         
         const myPdvIds = assignments?.map(a => a.pdv_id) || [];
         
-        // CORRECCIÓN:
-        // - Si tengo PDVs asignados -> Filtro por ellos.
-        // - Si NO tengo asignaciones -> Veo TODO (comportamiento Super Admin/Dev).
         if (myPdvIds.length > 0) {
+          // Filtrar por mis PDVs asignados O tareas que yo completé (histórico personal)
           query = query.or(`pdv_id.in.(${myPdvIds.join(',')}),completado_por.eq.${user.id}`);
+        } else {
+          // Si no tengo PDV, solo lo que yo haya tocado
+          query = query.eq('completado_por', user.id);
         }
-        // Si myPdvIds es vacío, no aplicamos filtro extra, confiamos en el filtro base.
-        
-      } else if (profile?.role !== 'administrador') {
-        // Para otros roles (vendedores, etc), restringimos estrictamente
-        // Esto depende de tus políticas RLS, pero por seguridad en frontend:
-        query = query.eq('completado_por', user.id); // O lógica similar según tu modelo
       }
       
       const { data, error } = await query
-        .order('prioridad_snapshot', { ascending: false })
-        .order('fecha_programada', { ascending: true });
+        .order('prioridad_snapshot', { ascending: false }) // Críticas primero
+        .order('fecha_programada', { ascending: true });   // Más antiguas primero
 
       if (error) {
         console.error("Error fetching tasks:", error);
         throw error;
       }
 
-      // Filtrado final en memoria
+      // Filtrado adicional en memoria para asegurar rango de fechas en las completadas
+      // (Ya que el OR trajo pendientes de cualquier fecha, pero queremos completadas solo del rango)
       const filteredData = (data || []).filter((task: any) => {
         if (task.estado === 'pendiente' || task.estado === 'en_proceso') return true;
+        // Si está completada, debe estar en el rango seleccionado
         return task.fecha_programada >= dateFrom && task.fecha_programada <= dateTo;
       });
 
