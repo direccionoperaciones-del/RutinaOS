@@ -33,7 +33,8 @@ export default function AuditList() {
         pdv (nombre, ciudad),
         profiles:completado_por (nombre, apellido)
       `)
-      .eq('estado', 'completada')
+      // Corrección: Incluir todos los estados de finalización válidos
+      .in('estado', ['completada', 'completada_a_tiempo', 'completada_vencida']) 
       .order('completado_at', { ascending: false });
 
     if (statusFilter !== 'todos') {
@@ -48,6 +49,7 @@ export default function AuditList() {
     const { data, error } = await query;
 
     if (error) {
+      console.error("Error cargando auditoría:", error);
       toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar las tareas." });
     } else {
       setTasks(data || []);
@@ -64,11 +66,14 @@ export default function AuditList() {
     setIsModalOpen(true);
   };
 
-  const filteredTasks = tasks.filter(t => 
-    t.pdv?.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.routine_templates?.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (t.profiles?.nombre + ' ' + t.profiles?.apellido).toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTasks = tasks.filter(t => {
+    const searchLower = searchTerm.toLowerCase();
+    const pdvName = t.pdv?.nombre?.toLowerCase() || "";
+    const routineName = t.routine_templates?.nombre?.toLowerCase() || "";
+    const userName = t.profiles ? `${t.profiles.nombre} ${t.profiles.apellido}`.toLowerCase() : "";
+    
+    return pdvName.includes(searchLower) || routineName.includes(searchLower) || userName.includes(searchLower);
+  });
 
   return (
     <div className="space-y-6">
@@ -118,49 +123,54 @@ export default function AuditList() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTasks.map((task) => (
-                  <TableRow key={task.id}>
-                    <TableCell className="text-xs">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3 h-3 text-muted-foreground" />
-                        {task.completado_at ? format(new Date(task.completado_at), "dd/MM HH:mm") : '-'}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {task.routine_templates?.nombre}
-                      {task.routine_templates?.prioridad === 'critica' && (
-                         <Badge variant="destructive" className="ml-2 text-[10px] h-5">Crítica</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>{task.pdv?.nombre}</TableCell>
-                    <TableCell>
-                      <span className="text-sm text-muted-foreground">
-                        {task.profiles?.nombre} {task.profiles?.apellido}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {task.gps_en_rango === true && <CheckCircle2 className="w-4 h-4 text-green-500" />}
-                      {task.gps_en_rango === false && <AlertTriangle className="w-4 h-4 text-orange-500" />}
-                      {task.gps_en_rango === null && <span className="text-muted-foreground">-</span>}
-                    </TableCell>
-                    <TableCell>
-                      {task.audit_status === 'aprobado' && <Badge className="bg-green-100 text-green-800 border-green-200">Aprobado</Badge>}
-                      {task.audit_status === 'rechazado' && <Badge className="bg-red-100 text-red-800 border-red-200">Rechazado</Badge>}
-                      {(!task.audit_status || task.audit_status === 'pendiente') && <Badge variant="outline">Pendiente</Badge>}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => handleReview(task)}>
-                        <Eye className="w-4 h-4 mr-2" /> Revisar
-                      </Button>
-                    </TableCell>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8">Cargando...</TableCell>
                   </TableRow>
-                ))}
-                {filteredTasks.length === 0 && (
+                ) : filteredTasks.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No hay tareas que coincidan con los filtros.
                     </TableCell>
                   </TableRow>
+                ) : (
+                  filteredTasks.map((task) => (
+                    <TableRow key={task.id}>
+                      <TableCell className="text-xs">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3 h-3 text-muted-foreground" />
+                          {task.completado_at ? format(new Date(task.completado_at), "dd/MM HH:mm") : '-'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {task.routine_templates?.nombre}
+                        {task.routine_templates?.prioridad === 'critica' && (
+                           <Badge variant="destructive" className="ml-2 text-[10px] h-5">Crítica</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>{task.pdv?.nombre}</TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {task.profiles ? `${task.profiles.nombre} ${task.profiles.apellido}` : 'Desconocido'}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {task.gps_en_rango === true && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                        {task.gps_en_rango === false && <AlertTriangle className="w-4 h-4 text-orange-500" />}
+                        {task.gps_en_rango === null && <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                      <TableCell>
+                        {task.audit_status === 'aprobado' && <Badge className="bg-green-100 text-green-800 border-green-200">Aprobado</Badge>}
+                        {task.audit_status === 'rechazado' && <Badge className="bg-red-100 text-red-800 border-red-200">Rechazado</Badge>}
+                        {(!task.audit_status || task.audit_status === 'pendiente') && <Badge variant="outline">Pendiente</Badge>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleReview(task)}>
+                          <Eye className="w-4 h-4 mr-2" /> Revisar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>
