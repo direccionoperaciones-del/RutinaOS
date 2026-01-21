@@ -131,17 +131,19 @@ export default function ReportsPage() {
   const generateInventoryReport = async () => {
     setLoading(true);
     try {
-      // Paso 1: Obtener IDs de tareas en el rango de fechas
+      // Paso 1: Obtener IDs de tareas en el rango que sean de tipo INVENTARIO
+      // Usamos !inner para forzar que cumpla la condición de routine_templates
       const { data: tasks, error: taskError } = await supabase
         .from('task_instances')
-        .select('id')
+        .select('id, routine_templates!inner(requiere_inventario)')
+        .eq('routine_templates.requiere_inventario', true) 
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
 
       if (taskError) throw taskError;
 
       if (!tasks || tasks.length === 0) {
-        toast({ variant: "destructive", title: "Sin datos", description: "No hay tareas en este rango de fechas." });
+        toast({ variant: "destructive", title: "Sin datos", description: "No se encontraron tareas de inventario en este rango." });
         return;
       }
 
@@ -167,7 +169,11 @@ export default function ReportsPage() {
       if (error) throw error;
 
       if (!data || data.length === 0) {
-        toast({ variant: "destructive", title: "Sin datos", description: "Las tareas encontradas no tienen registros de inventario." });
+        toast({ 
+          variant: "destructive", 
+          title: "Sin registros", 
+          description: `Se encontraron ${taskIds.length} tareas de inventario, pero ninguna tiene datos guardados aún.` 
+        });
         return;
       }
 
