@@ -12,7 +12,7 @@ import {
   Calendar as CalendarIcon, Eye, Camera, Mail, 
   MessageSquareText, Box, FileText,
   Repeat, CalendarDays, CalendarRange, ArrowRight,
-  User, Filter
+  User, Filter, Loader2
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -22,7 +22,7 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function TasksList() {
   const { toast } = useToast();
-  const { profile, user } = useCurrentUser();
+  const { profile, user, loading: loadingProfile } = useCurrentUser();
   
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,66 +39,92 @@ export default function TasksList() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
   const fetchTasks = async () => {
-    if (!profile) return; // Esperar a que cargue el perfil
+    // Si todavía está cargando el perfil, no hacemos nada aún
+    if (loadingProfile || !profile || !user) return;
+    
     setLoading(true);
 
-    let query = supabase
-      .from('task_instances')
-      .select(`
-        *,
-        routine_templates (
-          id,
-          nombre,
-          descripcion,
-          prioridad,
-          frecuencia,
-          gps_obligatorio,
-          fotos_obligatorias,
-          min_fotos,
-          comentario_obligatorio,
-          requiere_inventario,
-          categorias_ids, 
-          archivo_obligatorio,
-          enviar_email,
-          responder_email
-        ),
-        pdv (
-          id,
-          nombre,
-          ciudad,
-          latitud,
-          longitud,
-          radio_gps
-        ),
-        profiles:completado_por (
-          id,
-          nombre,
-          apellido
-        )
-      `);
+    try {
+      let query = supabase
+        .from('task_instances')
+        .select(`
+          *,
+          routine_templates (
+            id,
+            nombre,
+            descripcion,
+            prioridad,
+            frecuencia,
+            gps_obligatorio,
+            fotos_obligatorias,
+            min_fotos,
+            comentario_obligatorio,
+            requiere_inventario,
+            categorias_ids, 
+            archivo_obligatorio,
+            enviar_email,
+            responder_email
+          ),
+          pdv (
+            id,
+            nombre,
+            ciudad,
+            latitud,
+            longitud,
+            radio_gps
+          ),
+          profiles:completado_por (
+            id,
+            nombre,
+            apellido
+          )
+        `);
 
-    // --- RESTRICCIÓN ROL ADMINISTRADOR ---
-    // Si es administrador, solo ver tareas asignadas a él (responsable_id) o completadas por él
-    if (profile.role === 'administrador' && user) {
-      query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
-    }
+      // --- LOGICA DE VISIBILIDAD POR ROL ---
+      if (profile.role === 'administrador') {
+        // 1. Obtener los PDVs asignados a este administrador
+        const { data: myAssignments } = await supabase
+          .from('pdv_assignments')
+          .select('pdv_id')
+          .eq('user_id', user.id)
+          .eq('vigente', true);
+        
+        const myPdvIds = myAssignments?.map(a => a.pdv_id) || [];
 
-    const { data, error } = await query
-      .order('fecha_programada', { ascending: false })
-      .order('prioridad_snapshot', { ascending: false });
+        if (myPdvIds.length > 0) {
+          // Ver tareas de MIS PDVs O donde soy responsable explícito O donde yo completé
+          // Usamos sintaxis 'or' de PostgREST con filtro IN para PDVs
+          const pdvFilter = `pdv_id.in.(${myPdvIds.join(',')})`;
+          const userFilter = `responsable_id.eq.${user.id},completado_por.eq.${user.id}`;
+          
+          query = query.or(`${pdvFilter},${userFilter}`);
+        } else {
+          // Si no tiene PDV asignado, fallback a solo asignación directa
+          query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+        }
+      } 
+      // Si es Director/Lider/Auditor, ve todo (limitado por RLS de tenant)
 
-    if (error) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar las tareas." });
-    } else {
+      const { data, error } = await query
+        .order('fecha_programada', { ascending: false })
+        .order('prioridad_snapshot', { ascending: false });
+
+      if (error) throw error;
       setTasks(data || []);
+
+    } catch (error: any) {
+      console.error("Error fetching tasks:", error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar las tareas." });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
-    fetchTasks();
-  }, [profile]); // Recargar cuando el perfil esté listo
+    if (!loadingProfile && profile) {
+      fetchTasks();
+    }
+  }, [loadingProfile, profile]); // Ejecutar cuando el perfil esté listo
 
   const handleStartTask = (task: any) => {
     setSelectedTask(task);
@@ -198,7 +224,6 @@ export default function TasksList() {
     switch (status) {
       case 'completada': return "bg-green-100 text-green-700 border-green-200";
       case 'completada_a_tiempo': return "bg-green-100 text-green-700 border-green-200";
-      // CAMBIO: Vencida ahora es ROJO, no amarillo
       case 'completada_vencida': return "bg-red-100 text-red-700 border-red-200"; 
       case 'incumplida': return "bg-red-100 text-red-700 border-red-200";
       default: return "bg-gray-100 text-gray-700 border-gray-200";
@@ -219,7 +244,6 @@ export default function TasksList() {
     const r = task.routine_templates || {};
     const styles = getPriorityStyles(task.prioridad_snapshot);
     const isCompleted = task.estado.startsWith('completada');
-    // Check si está pendiente pero ya venció la hora
     const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
 
     return (
@@ -259,7 +283,6 @@ export default function TasksList() {
             ) : task.estado === 'incumplida' ? (
               <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Incumplida</Badge>
             ) : isLate ? (
-              // CAMBIO: Etiqueta Roja y texto "Vencida" en lugar de Retrasada
               <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 text-[10px] px-1.5 py-0">Vencida</Badge>
             ) : (
               <Badge variant="outline" className="bg-white text-[10px] px-1.5 py-0">Pendiente</Badge>
@@ -306,7 +329,7 @@ export default function TasksList() {
   };
 
   const TaskGrid = ({ items, emptyMessage }: { items: any[], emptyMessage: string }) => {
-    if (loading) return <div className="text-center py-10">Cargando tareas...</div>;
+    if (loading || loadingProfile) return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
     if (items.length === 0) {
       return (
         <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
