@@ -30,12 +30,9 @@ export default function PDVList() {
           profiles(nombre, apellido)
         )
       `)
-      // Nota: El left join explícito con asignaciones vigentes es complejo en una sola query simple,
-      // simplificamos trayendo todo y filtrando o ajustando según necesidad.
-      // Para esta vista simple, traemos PDV base.
       .order('codigo_interno', { ascending: true });
       
-    // Re-fetch simple para evitar problemas de joins complejos si no están configurados
+    // Fallback simple si el join falla por configuración RLS
     const { data: simpleData, error: simpleError } = await supabase
       .from('pdv')
       .select('*')
@@ -81,20 +78,20 @@ export default function PDVList() {
   // --- LOGICA DE PLANTILLA Y CARGA MASIVA ---
 
   const downloadTemplate = () => {
-    // Encabezados del CSV
+    // Encabezados del CSV (Usamos ; para mayor compatibilidad con Excel español)
     const headers = [
-      "codigo_interno (Requerido)",
-      "nombre (Requerido)",
-      "ciudad (Requerido)",
+      "codigo_interno",
+      "nombre",
+      "ciudad",
       "direccion",
       "telefono",
-      "latitud (Ej: 4.6097)",
-      "longitud (Ej: -74.0817)",
-      "radio_gps (Def: 100)",
-      "responsable (Nombre Apellido Exacto)"
+      "latitud",
+      "longitud",
+      "radio_gps",
+      "responsable"
     ];
 
-    const csvContent = headers.join(",") + "\n" + "PDV-001,Tienda Central,Bogotá,Calle 123 #45-67,3001234567,4.6097,-74.0817,100,Juan Perez";
+    const csvContent = headers.join(";") + "\n" + "PDV-001;Tienda Central;Bogotá;Calle 123 #45-67;3001234567;4.6097;-74.0817;100;Juan Perez";
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -127,15 +124,21 @@ export default function PDVList() {
       }
     };
 
-    reader.readAsText(file);
+    reader.readAsText(file); // Leer con encoding default (UTF-8 usualmente)
   };
 
   const processBatch = async (csvText: string) => {
-    const lines = csvText.split('\n');
+    const lines = csvText.split(/\r?\n/); // Soporte para saltos de línea Windows/Unix
     // Saltamos el encabezado (línea 0)
     const rows = lines.slice(1).filter(line => line.trim() !== '');
     
-    if (rows.length === 0) throw new Error("El archivo está vacío");
+    if (rows.length === 0) throw new Error("El archivo está vacío o solo tiene encabezados");
+
+    // DETECTAR SEPARADOR INTELIGENTE (coma o punto y coma)
+    const firstLine = lines[0];
+    const separator = firstLine.includes(';') ? ';' : ',';
+
+    console.log(`Detectado separador: "${separator}"`);
 
     // 1. Obtener Tenant ID y Usuario Actual
     const { data: { user } } = await supabase.auth.getUser();
@@ -146,8 +149,9 @@ export default function PDVList() {
 
     // 2. Obtener lista de usuarios para mapear responsables (Cache simple)
     const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true);
-    const userMap = new Map(); // Key: "Nombre Apellido", Value: ID
+    const userMap = new Map(); 
     users?.forEach(u => {
+      // Normalizamos: minúsculas y sin espacios extra
       const fullName = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
       userMap.set(fullName, u.id);
     });
@@ -157,10 +161,11 @@ export default function PDVList() {
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      // Simple parseo por comas (Nota: falla si hay comas dentro de campos, para V1 asumimos CSV simple)
-      const cols = row.split(',').map(c => c.trim());
+      // Parseo básico
+      const cols = row.split(separator).map(c => c.trim().replace(/^"|"$/g, '')); // Quitar comillas si las hay
       
-      if (cols.length < 3) continue; // Saltar líneas malformadas
+      // Validar longitud mínima (al menos código, nombre, ciudad)
+      if (cols.length < 3) continue; 
 
       const [codigo, nombre, ciudad, direccion, telefono, lat, lng, radio, responsableName] = cols;
 
@@ -171,6 +176,11 @@ export default function PDVList() {
 
       try {
         // Insertar PDV
+        // Parsear números con cuidado (reemplazar coma decimal por punto si viene de Excel español)
+        const latVal = lat ? parseFloat(lat.replace(',', '.')) : null;
+        const lngVal = lng ? parseFloat(lng.replace(',', '.')) : null;
+        const radioVal = radio ? parseInt(radio) : 100;
+
         const { data: newPdv, error: pdvError } = await supabase.from('pdv').insert({
           tenant_id: profile.tenant_id,
           codigo_interno: codigo,
@@ -178,17 +188,19 @@ export default function PDVList() {
           ciudad: ciudad,
           direccion: direccion || null,
           telefono: telefono || null,
-          latitud: lat ? parseFloat(lat) : null,
-          longitud: lng ? parseFloat(lng) : null,
-          radio_gps: radio ? parseInt(radio) : 100,
+          latitud: isNaN(latVal!) ? null : latVal,
+          longitud: isNaN(lngVal!) ? null : lngVal,
+          radio_gps: radioVal,
           activo: true
         }).select().single();
 
         if (pdvError) throw pdvError;
 
-        // Asignar Responsable si existe y se encontró
+        // Asignar Responsable si existe
         if (responsableName && newPdv) {
-          const userId = userMap.get(responsableName.toLowerCase());
+          const cleanName = responsableName.toLowerCase().trim();
+          const userId = userMap.get(cleanName);
+          
           if (userId) {
             await supabase.from('pdv_assignments').insert({
               tenant_id: profile.tenant_id,
@@ -198,15 +210,18 @@ export default function PDVList() {
               created_by: user.id
             });
           } else {
-            // No fallamos toda la fila, solo avisamos que el usuario no se encontró, pero el PDV se creó
-            errors.push(`Fila ${i + 2}: PDV creado, pero usuario "${responsableName}" no encontrado.`);
+            // Advertencia no bloqueante
+            errors.push(`Fila ${i + 2}: PDV creado, pero usuario "${responsableName}" no encontrado en el sistema.`);
           }
         }
 
         successCount++;
       } catch (err: any) {
         console.error(err);
-        errors.push(`Fila ${i + 2} (${codigo}): ${err.message}`);
+        // Mejorar mensaje de error duplicado
+        let msg = err.message;
+        if (err.code === '23505') msg = "El código interno o nombre ya existe.";
+        errors.push(`Fila ${i + 2} (${codigo}): ${msg}`);
       }
     }
 
@@ -214,14 +229,16 @@ export default function PDVList() {
     
     if (errors.length > 0) {
       toast({
-        variant: "default", // Usamos default para mostrar resumen mixto
+        variant: "default",
         title: "Carga Finalizada con Observaciones",
-        description: `Creados: ${successCount}. Errores: ${errors.length}. Revisa la consola o intenta de nuevo los fallidos.`
+        description: `Creados: ${successCount}. Errores: ${errors.length}. Revisa los detalles.`,
+        duration: 6000
       });
-      // Mostrar errores detallados en consola o un modal de errores (aquí simplificado)
-      console.warn("Errores de carga masiva:", errors);
+      // Mostrar errores en consola por ahora (podríamos hacer un modal de errores)
+      console.warn("Errores de carga:", errors);
+      alert(`Se encontraron errores en algunas filas:\n${errors.slice(0, 5).join('\n')}\n${errors.length > 5 ? '...' : ''}`);
     } else {
-      toast({ title: "Carga Masiva Exitosa", description: `Se crearon ${successCount} puntos de venta correctamente.` });
+      toast({ title: "Carga Masiva Exitosa", description: `Se procesaron ${successCount} registros correctamente.` });
     }
   };
 
@@ -240,12 +257,11 @@ export default function PDVList() {
           <p className="text-muted-foreground">Administra tus sucursales y sus ubicaciones.</p>
         </div>
         <div className="flex gap-2">
-          {/* Input oculto para carga */}
           <input 
             type="file" 
             ref={fileInputRef} 
             className="hidden" 
-            accept=".csv" 
+            accept=".csv,.txt" 
             onChange={handleFileUpload} 
           />
           

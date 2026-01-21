@@ -1,0 +1,2 @@
+codigo_interno (Requerido);nombre (Requerido);ciudad (Requerido);direccion;telefono;latitud (Ej: 4.6097);longitud (Ej: -74.0817);radio_gps (Def: 100);responsable (Nombre Apellido Exacto)
+100;Provenza;Medéllin;Calle 10 # 34-43;3104480888;6,20854;-75,56550;100;Admin Prueba
