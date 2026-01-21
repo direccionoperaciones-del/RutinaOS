@@ -89,7 +89,6 @@ export default function AssignmentList() {
         .order('nombre');
 
       // 2. Obtener PDVs Activos con Responsable
-      // Usamos inner join o left join para obtener info del responsable
       const { data: pdvs } = await supabase
         .from('pdv')
         .select(`
@@ -103,15 +102,16 @@ export default function AssignmentList() {
         .eq('activo', true)
         .order('codigo_interno');
 
-      // 3. Construir CSV
+      // 3. Construir CSV con Separadores Claros
+      // Usamos 3 columnas vacías como separador visual
       const headers = [
         "NOMBRE_RUTINA", 
         "CODIGO_PDV", 
-        "", // Separador
-        "--- RUTINAS DISPONIBLES (COPIAR NOMBRE) ---", 
+        "", "", "", // 3 columnas separadoras
+        "--- REF: RUTINAS (COPIAR NOMBRE) ---", 
         "FRECUENCIA",
-        "", // Separador
-        "--- PDVS DISPONIBLES (COPIAR CODIGO) ---",
+        "", "", "", // 3 columnas separadoras
+        "--- REF: PDVS (COPIAR CODIGO) ---",
         "NOMBRE PDV",
         "RESPONSABLE ACTUAL"
       ];
@@ -122,43 +122,45 @@ export default function AssignmentList() {
       const exRoutine = routines?.[0]?.nombre || "Apertura de Caja";
       const exPdv = pdvs?.[0]?.codigo_interno || "PDV-001";
       
-      // Primera fila con ejemplo + referencias
-      // No agregamos el ejemplo a las columnas de carga para evitar que el usuario lo suba por error si no lo borra,
-      // o mejor, lo ponemos pero le indicamos que es ejemplo.
-      // Para ser consistentes con el módulo anterior, pondremos un ejemplo válido.
-      
       const maxRows = Math.max(routines?.length || 0, pdvs?.length || 0);
 
+      // Fila 1: Ejemplo + Primeros datos de referencia
+      // Importante: Debemos respetar los huecos de las columnas separadoras
       for (let i = 0; i < maxRows; i++) {
         let row = "";
 
-        // Columnas de Carga (Solo fila 0 tiene ejemplo)
+        // BLOQUE 1: DATOS DE CARGA (Cols A, B)
+        // Solo llenamos la primera fila como ejemplo
         if (i === 0) {
-          row += `${exRoutine};${exPdv};`;
+          row += `${exRoutine};${exPdv}`; 
         } else {
-          row += ";;";
+          row += `;`; // Dejar A y B vacíos
         }
 
-        // Columna Referencia Rutinas
+        // SEPARADOR 1 (Cols C, D, E) -> 3 puntos y coma
+        row += ";;;";
+
+        // BLOQUE 2: REFERENCIA RUTINAS (Cols F, G)
         if (routines && i < routines.length) {
-          row += `${routines[i].nombre};${routines[i].frecuencia};`;
+          row += `${routines[i].nombre};${routines[i].frecuencia}`;
         } else {
-          row += ";;";
+          row += `;`; // Dejar vacío si no hay más rutinas
         }
 
-        // Columna Referencia PDVs
+        // SEPARADOR 2 (Cols H, I, J) -> 3 puntos y coma
+        row += ";;;";
+
+        // BLOQUE 3: REFERENCIA PDVS (Cols K, L, M)
         if (pdvs && i < pdvs.length) {
           const p = pdvs[i];
-          // Obtener nombre del responsable si existe asignación vigente
-          // Nota: pdv_assignments es un array, tomamos el primero (o filtramos por vigente en la query idealmente)
-          // Aquí asumimos que la query trajo todo, simplificamos visualización
+          // Obtener nombre del responsable
           const responsable = p.pdv_assignments?.[0]?.profiles 
             ? `${p.pdv_assignments[0].profiles.nombre} ${p.pdv_assignments[0].profiles.apellido}`
             : "Sin asignar";
 
           row += `${p.codigo_interno};${p.nombre} (${p.ciudad});${responsable}`;
         } else {
-          row += ";;";
+          row += `;;`; // Dejar vacío si no hay más PDVs
         }
 
         csvContent += row + "\n";
@@ -259,8 +261,6 @@ export default function AssignmentList() {
 
       // Intentar Insertar
       try {
-        // Primero verificamos si ya existe para no hacer ruido con errores 23505 (unique violation)
-        // O usamos upsert (insert on conflict do nothing)
         const { error } = await supabase
           .from('routine_assignments')
           .insert({
@@ -273,7 +273,6 @@ export default function AssignmentList() {
 
         if (error) {
           if (error.code === '23505') { // Unique violation
-             // No es un error crítico, es que ya estaba asignada. Lo contamos como warning o lo ignoramos.
              errors.push(`Fila ${i+2}: La asignación ya existía (${routineName} -> ${pdvCode}).`);
           } else {
              throw error;
