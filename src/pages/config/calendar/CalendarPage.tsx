@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Loader2, Calendar as CalendarIcon, MapPin, CheckCircle2, AlertCircle, Clock } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, MapPin, CheckCircle2, AlertCircle, Clock, XCircle } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function CalendarPage() {
@@ -15,44 +15,45 @@ export default function CalendarPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // Estados para los marcadores visuales
+  // Estados para los marcadores visuales del calendario
   const [statusDates, setStatusDates] = useState<{
     completed: Date[];
     failed: Date[];
     pending: Date[];
   }>({ completed: [], failed: [], pending: [] });
 
-  // Cargar estados de fechas para colorear el calendario
+  // Cargar estados de fechas para colorear el calendario (puntos de colores)
   useEffect(() => {
     if (!tenantId) return;
     
     const fetchCalendarStatus = async () => {
-      // Traemos fecha y estado de las tareas (aumentamos límite para cubrir varios meses)
       let query = supabase
         .from('task_instances')
-        .select('fecha_programada, estado')
+        .select('fecha_programada, estado, hora_limite_snapshot')
         .eq('tenant_id', tenantId)
-        .limit(1000); // Límite más alto para historia
-
-      // Si es administrador, filtrar solo lo que le corresponde (sus asignaciones)
-      if (profile?.role === 'administrador') {
-        // Nota: Idealmente esto debería filtrar por asignación directa, pero para el calendario general
-        // solemos querer ver todo lo del PDV. Si necesitamos restricción estricta:
-        // query = query.eq('pdv_id', mi_pdv_id) <-- Requiere saber el PDV del admin
-      }
+        .limit(1000);
 
       const { data } = await query;
       
       if (data) {
         const tempStatus: Record<string, { hasFailure: boolean, hasPending: boolean, count: number }> = {};
+        const now = new Date();
 
         data.forEach(t => {
           const d = t.fecha_programada;
           if (!tempStatus[d]) tempStatus[d] = { hasFailure: false, hasPending: false, count: 0 };
           
           tempStatus[d].count++;
-          if (t.estado === 'incumplida' || t.estado === 'completada_vencida') tempStatus[d].hasFailure = true;
-          if (t.estado === 'pendiente' || t.estado === 'en_proceso') tempStatus[d].hasPending = true;
+
+          // Lógica de Vencimiento
+          const deadline = new Date(`${t.fecha_programada}T${t.hora_limite_snapshot || '23:59:00'}`);
+          const isOverdue = t.estado === 'pendiente' && now > deadline;
+
+          if (t.estado === 'incumplida' || t.estado === 'completada_vencida' || isOverdue) {
+            tempStatus[d].hasFailure = true;
+          } else if (t.estado === 'pendiente') {
+            tempStatus[d].hasPending = true;
+          }
         });
 
         const completed: Date[] = [];
@@ -60,15 +61,14 @@ export default function CalendarPage() {
         const pending: Date[] = [];
 
         Object.entries(tempStatus).forEach(([dateStr, status]) => {
-          // Ajustamos hora a mediodía para evitar problemas de timezone en el calendario
           const dateObj = new Date(dateStr + 'T12:00:00');
           
           if (status.hasFailure) {
-            failed.push(dateObj); // Prioridad: Si hay algo malo, marca rojo
+            failed.push(dateObj); 
           } else if (status.hasPending) {
-            pending.push(dateObj); // Si no hay fallos pero sí pendientes, marca gris/azul
+            pending.push(dateObj);
           } else {
-            completed.push(dateObj); // Si no hay fallos ni pendientes, todo verde
+            completed.push(dateObj); 
           }
         });
 
@@ -91,6 +91,7 @@ export default function CalendarPage() {
         .select(`
           id,
           estado,
+          fecha_programada,
           hora_limite_snapshot,
           routine_templates (nombre, prioridad),
           pdv (nombre, ciudad),
@@ -108,7 +109,6 @@ export default function CalendarPage() {
     fetchDayTasks();
   }, [date, tenantId]);
 
-  // Modificadores visuales para el calendario
   const modifiers = {
     failed: statusDates.failed,
     completed: statusDates.completed,
@@ -153,15 +153,15 @@ export default function CalendarPage() {
               <div className="space-y-3 text-sm">
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded bg-green-100 border border-green-200" />
-                  <span>Completado (100%)</span>
+                  <span>Completado a tiempo</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded bg-slate-100 border border-slate-200" />
-                  <span>Pendiente / En curso</span>
+                  <span>Pendiente (En tiempo)</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded bg-red-100 border border-red-200" />
-                  <span>Con Incumplimientos</span>
+                  <span>Vencido / Incumplido</span>
                 </div>
               </div>
             </CardContent>
@@ -194,35 +194,60 @@ export default function CalendarPage() {
               <ScrollArea className="h-full p-6">
                 <div className="space-y-4">
                   {tasks.map((task) => {
-                    const isCompleted = task.estado.startsWith('completada');
-                    const isFailed = task.estado === 'incumplida' || task.estado === 'completada_vencida';
+                    // --- LÓGICA DE SEMÁFORO ---
+                    const now = new Date();
+                    const deadline = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:00'}`);
+                    
+                    const isSuccess = task.estado === 'completada_a_tiempo' || task.estado === 'completada';
+                    
+                    // Es vencida si explícitamente está marcada así, o si sigue pendiente y ya pasó la hora
+                    const isOverdue = 
+                      task.estado === 'incumplida' || 
+                      task.estado === 'completada_vencida' || 
+                      (task.estado === 'pendiente' && now > deadline);
+
+                    const isPendingOnTime = task.estado === 'pendiente' && now <= deadline;
+
+                    // Estilos dinámicos
+                    let containerClass = "bg-card border-border";
+                    let icon = <div className={`w-5 h-5 rounded-full border-2 border-gray-300`} />;
+                    
+                    if (isSuccess) {
+                      containerClass = "bg-green-50/40 border-green-200";
+                      icon = <CheckCircle2 className="w-5 h-5 text-green-600" />;
+                    } else if (isOverdue) {
+                      containerClass = "bg-red-50/40 border-red-200";
+                      icon = <AlertCircle className="w-5 h-5 text-red-500" />;
+                    } else if (isPendingOnTime) {
+                      containerClass = "bg-white border-gray-200";
+                      icon = <div className="w-5 h-5 rounded-full border-2 border-gray-300" />;
+                    }
                     
                     return (
                       <div 
                         key={task.id} 
-                        className={`flex items-start gap-4 p-4 rounded-lg border transition-colors ${
-                          isCompleted ? 'bg-green-50/30 border-green-100' : 
-                          isFailed ? 'bg-red-50/30 border-red-100' : 
-                          'bg-card'
-                        }`}
+                        className={`flex items-start gap-4 p-4 rounded-lg border transition-colors ${containerClass}`}
                       >
-                        <div className="mt-1">
-                          {isCompleted ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
-                          ) : isFailed ? (
-                            <AlertCircle className="w-5 h-5 text-red-500" />
-                          ) : (
-                            <div className={`w-5 h-5 rounded-full border-2 ${task.routine_templates?.prioridad === 'critica' ? 'border-red-400' : 'border-gray-300'}`} />
-                          )}
+                        <div className="mt-1 shrink-0">
+                          {icon}
                         </div>
                         
                         <div className="flex-1">
                           <div className="flex justify-between items-start">
-                            <h4 className="font-semibold text-sm">{task.routine_templates?.nombre}</h4>
-                            <span className="text-xs text-muted-foreground font-mono flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {task.hora_limite_snapshot?.slice(0,5)}
-                            </span>
+                            <h4 className={`font-semibold text-sm ${isOverdue && !isSuccess ? 'text-red-700' : ''}`}>
+                              {task.routine_templates?.nombre}
+                            </h4>
+                            <div className="flex flex-col items-end">
+                              <span className={`text-xs font-mono flex items-center gap-1 ${isOverdue ? 'text-red-600 font-bold' : 'text-muted-foreground'}`}>
+                                <Clock className="w-3 h-3" />
+                                {task.hora_limite_snapshot?.slice(0,5)}
+                              </span>
+                              
+                              {/* Texto de Estado explícito */}
+                              {isOverdue && task.estado === 'pendiente' && (
+                                <span className="text-[10px] text-red-600 font-bold uppercase mt-0.5">Vencida</span>
+                              )}
+                            </div>
                           </div>
                           
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -230,15 +255,16 @@ export default function CalendarPage() {
                             {task.pdv?.nombre} - {task.pdv?.ciudad}
                           </div>
 
-                          {task.estado === 'completada' || task.estado === 'completada_a_tiempo' ? (
-                            <div className="mt-2 text-xs text-green-700 bg-green-100 w-fit px-2 py-0.5 rounded-full">
+                          {isSuccess && (
+                            <div className="mt-2 text-[10px] text-green-700 bg-green-100/50 w-fit px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3"/>
                               Completado por: {task.profiles?.nombre} {task.profiles?.apellido}
                             </div>
-                          ) : null}
+                          )}
                         </div>
                         
                         <div>
-                          <Badge variant="outline" className="capitalize text-[10px]">
+                          <Badge variant="outline" className="capitalize text-[10px] bg-white">
                             {task.routine_templates?.prioridad}
                           </Badge>
                         </div>
