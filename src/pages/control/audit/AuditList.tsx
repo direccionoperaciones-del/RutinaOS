@@ -25,36 +25,43 @@ export default function AuditList() {
   const fetchTasks = async () => {
     setLoading(true);
     
-    let query = supabase
-      .from('task_instances')
-      .select(`
-        *,
-        routine_templates (nombre, prioridad, gps_obligatorio),
-        pdv (nombre, ciudad),
-        profiles:completado_por (nombre, apellido)
-      `)
-      // Corrección: Incluir todos los estados de finalización válidos
-      .in('estado', ['completada', 'completada_a_tiempo', 'completada_vencida']) 
-      .order('completado_at', { ascending: false });
+    try {
+      let query = supabase
+        .from('task_instances')
+        .select(`
+          *,
+          routine_templates (nombre, prioridad, gps_obligatorio),
+          pdv (nombre, ciudad),
+          profiles:completado_por (nombre, apellido)
+        `)
+        // Filtramos solo las tareas que ya fueron completadas (en cualquiera de sus estados finales)
+        .in('estado', ['completada_a_tiempo', 'completada_vencida', 'completada']) 
+        .order('completado_at', { ascending: false });
 
-    if (statusFilter !== 'todos') {
-      // Si el filtro es "pendiente", buscamos donde audit_status sea null o 'pendiente'
-      if (statusFilter === 'pendiente') {
-         query = query.or('audit_status.is.null,audit_status.eq.pendiente');
-      } else {
-         query = query.eq('audit_status', statusFilter);
+      if (statusFilter !== 'todos') {
+        if (statusFilter === 'pendiente') {
+           // Traer las que no tienen estado o están explícitamente pendientes
+           query = query.or('audit_status.is.null,audit_status.eq.pendiente');
+        } else {
+           query = query.eq('audit_status', statusFilter);
+        }
       }
-    }
 
-    const { data, error } = await query;
+      const { data, error } = await query;
 
-    if (error) {
-      console.error("Error cargando auditoría:", error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar las tareas." });
-    } else {
+      if (error) throw error;
+
       setTasks(data || []);
+    } catch (error: any) {
+      console.error("Error cargando auditoría:", error);
+      toast({ 
+        variant: "destructive", 
+        title: "Error de carga", 
+        description: error.message || "No se pudieron cargar las tareas." 
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
