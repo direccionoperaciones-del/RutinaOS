@@ -206,7 +206,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           <EvidenceStep 
             type="foto"
             title="Evidencia Fotográfica"
-            required={rutina.fotos_obligatorias || true} // Siempre mostrar fotos opcionales
+            required={rutina.fotos_obligatorias}
             minCount={rutina.min_fotos}
             files={uploadedFiles.filter(f => f.tipo === 'foto')}
             isUploading={isUploading}
