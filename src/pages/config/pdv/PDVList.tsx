@@ -22,29 +22,26 @@ export default function PDVList() {
 
   const fetchPDVs = async () => {
     setLoading(true);
-    const { data: simpleData, error: simpleError } = await supabase
+    const { data, error } = await supabase
       .from('pdv')
       .select(`
         *,
-        pdv_assignments (
-          vigente,
-          profiles (nombre, apellido)
+        pdv_assignments!inner(
+          profiles(nombre, apellido)
         )
       `)
+      .order('codigo_interno', { ascending: true });
+      
+    // Fallback simple si el join falla por configuración RLS
+    const { data: simpleData, error: simpleError } = await supabase
+      .from('pdv')
+      .select('*')
       .order('codigo_interno', { ascending: true });
     
     if (simpleError) {
       toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los PDVs" });
     } else {
-      // Procesar para obtener el responsable vigente de forma limpia
-      const formatted = simpleData?.map(p => {
-        const vigente = p.pdv_assignments?.find((a: any) => a.vigente);
-        return {
-          ...p,
-          responsable_nombre: vigente?.profiles ? `${vigente.profiles.nombre} ${vigente.profiles.apellido}` : null
-        };
-      });
-      setPdvs(formatted || []);
+      setPdvs(simpleData || []);
     }
     setLoading(false);
   };
@@ -130,14 +127,8 @@ export default function PDVList() {
     reader.readAsText(file); // Leer con encoding default (UTF-8 usualmente)
   };
 
-  // Función auxiliar para normalizar nombres (quita espacios dobles, trim, lowercase)
-  const normalizeStr = (str: string) => {
-    if (!str) return "";
-    return str.toLowerCase().replace(/\s+/g, ' ').trim();
-  };
-
   const processBatch = async (csvText: string) => {
-    const lines = csvText.split(/\r?\n/);
+    const lines = csvText.split(/\r?\n/); // Soporte para saltos de línea Windows/Unix
     // Saltamos el encabezado (línea 0)
     const rows = lines.slice(1).filter(line => line.trim() !== '');
     
@@ -147,6 +138,8 @@ export default function PDVList() {
     const firstLine = lines[0];
     const separator = firstLine.includes(';') ? ';' : ',';
 
+    console.log(`Detectado separador: "${separator}"`);
+
     // 1. Obtener Tenant ID y Usuario Actual
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("No autenticado");
@@ -154,53 +147,40 @@ export default function PDVList() {
     const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
     if (!profile?.tenant_id) throw new Error("Sin organización asignada");
 
-    // 2. Obtener lista de usuarios para mapear responsables
+    // 2. Obtener lista de usuarios para mapear responsables (Cache simple)
     const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true);
     const userMap = new Map(); 
-    
-    console.log("--- USUARIOS DISPONIBLES PARA ASIGNACIÓN ---");
     users?.forEach(u => {
-      const fullName = `${u.nombre} ${u.apellido}`;
-      const normalized = normalizeStr(fullName);
-      userMap.set(normalized, u.id);
-      console.log(`Original: "${fullName}" -> Normalizado: "${normalized}"`);
+      // Normalizamos: minúsculas y sin espacios extra
+      const fullName = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
+      userMap.set(fullName, u.id);
     });
-    console.log("--------------------------------------------");
 
     let successCount = 0;
     let errors: string[] = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const cols = row.split(separator).map(c => c.trim().replace(/^"|"$/g, ''));
+      // Parseo básico
+      const cols = row.split(separator).map(c => c.trim().replace(/^"|"$/g, '')); // Quitar comillas si las hay
       
-      // Validar longitud mínima
+      // Validar longitud mínima (al menos código, nombre, ciudad)
       if (cols.length < 3) continue; 
 
-      // Mapeo seguro de columnas por índice (asumiendo orden de plantilla)
-      const codigo = cols[0];
-      const nombre = cols[1];
-      const ciudad = cols[2];
-      const direccion = cols[3];
-      const telefono = cols[4];
-      const lat = cols[5];
-      const lng = cols[6];
-      const radio = cols[7];
-      const responsableName = cols[8];
+      const [codigo, nombre, ciudad, direccion, telefono, lat, lng, radio, responsableName] = cols;
 
       if (!codigo || !nombre || !ciudad) {
-        errors.push(`Fila ${i + 2}: Faltan campos obligatorios.`);
+        errors.push(`Fila ${i + 2}: Faltan campos obligatorios (Código, Nombre o Ciudad).`);
         continue;
       }
 
       try {
         // Insertar PDV
+        // Parsear números con cuidado (reemplazar coma decimal por punto si viene de Excel español)
         const latVal = lat ? parseFloat(lat.replace(',', '.')) : null;
         const lngVal = lng ? parseFloat(lng.replace(',', '.')) : null;
         const radioVal = radio ? parseInt(radio) : 100;
 
-        // Upsert para actualizar si ya existe por código interno (opcional, aquí usaremos insert simple que fallará si existe)
-        // Usamos insert y capturamos error de duplicado si es necesario
         const { data: newPdv, error: pdvError } = await supabase.from('pdv').insert({
           tenant_id: profile.tenant_id,
           codigo_interno: codigo,
@@ -214,16 +194,11 @@ export default function PDVList() {
           activo: true
         }).select().single();
 
-        if (pdvError) {
-          if (pdvError.code === '23505') { // Unique violation
-             throw new Error("El código interno o nombre ya existe.");
-          }
-          throw pdvError;
-        }
+        if (pdvError) throw pdvError;
 
-        // Asignar Responsable
+        // Asignar Responsable si existe
         if (responsableName && newPdv) {
-          const cleanName = normalizeStr(responsableName);
+          const cleanName = responsableName.toLowerCase().trim();
           const userId = userMap.get(cleanName);
           
           if (userId) {
@@ -235,15 +210,18 @@ export default function PDVList() {
               created_by: user.id
             });
           } else {
-            console.warn(`Usuario no encontrado: "${cleanName}"`);
-            errors.push(`Fila ${i + 2}: PDV creado, pero responsable "${responsableName}" no coincide con ningún usuario activo.`);
+            // Advertencia no bloqueante
+            errors.push(`Fila ${i + 2}: PDV creado, pero usuario "${responsableName}" no encontrado en el sistema.`);
           }
         }
 
         successCount++;
       } catch (err: any) {
         console.error(err);
-        errors.push(`Fila ${i + 2} (${codigo}): ${err.message}`);
+        // Mejorar mensaje de error duplicado
+        let msg = err.message;
+        if (err.code === '23505') msg = "El código interno o nombre ya existe.";
+        errors.push(`Fila ${i + 2} (${codigo}): ${msg}`);
       }
     }
 
@@ -253,11 +231,12 @@ export default function PDVList() {
       toast({
         variant: "default",
         title: "Carga Finalizada con Observaciones",
-        description: `Creados: ${successCount}. Hubo ${errors.length} alertas (revisa si los nombres de usuarios son exactos).`,
-        duration: 8000
+        description: `Creados: ${successCount}. Errores: ${errors.length}. Revisa los detalles.`,
+        duration: 6000
       });
-      // Muestra una alerta simple para que el usuario vea los detalles
-      alert(`Observaciones de la carga:\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? '\n...' : ''}`);
+      // Mostrar errores en consola por ahora (podríamos hacer un modal de errores)
+      console.warn("Errores de carga:", errors);
+      alert(`Se encontraron errores en algunas filas:\n${errors.slice(0, 5).join('\n')}\n${errors.length > 5 ? '...' : ''}`);
     } else {
       toast({ title: "Carga Masiva Exitosa", description: `Se procesaron ${successCount} registros correctamente.` });
     }
@@ -330,7 +309,7 @@ export default function PDVList() {
                     <TableHead>Código</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Ciudad</TableHead>
-                    <TableHead>Responsable</TableHead>
+                    <TableHead>Ubicación</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
@@ -341,13 +320,14 @@ export default function PDVList() {
                       <TableCell className="font-medium">{pdv.codigo_interno}</TableCell>
                       <TableCell>{pdv.nombre}</TableCell>
                       <TableCell>{pdv.ciudad}</TableCell>
-                      <TableCell className="text-sm">
-                        {pdv.responsable_nombre ? (
-                          <div className="flex items-center gap-1 text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full w-fit">
-                            {pdv.responsable_nombre}
+                      <TableCell>
+                        {pdv.latitud && pdv.longitud ? (
+                          <div className="flex items-center text-green-600 text-xs">
+                            <MapPin className="w-3 h-3 mr-1" />
+                            GPS Configurado
                           </div>
                         ) : (
-                          <span className="text-muted-foreground italic text-xs">Sin asignar</span>
+                          <div className="text-muted-foreground text-xs">Sin GPS</div>
                         )}
                       </TableCell>
                       <TableCell>
