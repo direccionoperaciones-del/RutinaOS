@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query"; // Importar QueryClient
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,12 +14,12 @@ import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { NewMessageModal } from "./NewMessageModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { useNotifications } from "@/hooks/use-notifications";
+import { NOTIFICATIONS_QUERY_KEY } from "@/hooks/use-notifications"; // Importar key
 
 export default function MessageList() {
   const { toast } = useToast();
   const { user, profile } = useCurrentUser();
-  const { refreshNotifications } = useNotifications();
+  const queryClient = useQueryClient(); // Hook del cliente
   
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
   const [sentMessages, setSentMessages] = useState<any[]>([]);
@@ -34,7 +35,7 @@ export default function MessageList() {
     if (!user) return;
     setLoading(true);
 
-    // 1. RECIBIDOS: Consultar message_receipts (Deliveries) que pertenecen a mi usuario
+    // 1. RECIBIDOS
     const { data: receipts, error: rxError } = await supabase
       .from('message_receipts')
       .select(`
@@ -47,11 +48,10 @@ export default function MessageList() {
         )
       `)
       .eq('user_id', user.id)
-      .order('messages(created_at)', { ascending: false }); // Ordenar por fecha mensaje
+      .order('messages(created_at)', { ascending: false });
 
     if (rxError) console.error("Error inbox:", rxError);
     
-    // Mapear para tener estructura plana fácil de usar
     const inbox = receipts?.map((r: any) => ({
       receipt_id: r.id,
       ...r.messages,
@@ -59,11 +59,10 @@ export default function MessageList() {
       confirmado_at: r.confirmado_at
     })) || [];
     
-    // Ordenar manualmente porque Supabase order en foreign table a veces es tricky
     inbox.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     setInboxMessages(inbox);
 
-    // 2. ENVIADOS: Consultar messages creados por mí (Solo si tengo rol adecuado)
+    // 2. ENVIADOS
     if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
       const { data: sent, error: txError } = await supabase
         .from('messages')
@@ -87,33 +86,37 @@ export default function MessageList() {
 
   // Acción: Marcar como leído al abrir acordeón
   const handleOpenMessage = async (msg: any) => {
-    // 1. Marcar el recibo del mensaje como leído si no lo estaba
-    if (!msg.leido_at) {
-      const now = new Date().toISOString();
-      
-      // Actualizar UI optimista
-      setInboxMessages(prev => prev.map(m => 
-        m.receipt_id === msg.receipt_id ? { ...m, leido_at: now } : m
-      ));
+    try {
+      // 1. Marcar el recibo del mensaje como leído si no lo estaba
+      if (!msg.leido_at) {
+        const now = new Date().toISOString();
+        
+        // Actualizar UI optimista
+        setInboxMessages(prev => prev.map(m => 
+          m.receipt_id === msg.receipt_id ? { ...m, leido_at: now } : m
+        ));
 
-      // Actualizar BD (message_receipts)
-      await supabase
-        .from('message_receipts')
-        .update({ leido_at: now })
-        .eq('id', msg.receipt_id);
-    }
+        await supabase
+          .from('message_receipts')
+          .update({ leido_at: now })
+          .eq('id', msg.receipt_id);
+      }
 
-    // 2. SIEMPRE intentar borrar la notificación asociada para asegurar consistencia
-    // (incluso si el mensaje ya figuraba como leído en message_receipts pero la notificación seguía ahí)
-    const { error: notifError } = await supabase
-      .from('notifications')
-      .update({ leido: true })
-      .eq('entity_id', msg.id) // msg.id es el ID del mensaje
-      .eq('user_id', user.id);
+      // 2. Actualizar la notificación en segundo plano
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .update({ leido: true })
+        .eq('entity_id', msg.id)
+        .eq('user_id', user.id);
 
-    if (!notifError) {
-      // Forzar actualización del contador de notificaciones en el sidebar
-      refreshNotifications();
+      if (!notifError) {
+        // Invalidar caché de notificaciones para actualizar badge inmediatamente
+        queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+      } else {
+        console.error("Error updating notification:", notifError);
+      }
+    } catch (err) {
+      console.error("Error handling message read:", err);
     }
   };
 
@@ -127,7 +130,7 @@ export default function MessageList() {
 
     await supabase
       .from('message_receipts')
-      .update({ confirmado_at: now, leido_at: now }) // Aseguramos ambos
+      .update({ confirmado_at: now, leido_at: now })
       .eq('id', receiptId);
       
     toast({ title: "Confirmado", description: "Has confirmado la recepción de este mensaje." });
@@ -190,7 +193,6 @@ export default function MessageList() {
           )}
         </TabsList>
 
-        {/* --- BANDEJA DE ENTRADA --- */}
         <TabsContent value="inbox" className="mt-4">
           {loading ? (
             <div className="text-center py-10">Cargando...</div>
@@ -252,7 +254,6 @@ export default function MessageList() {
           )}
         </TabsContent>
 
-        {/* --- BANDEJA DE ENVIADOS --- */}
         <TabsContent value="sent" className="mt-4">
           <div className="space-y-3">
             {sentMessages.map((msg) => {
@@ -286,7 +287,6 @@ export default function MessageList() {
                       <CheckCheck className="w-3 h-3 text-blue-500" />
                       <span>Leído por <strong>{read}</strong> de <strong>{total}</strong> destinatarios ({percent}%)</span>
                     </div>
-                    {/* Mini barra de progreso */}
                     <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                       <div className="h-full bg-blue-500 transition-all" style={{ width: `${percent}%` }} />
                     </div>
@@ -301,7 +301,6 @@ export default function MessageList() {
         </TabsContent>
       </Tabs>
 
-      {/* MODAL DETALLE DE LECTURAS */}
       <Dialog open={readDetailsOpen} onOpenChange={setReadDetailsOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
