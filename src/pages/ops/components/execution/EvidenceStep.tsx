@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 interface EvidenceStepProps {
   type: 'foto' | 'archivo';
-  title: string;
+  label: string;
   required: boolean;
   minCount?: number;
   files: any[];
@@ -16,17 +16,15 @@ interface EvidenceStepProps {
 
 export function EvidenceStep({ 
   type, 
-  title, 
+  label, 
   required, 
-  minCount, 
+  minCount = 0, 
   files, 
   isUploading, 
   onUpload, 
   onDelete 
 }: EvidenceStepProps) {
   
-  if (!required && type === 'archivo') return null; // Solo mostrar archivo si es requerido (o configurar para opcional luego)
-
   const isPhoto = type === 'foto';
   const Icon = isPhoto ? Camera : Paperclip;
   
@@ -39,14 +37,14 @@ export function EvidenceStep({
     <div className="p-4 rounded-lg border bg-muted/20">
       <div className="flex items-center justify-between mb-2">
         <h4 className="font-semibold flex items-center gap-2 text-sm">
-          <Icon className="w-4 h-4" /> {title}
+          <Icon className="w-4 h-4" /> {label}
         </h4>
         {required ? (
           <Badge variant="destructive" className="text-[10px]">
-            {isPhoto ? `Mínimo ${minCount || 1}` : 'Requerido'}
+            {isPhoto && minCount > 0 ? `Mínimo ${minCount}` : 'Requerido'}
           </Badge>
         ) : (
-          <Badge variant="outline" className="text-[10px]">Opcional</Badge>
+          <Badge variant="outline" className="text-[10px] bg-background">Opcional</Badge>
         )}
       </div>
       
@@ -82,7 +80,7 @@ export function EvidenceStep({
             {files.map(file => (
               isPhoto ? (
                 // Photo Item
-                <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border bg-background">
+                <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border bg-background shadow-sm">
                   <img 
                     src={getPublicUrl(file.storage_path)} 
                     className="object-cover w-full h-full" 
@@ -90,7 +88,7 @@ export function EvidenceStep({
                   />
                   <button 
                     onClick={() => onDelete(file.id, file.storage_path)}
-                    className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-red-500/80 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
