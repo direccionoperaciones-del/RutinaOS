@@ -18,9 +18,12 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function TasksList() {
   const { toast } = useToast();
+  const { profile, user } = useCurrentUser();
+  
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -36,8 +39,10 @@ export default function TasksList() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
   const fetchTasks = async () => {
+    if (!profile) return; // Esperar a que cargue el perfil
     setLoading(true);
-    const { data, error } = await supabase
+
+    let query = supabase
       .from('task_instances')
       .select(`
         *,
@@ -70,7 +75,15 @@ export default function TasksList() {
           nombre,
           apellido
         )
-      `)
+      `);
+
+    // --- RESTRICCIÓN ROL ADMINISTRADOR ---
+    // Si es administrador, solo ver tareas asignadas a él (responsable_id) o completadas por él
+    if (profile.role === 'administrador' && user) {
+      query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+    }
+
+    const { data, error } = await query
       .order('fecha_programada', { ascending: false })
       .order('prioridad_snapshot', { ascending: false });
 
@@ -85,7 +98,7 @@ export default function TasksList() {
 
   useEffect(() => {
     fetchTasks();
-  }, []);
+  }, [profile]); // Recargar cuando el perfil esté listo
 
   const handleStartTask = (task: any) => {
     setSelectedTask(task);
@@ -377,15 +390,18 @@ export default function TasksList() {
               />
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Usuarios</Label>
-              <MultiSelect 
-                options={userOptions} 
-                selected={selectedUsers} 
-                onChange={setSelectedUsers} 
-                placeholder="Todos los Usuarios"
-              />
-            </div>
+            {/* OCULTAR FILTRO DE USUARIOS SI ES ADMINISTRADOR */}
+            {profile?.role !== 'administrador' && (
+              <div className="space-y-1">
+                <Label className="text-xs">Usuarios</Label>
+                <MultiSelect 
+                  options={userOptions} 
+                  selected={selectedUsers} 
+                  onChange={setSelectedUsers} 
+                  placeholder="Todos los Usuarios"
+                />
+              </div>
+            )}
           </div>
 
           {hasActiveFilters && (
