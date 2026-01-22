@@ -9,7 +9,7 @@ interface UserRankingProps {
 
 export const UserRanking = ({ data }: UserRankingProps) => {
   return (
-    <Card className="border-slate-200">
+    <Card className="border-slate-200 border dark:border-slate-700/50">
       <CardHeader>
         <SectionHeader title="Top Rendimiento" description="Usuarios con mayor tasa de cumplimiento." icon={Users} />
       </CardHeader>
@@ -20,12 +20,12 @@ export const UserRanking = ({ data }: UserRankingProps) => {
               <div className="font-mono text-xs text-slate-400 w-4 font-bold">{idx + 1}</div>
               <div className="flex-1">
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="font-medium text-slate-700 truncate max-w-[150px]">{user.name}</span>
-                  <span className="font-bold text-movacheck-blue">{user.percentage}%</span>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[150px]">{user.name}</span>
+                  <span className="font-bold text-movacheck-blue dark:text-blue-400">{user.percentage}%</span>
                 </div>
-                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-movacheck-blue rounded-full transition-all duration-500" 
+                    className="h-full bg-movacheck-blue dark:bg-blue-500 rounded-full transition-all duration-500" 
                     style={{ width: `${user.percentage}%`, opacity: 1 - (idx * 0.05) }}
                   />
                 </div>
