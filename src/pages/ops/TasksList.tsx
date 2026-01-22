@@ -251,12 +251,20 @@ export default function TasksList() {
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Fecha</Label>
+              <Label className="text-xs">Desde</Label>
               <div className="relative">
                 <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setDateTo(e.target.value); }} />
+                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Hasta</Label>
+              <div className="relative">
+                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
+                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
             </div>
 
@@ -290,7 +298,7 @@ export default function TasksList() {
       {/* --- PROGRESO --- */}
       <div className="bg-card border rounded-lg p-3 shadow-sm">
         <div className="flex justify-between text-xs font-medium mb-1">
-          <span>Progreso Diario</span>
+          <span>Progreso ({dateFrom === dateTo ? format(new Date(dateFrom + 'T00:00:00'), 'dd/MM') : 'Periodo'})</span>
           <span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>{progressPercentage}%</span>
         </div>
         <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
@@ -322,7 +330,7 @@ export default function TasksList() {
             items={allTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="No hay tareas para esta fecha." 
+            emptyMessage="No hay tareas para este rango de fechas." 
             onAction={handleStartTask} 
           />
         </TabsContent>
@@ -332,7 +340,7 @@ export default function TasksList() {
             items={pendingTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="¡Todo al día! No tienes tareas pendientes." 
+            emptyMessage="¡Todo al día! No tienes tareas pendientes en estas fechas." 
             onAction={handleStartTask} 
           />
         </TabsContent>
@@ -342,7 +350,7 @@ export default function TasksList() {
             items={completedTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="No hay tareas completadas aún." 
+            emptyMessage="No hay tareas completadas en estas fechas." 
             onAction={handleStartTask} 
           />
         </TabsContent>
