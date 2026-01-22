@@ -19,7 +19,8 @@ import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
-import { getLocalDate } from "@/lib/utils"; // Importar utilidad de fecha local
+import { getLocalDate } from "@/lib/utils";
+import { calculateTaskDeadline } from "./logic/task-deadline";
 
 const getPriorityStyles = (priority: string) => {
   switch (priority) {
@@ -39,12 +40,8 @@ const getFrequencyIcon = (freq: string) => {
 };
 
 const getStatusBadge = (task: any) => {
-  // Lógica de vencimiento precisa usando objetos Date completos
   const now = new Date();
-  // Combinar fecha programada + hora limite snapshot para tener el deadline exacto
-  const deadlineStr = `${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:00'}`;
-  const deadline = new Date(deadlineStr);
-  
+  const deadline = calculateTaskDeadline(task);
   const isLate = task.estado === 'pendiente' && now > deadline;
   
   if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
@@ -60,6 +57,10 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
   const r = task.routine_templates || {};
   const styles = getPriorityStyles(task.prioridad_snapshot);
   const isDone = task.estado.startsWith('completada') || task.estado === 'incumplida';
+  
+  // Calcular deadline para mostrarlo
+  const deadline = calculateTaskDeadline(task);
+  const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
   return (
     <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${styles.border}`}>
@@ -87,9 +88,9 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
 
       <CardContent className="p-3 pt-2 flex-1">
         <div className="flex justify-between items-center bg-muted/30 p-1.5 rounded-md mb-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium">
+          <div className="flex items-center gap-1.5 text-xs font-medium" title="Fecha límite de ejecución">
             <Clock className="w-3 h-3 text-muted-foreground" />
-            <span>{task.fecha_programada} | {task.hora_limite_snapshot?.slice(0,5)}</span>
+            <span>{deadlineStr}</span>
           </div>
           {getStatusBadge(task)}
         </div>
@@ -159,9 +160,6 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
-  // --- CORRECCIÓN DE FECHAS ---
-  // Usamos getLocalDate() para obtener la fecha local correcta (YYYY-MM-DD)
-  // en lugar de UTC que podría devolver "mañana" si es tarde en la noche.
   const todayStr = getLocalDate();
   
   const [dateFrom, setDateFrom] = useState<string>(todayStr);

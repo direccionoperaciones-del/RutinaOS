@@ -17,6 +17,7 @@ import { InventoryStep } from "./components/execution/InventoryStep";
 
 // Logic
 import { buildTaskSchema, TaskField } from "./logic/task-schema";
+import { calculateTaskDeadline } from "./logic/task-deadline";
 
 interface TaskExecutionModalProps {
   task: any;
@@ -242,20 +243,12 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       let newStatus = task.estado;
       
       if (isTaskPending) {
+         // USAR LÓGICA DE VENCIMIENTO MEJORADA
          try {
-           // Construcción segura de fecha límite
-           const limitTimeStr = task.hora_limite_snapshot || "23:59:00";
-           const limitDateStr = `${task.fecha_programada}T${limitTimeStr}`;
-           const limitDate = new Date(limitDateStr);
-           
-           // Si la fecha es inválida, asumimos que está a tiempo para no bloquear
-           if (isNaN(limitDate.getTime())) {
-             console.warn("Fecha límite inválida, asumiendo a tiempo:", limitDateStr);
-             newStatus = 'completada_a_tiempo';
-           } else {
-             newStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
-           }
+           const limitDate = calculateTaskDeadline(task);
+           newStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
          } catch (e) {
+           console.error(e);
            newStatus = 'completada_a_tiempo'; // Fallback seguro
          }
       }
