@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
-import { getLocalDate } from "@/lib/utils";
+import { getLocalDate, parseLocalDate } from "@/lib/utils";
 import { calculateTaskDeadline } from "./logic/task-deadline";
 
 const getPriorityStyles = (priority: string) => {
@@ -43,7 +43,8 @@ const getFrequencyIcon = (freq: string) => {
 const getStatusBadge = (task: any) => {
   const now = new Date();
   const deadline = calculateTaskDeadline(task);
-  const isLate = task.estado === 'pendiente' && now > deadline;
+  // Tolerancia de 1 minuto para evitar parpadeos visuales
+  const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
   if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
   if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Vencida</Badge>;
@@ -59,7 +60,6 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
   const styles = getPriorityStyles(task.prioridad_snapshot);
   const isDone = task.estado.startsWith('completada') || task.estado === 'incumplida';
   
-  // Calcular deadline para mostrarlo
   const deadline = calculateTaskDeadline(task);
   const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
@@ -161,6 +161,7 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
+  // Usamos getLocalDate() para obtener la fecha local correcta en lugar de UTC
   const todayStr = getLocalDate();
   
   const [dateFrom, setDateFrom] = useState<string>(todayStr);
@@ -221,6 +222,7 @@ export default function TasksList() {
   // 1. Hay tareas totales (> 0)
   // 2. NO hay pendientes (== 0)
   // 3. La fecha de fin del filtro NO es futura (dateTo <= todayStr)
+  // Usamos comparación de strings ISO que funciona correctamente (lexicográfica)
   const showCongratulation = 
     totalFiltered > 0 && 
     pendingTasks.length === 0 && 
@@ -237,13 +239,22 @@ export default function TasksList() {
 
   const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
 
+  // Formato visual del título de fecha
+  const displayDate = useMemo(() => {
+    if (dateFrom === dateTo) {
+      // Usamos parseLocalDate para evitar desfase de zona horaria al formatear
+      return format(parseLocalDate(dateFrom), "EEEE, d 'de' MMMM", { locale: es });
+    }
+    return "Rango seleccionado";
+  }, [dateFrom, dateTo]);
+
   return (
     <div className="space-y-6 pb-20">
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-bold tracking-tight">Mis Tareas</h2>
         <div className="flex justify-between items-center">
-          <p className="text-muted-foreground">
-            {format(new Date(), "EEEE, d 'de' MMMM", { locale: es })}
+          <p className="text-muted-foreground capitalize">
+            {displayDate}
           </p>
         </div>
       </div>
@@ -308,7 +319,7 @@ export default function TasksList() {
       {/* --- PROGRESO --- */}
       <div className="bg-card border rounded-lg p-3 shadow-sm">
         <div className="flex justify-between text-xs font-medium mb-1">
-          <span>Progreso ({dateFrom === dateTo ? format(new Date(dateFrom + 'T00:00:00'), 'dd/MM') : 'Periodo'})</span>
+          <span>Progreso ({dateFrom === dateTo ? format(parseLocalDate(dateFrom), 'dd/MM') : 'Periodo'})</span>
           <span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>{progressPercentage}%</span>
         </div>
         <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">

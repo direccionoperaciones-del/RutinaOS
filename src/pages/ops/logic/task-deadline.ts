@@ -1,3 +1,5 @@
+import { parseLocalDate } from "@/lib/utils";
+
 /**
  * Calcula la fecha y hora límite real de una tarea basándose en su frecuencia y configuración.
  * 
@@ -8,9 +10,8 @@
 export function calculateTaskDeadline(task: any): Date {
   if (!task || !task.fecha_programada) return new Date();
 
-  // Parsear fecha base (YYYY-MM-DD) asumiendo hora local para evitar saltos de día por UTC
-  const [y, m, d] = task.fecha_programada.split('-').map(Number);
-  const baseDate = new Date(y, m - 1, d); // Mes es 0-indexado
+  // Parsear fecha base usando el parser local para evitar el desfase UTC
+  const baseDate = parseLocalDate(task.fecha_programada);
   
   const timeStr = task.hora_limite_snapshot || '23:59:00';
   const rutina = task.routine_templates;
