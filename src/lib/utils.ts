@@ -7,22 +7,28 @@ export function cn(...inputs: ClassValue[]) {
 
 /**
  * Obtiene la fecha actual del dispositivo del usuario en formato YYYY-MM-DD
- * Soluciona el problema de UTC donde después de las 7PM (Colombia) ya es el día siguiente.
+ * Usa los métodos locales nativos (getFullYear, getMonth, getDate) para garantizar
+ * que coincida exactamente con el reloj del sistema, ignorando UTC.
  */
 export function getLocalDate(date: Date = new Date()): string {
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - (offset * 60 * 1000));
-  return localDate.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
  * Convierte un string de fecha "YYYY-MM-DD" (de la BD) a un objeto Date
- * interpretado como medianoche LOCAL, no UTC.
- * Evita el error donde "2026-01-21" se muestra como "20 Ene" por la zona horaria.
+ * interpretado como medianoche LOCAL.
  */
 export function parseLocalDate(dateStr: string): Date {
   if (!dateStr) return new Date();
-  const [year, month, day] = dateStr.split('-').map(Number);
-  // El mes en JS es base-0 (Enero = 0)
-  return new Date(year, month - 1, day);
+  // Aseguramos que el string tenga el formato correcto y forzamos la interpretación local
+  // al usar el constructor new Date(y, m, d)
+  const parts = dateStr.split('-');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; // Meses en JS son 0-11
+  const day = parseInt(parts[2], 10);
+  
+  return new Date(year, month, day);
 }

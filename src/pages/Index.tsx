@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { getLocalDate } from "@/lib/utils";
+import { getLocalDate, parseLocalDate } from "@/lib/utils";
 
 // Componente Tarjeta KPI
 const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }: any) => (
@@ -40,10 +40,16 @@ const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }
 const Index = () => {
   const { profile, user, loading: loadingUser } = useCurrentUser();
 
-  // --- CORRECCIÓN DE FECHAS ---
-  const todayStr = getLocalDate();
-  const [dateFrom, setDateFrom] = useState(todayStr);
-  const [dateTo, setDateTo] = useState(todayStr);
+  // Inicializar estados con la fecha local calculada
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  
+  // Efecto para establecer la fecha inicial solo en el cliente (evita hidratación incorrecta)
+  useEffect(() => {
+    const today = getLocalDate();
+    setDateFrom(today);
+    setDateTo(today);
+  }, []);
   
   // Ahora son arrays para soportar selección múltiple
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
@@ -94,7 +100,6 @@ const Index = () => {
       setPdvOptions(pdvData?.map(p => ({ label: p.nombre, value: p.id })) || []);
       setRoutineOptions(routData?.map(r => ({ label: r.nombre, value: r.id })) || []);
 
-      // Solo cargar usuarios si NO es administrador (el admin no filtra por otros)
       if (profile?.role !== 'administrador') {
         const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
         setUserOptions(userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []);
@@ -104,9 +109,9 @@ const Index = () => {
     if (profile) loadFilterOptions();
   }, [profile]);
 
-  // 2. CARGAR DASHBOARD (Cada vez que cambian los filtros)
+  // 2. CARGAR DASHBOARD
   const fetchDashboardData = async () => {
-    if (!profile || !user) return;
+    if (!profile || !user || !dateFrom || !dateTo) return;
     
     setLoading(true);
 
@@ -126,22 +131,16 @@ const Index = () => {
       .gte('fecha_programada', dateFrom)
       .lte('fecha_programada', dateTo);
 
-    // --- RESTRICCIÓN DE SEGURIDAD PARA ADMINISTRADOR ---
     if (profile.role === 'administrador') {
-      // El administrador SOLO ve sus tareas (asignadas o completadas por él)
-      // Usamos responsable_id para lo pendiente y completado_por para lo histórico
       query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
     } else {
-      // Si no es admin, permitimos el filtro de usuarios del UI
       if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
     }
 
-    // Aplicar Filtros Dinámicos Comunes
     if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
     if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
     if (selectedPriorities.length > 0) query = query.in('prioridad_snapshot', selectedPriorities);
     
-    // Filtro de Estado Especial
     if (selectedStatus.length > 0) {
       const statusesToFilter = [];
       if (selectedStatus.includes("pendiente")) {
@@ -161,7 +160,6 @@ const Index = () => {
       return;
     }
 
-    // --- PROCESAMIENTO DE KPIs ---
     const total = tasks.length;
     const completed = tasks.filter(t => t.estado.startsWith('completada')).length;
     const pending = tasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
@@ -180,7 +178,6 @@ const Index = () => {
       criticalPending: critical,
     });
 
-    // --- ACTIVIDAD RECIENTE (Top 10) ---
     const activity = [...tasks]
       .sort((a, b) => {
         const dateA = new Date(a.completado_at || a.created_at).getTime();
@@ -190,8 +187,8 @@ const Index = () => {
       .slice(0, 10);
     setRecentActivity(activity);
 
-    // --- GRÁFICO (Agrupado por Fecha) ---
     const groupedData = tasks.reduce((acc: any, curr) => {
+      // Usar fecha programada local para agrupar
       const date = curr.fecha_programada;
       if (!acc[date]) {
         acc[date] = { date, total: 0, completed: 0, failed: 0 };
@@ -205,7 +202,8 @@ const Index = () => {
     const chartArray = Object.values(groupedData)
       .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map((item: any) => ({
-        name: format(parseISO(item.date), 'dd MMM', { locale: es }),
+        // Usar parseLocalDate para mostrar nombre correcto del día
+        name: format(parseLocalDate(item.date), 'dd MMM', { locale: es }),
         Total: item.total,
         Completadas: item.completed,
         Incumplidas: item.failed
@@ -260,7 +258,6 @@ const Index = () => {
         </div>
       </div>
 
-      {/* --- BARRA DE FILTROS --- */}
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center gap-2 text-sm font-medium text-primary">
@@ -269,7 +266,6 @@ const Index = () => {
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {/* Fechas */}
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
               <Input type="date" className="h-8 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -279,7 +275,6 @@ const Index = () => {
               <Input type="date" className="h-8 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
 
-            {/* Selectores Múltiples */}
             <div className="space-y-1">
               <Label className="text-xs">Puntos de Venta</Label>
               <MultiSelect 
@@ -300,7 +295,6 @@ const Index = () => {
               />
             </div>
 
-            {/* El filtro de USUARIOS solo se muestra si NO es administrador */}
             {profile?.role !== 'administrador' && (
               <div className="space-y-1">
                 <Label className="text-xs">Usuarios</Label>
@@ -336,7 +330,6 @@ const Index = () => {
         </CardContent>
       </Card>
 
-      {/* --- KPIs --- */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           title="Cumplimiento" 
@@ -372,7 +365,6 @@ const Index = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* --- GRÁFICO --- */}
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -406,7 +398,7 @@ const Index = () => {
                     />
                     <Bar dataKey="Completadas" stackId="a" fill="#22c55e" radius={[0, 0, 4, 4]} name="Completadas" />
                     <Bar dataKey="Incumplidas" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} name="Incumplidas" />
-                    <Bar dataKey="Total" stackId="b" fill="transparent" /> {/* Solo para escala */}
+                    <Bar dataKey="Total" stackId="b" fill="transparent" />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -418,7 +410,6 @@ const Index = () => {
           </CardContent>
         </Card>
 
-        {/* --- LISTADO ACTIVIDAD --- */}
         <Card className="col-span-3 flex flex-col">
           <CardHeader>
             <CardTitle>Detalle de Actividad</CardTitle>
@@ -455,7 +446,7 @@ const Index = () => {
                           {task.routine_templates?.nombre}
                         </p>
                         <span className="text-[10px] text-muted-foreground">
-                          {format(new Date(task.fecha_programada), 'dd/MM')}
+                          {format(parseLocalDate(task.fecha_programada), 'dd/MM')}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
