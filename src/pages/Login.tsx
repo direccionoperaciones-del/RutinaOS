@@ -116,10 +116,14 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-8">
       <Card className="w-full max-w-md shadow-lg border-t-4 border-t-primary">
         <CardHeader className="text-center pb-2">
-          <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Lock className="w-6 h-6 text-primary" />
+          <div className="w-24 h-24 mx-auto mb-4 overflow-hidden">
+            <img 
+              src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
+              alt="Movacheck Logo" 
+              className="w-full h-full object-contain rounded-full"
+            />
           </div>
-          <CardTitle className="text-2xl font-bold">Sistema de Gestión</CardTitle>
+          <CardTitle className="text-2xl font-bold">Movacheck</CardTitle>
           <CardDescription>Plataforma de Rutinas Operativas</CardDescription>
         </CardHeader>
         
