@@ -87,6 +87,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
 
+      // 1. Actualizar estado de la tarea
       const updateData = {
         audit_status: status === 'approve' ? 'aprobado' : 'rechazado',
         audit_at: new Date().toISOString(),
@@ -101,9 +102,26 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
       if (error) throw error;
 
+      // 2. Si es RECHAZO -> Enviar Mensaje Directo al usuario
+      if (status === 'reject' && task.completado_por) {
+        const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
+
+        await supabase.rpc('send_broadcast_message', {
+          p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
+          p_cuerpo: messageBody,
+          p_tipo: 'mensaje',
+          p_prioridad: 'alta',
+          p_requiere_confirmacion: true,
+          p_recipient_type: 'user',
+          p_recipient_id: task.completado_por // ID del usuario que completó la tarea
+        });
+      }
+
       toast({ 
         title: status === 'approve' ? "Tarea Aprobada" : "Tarea Rechazada", 
-        description: "La auditoría se ha registrado correctamente." 
+        description: status === 'reject' 
+          ? "Se ha notificado al usuario con el motivo del rechazo." 
+          : "La auditoría se ha registrado correctamente." 
       });
       
       onSuccess();
