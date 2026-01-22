@@ -6,12 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getLocalDate } from "@/lib/utils";
 
 export default function ReportsPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const todayStr = getLocalDate();
+  const [dateFrom, setDateFrom] = useState(todayStr);
+  const [dateTo, setDateTo] = useState(todayStr);
 
   const downloadCSV = (data: any[], filename: string) => {
     if (!data || data.length === 0) {

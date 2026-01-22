@@ -22,9 +22,12 @@ export default function CommandCenter() {
     setLastResult(null);
 
     try {
-      // Invocamos la Edge Function
+      // Importante: Enviar fecha como string YYYY-MM-DD simple para evitar que la Edge Function (UTC)
+      // interprete una hora local (ej: 21 Enero 23:00 UTC-5) como el día siguiente (22 Enero 04:00 UTC).
+      const simpleDate = format(date, "yyyy-MM-dd");
+
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { date: date.toISOString() }
+        body: { date: simpleDate }
       });
 
       if (error) throw error;

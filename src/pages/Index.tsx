@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { getLocalDate } from "@/lib/utils";
 
 // Componente Tarjeta KPI
 const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }: any) => (
@@ -39,9 +40,10 @@ const StatCard = ({ title, value, description, icon: Icon, colorClass, loading }
 const Index = () => {
   const { profile, user, loading: loadingUser } = useCurrentUser();
 
-  // --- ESTADOS DE FILTROS ---
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+  // --- CORRECCIÓN DE FECHAS ---
+  const todayStr = getLocalDate();
+  const [dateFrom, setDateFrom] = useState(todayStr);
+  const [dateTo, setDateTo] = useState(todayStr);
   
   // Ahora son arrays para soportar selección múltiple
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
@@ -223,7 +225,7 @@ const Index = () => {
     setSelectedUsers([]);
     setSelectedPriorities([]);
     setSelectedStatus([]);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDate();
     setDateFrom(today);
     setDateTo(today);
   };

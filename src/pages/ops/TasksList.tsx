@@ -19,8 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
-
-// --- COMPONENTS OUTSIDE TO AVOID RE-DECLARATION ---
+import { getLocalDate } from "@/lib/utils"; // Importar utilidad de fecha local
 
 const getPriorityStyles = (priority: string) => {
   switch (priority) {
@@ -40,7 +39,13 @@ const getFrequencyIcon = (freq: string) => {
 };
 
 const getStatusBadge = (task: any) => {
-  const isLate = task.estado === 'pendiente' && new Date() > new Date(`${task.fecha_programada}T${task.hora_limite_snapshot}`);
+  // Lógica de vencimiento precisa usando objetos Date completos
+  const now = new Date();
+  // Combinar fecha programada + hora limite snapshot para tener el deadline exacto
+  const deadlineStr = `${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:00'}`;
+  const deadline = new Date(deadlineStr);
+  
+  const isLate = task.estado === 'pendiente' && now > deadline;
   
   if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
   if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Vencida</Badge>;
@@ -154,8 +159,11 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
-  // --- ESTADOS DE FILTROS ---
-  const todayStr = new Date().toISOString().split('T')[0];
+  // --- CORRECCIÓN DE FECHAS ---
+  // Usamos getLocalDate() para obtener la fecha local correcta (YYYY-MM-DD)
+  // en lugar de UTC que podría devolver "mañana" si es tarde en la noche.
+  const todayStr = getLocalDate();
+  
   const [dateFrom, setDateFrom] = useState<string>(todayStr);
   const [dateTo, setDateTo] = useState<string>(todayStr);
   
@@ -211,7 +219,7 @@ export default function TasksList() {
   const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
 
   const clearFilters = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDate();
     setDateFrom(today);
     setDateTo(today);
     setSelectedPdvs([]);
