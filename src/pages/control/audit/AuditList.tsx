@@ -12,6 +12,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { AuditReviewModal } from "./AuditReviewModal";
+import { calculateTaskDeadline } from "@/pages/ops/logic/task-deadline";
 
 export default function AuditList() {
   const { toast } = useToast();
@@ -56,6 +57,10 @@ export default function AuditList() {
             id,
             nombre, 
             prioridad, 
+            frecuencia,
+            vencimiento_dia_mes,
+            corte_1_limite,
+            corte_2_limite,
             gps_obligatorio, 
             fotos_obligatorias, 
             requiere_inventario,
@@ -271,7 +276,7 @@ export default function AuditList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Programada</TableHead>
+                  <TableHead>Fecha Límite</TableHead>
                   <TableHead>Ejecutada</TableHead>
                   <TableHead>Rutina / Requisitos</TableHead>
                   <TableHead>PDV</TableHead>
@@ -301,15 +306,29 @@ export default function AuditList() {
                 ) : (
                   filteredTasks.map((task) => {
                     const r = task.routine_templates || {};
+                    const deadline = calculateTaskDeadline(task);
+                    
                     return (
                       <TableRow key={task.id}>
-                        <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
-                          {task.fecha_programada ? format(new Date(task.fecha_programada + 'T12:00:00'), "dd MMM", { locale: es }) : '-'}
+                        <TableCell className="text-xs whitespace-nowrap">
+                          <div className="flex flex-col">
+                            <span className="font-medium text-muted-foreground capitalize">
+                              {format(deadline, "dd MMM", { locale: es })}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {format(deadline, "HH:mm")}
+                            </span>
+                          </div>
                         </TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
                           <div className="flex flex-col">
-                            <span className="font-medium">{task.completado_at ? format(new Date(task.completado_at), "dd MMM", { locale: es }) : '-'}</span>
-                            <span className="text-muted-foreground">{task.completado_at ? format(new Date(task.completado_at), "HH:mm") : '-'}</span>
+                            <span className="font-medium capitalize">
+                              {task.completado_at ? format(new Date(task.completado_at), "dd MMM", { locale: es }) : '-'}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {task.completado_at ? format(new Date(task.completado_at), "HH:mm") : '-'}
+                            </span>
                           </div>
                         </TableCell>
                         <TableCell>
