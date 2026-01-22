@@ -43,7 +43,6 @@ const getFrequencyIcon = (freq: string) => {
 const getStatusBadge = (task: any) => {
   const now = new Date();
   const deadline = calculateTaskDeadline(task);
-  // Tolerancia de 1 minuto para evitar parpadeos visuales
   const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
   if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
@@ -161,7 +160,7 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
-  // Usamos getLocalDate() para obtener la fecha local correcta en lugar de UTC
+  // Usamos getLocalDate() que ahora está forzado a America/Bogota
   const todayStr = getLocalDate();
   
   const [dateFrom, setDateFrom] = useState<string>(todayStr);
@@ -222,7 +221,6 @@ export default function TasksList() {
   // 1. Hay tareas totales (> 0)
   // 2. NO hay pendientes (== 0)
   // 3. La fecha de fin del filtro NO es futura (dateTo <= todayStr)
-  // Usamos comparación de strings ISO que funciona correctamente (lexicográfica)
   const showCongratulation = 
     totalFiltered > 0 && 
     pendingTasks.length === 0 && 
@@ -242,7 +240,6 @@ export default function TasksList() {
   // Formato visual del título de fecha
   const displayDate = useMemo(() => {
     if (dateFrom === dateTo) {
-      // Usamos parseLocalDate para evitar desfase de zona horaria al formatear
       return format(parseLocalDate(dateFrom), "EEEE, d 'de' MMMM", { locale: es });
     }
     return "Rango seleccionado";

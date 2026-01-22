@@ -6,20 +6,23 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Obtiene la fecha actual del dispositivo del usuario en formato YYYY-MM-DD
- * Usa los métodos locales nativos (getFullYear, getMonth, getDate) para garantizar
- * que coincida exactamente con el reloj del sistema, ignorando UTC.
+ * Obtiene la fecha actual OFICIAL DE COLOMBIA (GMT-5) en formato YYYY-MM-DD.
+ * Esto corrige definitivamente el problema de que después de las 7PM aparezca el día siguiente (UTC).
+ * Usa 'en-CA' para garantizar el formato ISO YYYY-MM-DD.
  */
 export function getLocalDate(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  const day = date.getDate().toString().padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(date);
 }
 
 /**
  * Convierte un string de fecha "YYYY-MM-DD" (de la BD) a un objeto Date
- * interpretado como medianoche LOCAL.
+ * interpretado como medianoche LOCAL, no UTC.
+ * Evita el error donde "2026-01-21" se muestra como "20 Ene" por diferencias horarias.
  */
 export function parseLocalDate(dateStr: string): Date {
   if (!dateStr) return new Date();
