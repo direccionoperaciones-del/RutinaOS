@@ -177,22 +177,17 @@ export default function TasksList() {
   useEffect(() => {
     const checkAbsences = async () => {
       if (!user || !dateFrom || !dateTo) return;
-      
-      // Buscamos cualquier ausencia que se solape con el rango seleccionado
-      // Logica de solapamiento: (StartA <= EndB) and (EndA >= StartB)
       const { data } = await supabase
         .from('user_absences')
         .select('*, absence_types(nombre)')
         .eq('user_id', user.id)
         .lte('fecha_desde', dateTo) 
         .gte('fecha_hasta', dateFrom)
-        .maybeSingle(); // Tomamos la primera si hay varias
-      
+        .maybeSingle(); 
       setActiveAbsence(data);
     };
-    
     checkAbsences();
-  }, [user, dateFrom, dateTo]); // Dependemos de las fechas seleccionadas
+  }, [user, dateFrom, dateTo]);
   
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
@@ -238,7 +233,6 @@ export default function TasksList() {
 
   const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
 
-  // Opciones de filtros
   const pdvOptions = useMemo(() => {
     const map = new Map();
     tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); });
@@ -270,7 +264,7 @@ export default function TasksList() {
   }, [dateFrom, dateTo]);
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-24"> {/* Padding bottom extra para evitar footer del navegador móvil */}
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-bold tracking-tight">Mis Tareas</h2>
         <div className="flex justify-between items-center">
@@ -283,43 +277,38 @@ export default function TasksList() {
       {/* --- BANNER DE NOVEDAD ACTIVA --- */}
       {activeAbsence && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-          <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+          <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0">
             <Coffee className="w-6 h-6" />
           </div>
           <div>
             <h4 className="font-bold text-blue-900 text-lg">
-              Tienes una novedad registrada: {activeAbsence.absence_types?.nombre}
+              Tienes una novedad: {activeAbsence.absence_types?.nombre}
             </h4>
             <p className="text-blue-800 text-sm">
-              Desde el {format(parseLocalDate(activeAbsence.fecha_desde), 'dd/MM/yyyy')} hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}
+              Hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}
             </p>
-            {activeAbsence.politica === 'reasignar' ? (
-              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
-                <Info className="w-3 h-3"/> Tus tareas han sido reasignadas temporalmente.
-              </p>
-            ) : (
-              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
-                <Info className="w-3 h-3"/> No se generarán tareas durante este periodo.
-              </p>
-            )}
+            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
+              <Info className="w-3 h-3"/> {activeAbsence.politica === 'reasignar' ? 'Tareas reasignadas.' : 'Tareas omitidas.'}
+            </p>
           </div>
         </div>
       )}
 
-      {/* --- FILTROS --- */}
+      {/* --- FILTROS MEJORADOS PARA MÓVIL --- */}
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-medium text-primary">
-              <Filter className="w-4 h-4" /> Filtros de Búsqueda
+              <Filter className="w-4 h-4" /> Filtros
             </div>
-            <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar Tareas">
+            <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar">
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {/* Grid responsiva: 1 col en móvil, más en tablet/desktop */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
               <div className="relative">
@@ -366,7 +355,7 @@ export default function TasksList() {
       {/* --- PROGRESO --- */}
       <div className="bg-card border rounded-lg p-3 shadow-sm">
         <div className="flex justify-between text-xs font-medium mb-1">
-          <span>Progreso ({dateFrom === dateTo ? format(parseLocalDate(dateFrom), 'dd/MM') : 'Periodo'})</span>
+          <span>Progreso</span>
           <span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>{progressPercentage}%</span>
         </div>
         <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
@@ -389,7 +378,6 @@ export default function TasksList() {
             </div>
             <h3 className="text-xl font-bold text-green-800 tracking-tight">¡FELICITACIONES!</h3>
             <p className="text-green-700 font-medium">La operación del día está completa.</p>
-            <p className="text-sm text-green-600/80">Has completado todas tus tareas asignadas para el {format(parseLocalDate(dateTo), "d 'de' MMMM", {locale: es})}.</p>
           </div>
         </div>
       )}
@@ -398,7 +386,7 @@ export default function TasksList() {
       {error && (
         <div className="p-4 rounded border border-red-200 bg-red-50 text-red-700 flex items-center gap-2">
           <AlertCircle className="w-5 h-5" />
-          <span>Error cargando tareas. Por favor intenta recargar.</span>
+          <span>Error cargando tareas.</span>
         </div>
       )}
 
@@ -415,7 +403,7 @@ export default function TasksList() {
             items={allTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="No hay tareas programadas para este rango de fechas." 
+            emptyMessage="No hay tareas programadas." 
             onAction={handleStartTask} 
           />
         </TabsContent>
@@ -425,7 +413,7 @@ export default function TasksList() {
             items={pendingTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage={activeAbsence ? "No tienes tareas pendientes debido a tu novedad." : (showCongratulation ? "¡Todo listo! No queda nada pendiente." : "No tienes tareas pendientes.")} 
+            emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} 
             onAction={handleStartTask} 
           />
         </TabsContent>
@@ -435,7 +423,7 @@ export default function TasksList() {
             items={completedTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="No hay tareas completadas en estas fechas." 
+            emptyMessage="Aún no hay tareas completadas." 
             onAction={handleStartTask} 
           />
         </TabsContent>

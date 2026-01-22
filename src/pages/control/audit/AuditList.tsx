@@ -27,12 +27,11 @@ export default function AuditList() {
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedExecutionStatus, setSelectedExecutionStatus] = useState<string[]>([]);
-  const [selectedAuditStatus, setSelectedAuditStatus] = useState<string[]>(["pendiente"]); // Default: Pendientes
+  const [selectedAuditStatus, setSelectedAuditStatus] = useState<string[]>(["pendiente"]);
 
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Opciones de filtros estáticos
   const executionStatusOptions = [
     { label: "A Tiempo", value: "completada_a_tiempo" },
     { label: "Vencida", value: "completada_vencida" },
@@ -47,61 +46,39 @@ export default function AuditList() {
 
   const fetchTasks = async () => {
     setLoading(true);
-    
     try {
       let query = supabase
         .from('task_instances')
         .select(`
           *,
           routine_templates (
-            id,
-            nombre, 
-            prioridad, 
-            frecuencia,
-            vencimiento_dia_mes,
-            corte_1_limite,
-            corte_2_limite,
-            gps_obligatorio, 
-            fotos_obligatorias, 
-            requiere_inventario,
-            comentario_obligatorio,
-            archivo_obligatorio,
-            enviar_email,
-            responder_email
+            id, nombre, prioridad, frecuencia, vencimiento_dia_mes,
+            corte_1_limite, corte_2_limite, gps_obligatorio, 
+            fotos_obligatorias, requiere_inventario, comentario_obligatorio,
+            archivo_obligatorio, enviar_email, responder_email
           ),
           pdv (id, nombre, ciudad),
           profiles:completado_por (id, nombre, apellido)
         `)
-        // Traemos solo las que ya se completaron (para auditar)
         .in('estado', ['completada', 'completada_a_tiempo', 'completada_vencida']) 
         .order('completado_at', { ascending: false });
 
-      // Aplicar filtro de fechas si existen en la consulta inicial para optimizar
       if (dateFrom) query = query.gte('completado_at', dateFrom);
       if (dateTo) query = query.lte('completado_at', dateTo + 'T23:59:59');
 
       const { data, error } = await query;
-
       if (error) throw error;
-
       setTasks(data || []);
     } catch (error: any) {
       console.error("Error cargando auditoría:", error);
-      toast({ 
-        variant: "destructive", 
-        title: "Error de carga", 
-        description: error.message || "No se pudieron cargar las tareas." 
-      });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchTasks();
-  }, [dateFrom, dateTo]); // Recargar si cambian las fechas base
+  useEffect(() => { fetchTasks(); }, [dateFrom, dateTo]);
 
-  // --- OPCIONES DINÁMICAS PARA FILTROS (Memoized) ---
   const pdvOptions = useMemo(() => {
     const map = new Map();
     tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); });
@@ -116,35 +93,19 @@ export default function AuditList() {
 
   const userOptions = useMemo(() => {
     const map = new Map();
-    tasks.forEach(t => { 
-      if (t.profiles) {
-        map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`);
-      }
-    });
+    tasks.forEach(t => { if (t.profiles) map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`); });
     return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
-  // --- FILTRADO EN MEMORIA ---
   const filteredTasks = tasks.filter(t => {
-    // 1. Filtro PDV
     if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
-
-    // 2. Filtro Rutina
     if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
-
-    // 3. Filtro Usuario
     if (selectedUsers.length > 0 && (!t.profiles || !selectedUsers.includes(t.profiles.id))) return false;
-
-    // 4. Filtro Estado Ejecución
     if (selectedExecutionStatus.length > 0 && !selectedExecutionStatus.includes(t.estado)) return false;
-
-    // 5. Filtro Estado Auditoría
     if (selectedAuditStatus.length > 0) {
-      // Manejo especial para "pendiente" ya que puede ser null o string 'pendiente'
       const status = t.audit_status || 'pendiente';
       if (!selectedAuditStatus.includes(status)) return false;
     }
-
     return true;
   });
 
@@ -154,25 +115,19 @@ export default function AuditList() {
   };
 
   const clearFilters = () => {
-    setSelectedPdvs([]);
-    setSelectedRoutines([]);
-    setSelectedUsers([]);
-    setSelectedExecutionStatus([]);
-    setSelectedAuditStatus(["pendiente"]); // Volver al default útil
-    setDateFrom("");
-    setDateTo("");
+    setSelectedPdvs([]); setSelectedRoutines([]); setSelectedUsers([]);
+    setSelectedExecutionStatus([]); setSelectedAuditStatus(["pendiente"]);
+    setDateFrom(""); setDateTo("");
   };
 
   const hasActiveFilters = 
-    selectedPdvs.length > 0 || 
-    selectedRoutines.length > 0 || 
-    selectedUsers.length > 0 || 
+    selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0 || 
     selectedExecutionStatus.length > 0 || 
     (selectedAuditStatus.length > 0 && (selectedAuditStatus.length !== 1 || !selectedAuditStatus.includes('pendiente'))) ||
     dateFrom || dateTo;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-bold tracking-tight">Auditoría de Calidad</h2>
         <p className="text-muted-foreground">Revisión y aprobación de tareas ejecutadas en campo.</p>
@@ -186,85 +141,44 @@ export default function AuditList() {
               <Filter className="w-4 h-4" /> Filtros Avanzados
             </div>
             {hasActiveFilters && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={clearFilters} 
-                className="text-xs h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-              >
-                <X className="w-3 h-3 mr-1" /> Limpiar Filtros
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs h-7 text-destructive hover:bg-destructive/10">
+                <X className="w-3 h-3 mr-1" /> Limpiar
               </Button>
             )}
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            
-            {/* Rango de Fechas */}
+          {/* Grid responsiva: 1 col en móvil, 2 en sm, etc. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
               <div className="relative">
                 <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input 
-                  type="date" 
-                  className="h-8 pl-7 text-xs bg-background" 
-                  value={dateFrom} 
-                  onChange={(e) => setDateFrom(e.target.value)} 
-                />
+                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
               <div className="relative">
                 <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input 
-                  type="date" 
-                  className="h-8 pl-7 text-xs bg-background" 
-                  value={dateTo} 
-                  onChange={(e) => setDateTo(e.target.value)} 
-                />
+                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
             </div>
-
-            {/* Selectores */}
             <div className="space-y-1">
               <Label className="text-xs">Estado Auditoría</Label>
-              <MultiSelect 
-                options={auditStatusOptions} 
-                selected={selectedAuditStatus} 
-                onChange={setSelectedAuditStatus} 
-                placeholder="Estado..."
-              />
+              <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />
             </div>
-
             <div className="space-y-1">
               <Label className="text-xs">Puntos de Venta</Label>
-              <MultiSelect 
-                options={pdvOptions} 
-                selected={selectedPdvs} 
-                onChange={setSelectedPdvs} 
-                placeholder="Todos los PDV"
-              />
+              <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
             </div>
-
             <div className="space-y-1">
               <Label className="text-xs">Rutinas</Label>
-              <MultiSelect 
-                options={routineOptions} 
-                selected={selectedRoutines} 
-                onChange={setSelectedRoutines} 
-                placeholder="Todas las Rutinas"
-              />
+              <MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas las Rutinas" />
             </div>
-
             <div className="space-y-1">
               <Label className="text-xs">Ejecución</Label>
-              <MultiSelect 
-                options={executionStatusOptions} 
-                selected={selectedExecutionStatus} 
-                onChange={setSelectedExecutionStatus} 
-                placeholder="A tiempo / Vencida"
-              />
+              <MultiSelect options={executionStatusOptions} selected={selectedExecutionStatus} onChange={setSelectedExecutionStatus} placeholder="A tiempo / Vencida" />
             </div>
           </div>
         </CardContent>
@@ -272,14 +186,15 @@ export default function AuditList() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="rounded-md border overflow-hidden">
+          {/* Wrapper para scroll horizontal en móviles */}
+          <div className="rounded-md border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Fecha Límite</TableHead>
-                  <TableHead>Ejecutada</TableHead>
-                  <TableHead>Rutina / Requisitos</TableHead>
-                  <TableHead>PDV</TableHead>
+                  <TableHead className="whitespace-nowrap">Fecha Límite</TableHead>
+                  <TableHead className="whitespace-nowrap">Ejecutada</TableHead>
+                  <TableHead className="min-w-[200px]">Rutina / Requisitos</TableHead>
+                  <TableHead className="min-w-[150px]">PDV</TableHead>
                   <TableHead>Ejecución</TableHead>
                   <TableHead>Auditoría</TableHead>
                   <TableHead className="text-right">Acción</TableHead>
@@ -287,98 +202,56 @@ export default function AuditList() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8">
-                      <div className="flex justify-center items-center gap-2">
-                        <Clock className="w-4 h-4 animate-spin text-primary" /> Cargando...
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-8">Cargando...</TableCell></TableRow>
                 ) : filteredTasks.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
-                      <div className="flex flex-col items-center justify-center">
-                        <Search className="w-8 h-8 mb-2 opacity-20" />
-                        <p>No se encontraron tareas con los filtros seleccionados.</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No se encontraron tareas.</TableCell></TableRow>
                 ) : (
                   filteredTasks.map((task) => {
                     const r = task.routine_templates || {};
                     const deadline = calculateTaskDeadline(task);
-                    
                     return (
                       <TableRow key={task.id}>
                         <TableCell className="text-xs whitespace-nowrap">
                           <div className="flex flex-col">
-                            <span className="font-medium text-muted-foreground capitalize">
-                              {format(deadline, "dd MMM", { locale: es })}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {format(deadline, "HH:mm")}
-                            </span>
+                            <span className="font-medium text-muted-foreground capitalize">{format(deadline, "dd MMM", { locale: es })}</span>
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" />{format(deadline, "HH:mm")}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
                           <div className="flex flex-col">
-                            <span className="font-medium capitalize">
-                              {task.completado_at ? format(new Date(task.completado_at), "dd MMM", { locale: es }) : '-'}
-                            </span>
-                            <span className="text-muted-foreground">
-                              {task.completado_at ? format(new Date(task.completado_at), "HH:mm") : '-'}
-                            </span>
+                            <span className="font-medium capitalize">{task.completado_at ? format(new Date(task.completado_at), "dd MMM", { locale: es }) : '-'}</span>
+                            <span className="text-muted-foreground">{task.completado_at ? format(new Date(task.completado_at), "HH:mm") : '-'}</span>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
-                            <div className="font-medium flex items-center gap-2">
-                              {r.nombre}
-                              {r.prioridad === 'critica' && (
-                                <Badge variant="destructive" className="text-[9px] h-4 px-1">Crítica</Badge>
-                              )}
-                            </div>
-                            {/* Iconos de Requisitos */}
+                            <div className="font-medium flex items-center gap-2">{r.nombre}{r.prioridad === 'critica' && <Badge variant="destructive" className="text-[9px] h-4 px-1">Crítica</Badge>}</div>
                             <div className="flex gap-1 text-muted-foreground">
-                              {r.gps_obligatorio && <span title="GPS"><MapPin className="w-3 h-3 text-blue-500" /></span>}
-                              {r.fotos_obligatorias && <span title="Fotos"><Camera className="w-3 h-3 text-purple-500" /></span>}
-                              {r.requiere_inventario && <span title="Inventario"><Box className="w-3 h-3 text-orange-500" /></span>}
-                              {r.archivo_obligatorio && <span title="Archivo"><FileText className="w-3 h-3 text-cyan-500" /></span>}
-                              {(r.enviar_email || r.responder_email) && <span title="Email"><Mail className="w-3 h-3 text-pink-500" /></span>}
-                              {r.comentario_obligatorio && <span title="Comentario"><MessageSquareText className="w-3 h-3 text-yellow-500" /></span>}
+                              {r.gps_obligatorio && <MapPin className="w-3 h-3 text-blue-500" />}
+                              {r.fotos_obligatorias && <Camera className="w-3 h-3 text-purple-500" />}
+                              {r.requiere_inventario && <Box className="w-3 h-3 text-orange-500" />}
+                              {r.archivo_obligatorio && <FileText className="w-3 h-3 text-cyan-500" />}
+                              {(r.enviar_email || r.responder_email) && <Mail className="w-3 h-3 text-pink-500" />}
+                              {r.comentario_obligatorio && <MessageSquareText className="w-3 h-3 text-yellow-500" />}
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col text-sm">
-                            <span>{task.pdv?.nombre}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {task.profiles ? `${task.profiles.nombre} ${task.profiles.apellido}` : 'Desconocido'}
-                            </span>
+                            <span className="truncate max-w-[150px]">{task.pdv?.nombre}</span>
+                            <span className="text-xs text-muted-foreground">{task.profiles ? `${task.profiles.nombre} ${task.profiles.apellido}` : 'Desconocido'}</span>
                           </div>
                         </TableCell>
-                        
-                        {/* Estado de Ejecución (Tiempo) */}
                         <TableCell>
-                          {task.estado === 'completada_a_tiempo' && (
-                            <Badge className="bg-green-100 text-green-800 border-green-200 hover:bg-green-100">A Tiempo</Badge>
-                          )}
-                          {task.estado === 'completada_vencida' && (
-                            <Badge className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">Vencida</Badge>
-                          )}
-                          {task.estado === 'completada' && (
-                            <Badge variant="outline">Completada</Badge>
-                          )}
+                          {task.estado === 'completada_a_tiempo' && <Badge className="bg-green-100 text-green-800 border-green-200 whitespace-nowrap">A Tiempo</Badge>}
+                          {task.estado === 'completada_vencida' && <Badge className="bg-red-100 text-red-800 border-red-200 whitespace-nowrap">Vencida</Badge>}
+                          {task.estado === 'completada' && <Badge variant="outline">Completada</Badge>}
                         </TableCell>
-
-                        {/* Estado de Auditoría */}
                         <TableCell>
-                          {task.audit_status === 'aprobado' && <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100">Aprobado</Badge>}
-                          {task.audit_status === 'rechazado' && <Badge className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">Rechazado</Badge>}
+                          {task.audit_status === 'aprobado' && <Badge className="bg-blue-100 text-blue-800 border-blue-200">Aprobado</Badge>}
+                          {task.audit_status === 'rechazado' && <Badge className="bg-red-100 text-red-800 border-red-200">Rechazado</Badge>}
                           {(!task.audit_status || task.audit_status === 'pendiente') && <Badge variant="outline" className="text-gray-500">Pendiente</Badge>}
                         </TableCell>
-
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => handleReview(task)}>
                             <Eye className="w-4 h-4 mr-2" /> Revisar

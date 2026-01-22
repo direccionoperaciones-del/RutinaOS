@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Loader2, AlertCircle, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -243,7 +243,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       let newStatus = task.estado;
       
       if (isTaskPending) {
-         // USAR LÓGICA DE VENCIMIENTO MEJORADA
          try {
            const limitDate = calculateTaskDeadline(task);
            newStatus = now > limitDate ? 'completada_vencida' : 'completada_a_tiempo';
@@ -372,43 +371,62 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-2 mb-2">
-            <Badge variant="outline" className="capitalize">{routine.prioridad}</Badge>
-            <span className="text-xs text-muted-foreground">{task.fecha_programada}</span>
-            {isTaskCompleted && <Badge variant="secondary" className="bg-green-100 text-green-800">Completada</Badge>}
+      {/* Mobile-first: Full screen on small devices, centered dialog on sm+ */}
+      <DialogContent className="w-full h-full max-h-none rounded-none sm:rounded-lg sm:h-auto sm:max-h-[90vh] sm:max-w-[700px] overflow-y-auto p-0 gap-0 flex flex-col">
+        
+        {/* Header Sticky */}
+        <DialogHeader className="p-4 sm:p-6 border-b sticky top-0 bg-background z-10 shadow-sm">
+          <div className="flex justify-between items-start gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <Badge variant="outline" className="capitalize text-[10px]">{routine.prioridad}</Badge>
+                <span className="text-xs text-muted-foreground">{task.fecha_programada}</span>
+                {isTaskCompleted && <Badge variant="secondary" className="bg-green-100 text-green-800 text-[10px]">Completada</Badge>}
+              </div>
+              <DialogTitle className="text-lg leading-tight">{routine.nombre}</DialogTitle>
+              <DialogDescription className="line-clamp-2 text-xs mt-1">{routine.descripcion}</DialogDescription>
+            </div>
+            
+            {/* Botón Cerrar visible en móvil */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 -mr-2 -mt-2 text-muted-foreground sm:hidden" 
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
           </div>
-          <DialogTitle>{routine.nombre}</DialogTitle>
-          <DialogDescription>{routine.descripcion}</DialogDescription>
         </DialogHeader>
 
-        {isInitializing ? (
-          <div className="py-20 flex flex-col items-center justify-center text-muted-foreground">
-            <Loader2 className="w-10 h-10 animate-spin mb-4" />
-            <p>Cargando datos de la tarea...</p>
-          </div>
-        ) : initError ? (
-          <div className="py-10 flex flex-col items-center justify-center text-destructive">
-            <AlertCircle className="w-10 h-10 mb-4" />
-            <p className="mb-4">{initError}</p>
-            <Button variant="outline" onClick={loadTaskData}>Reintentar</Button>
-          </div>
-        ) : (
-          <div className={`space-y-6 py-4 ${!canPerformAction ? 'opacity-80 pointer-events-none' : ''}`}>
-            {/* Si es solo lectura, mostramos un banner */}
-            {!canPerformAction && (
-              <div className="bg-muted p-3 rounded-md text-sm text-center text-muted-foreground mb-4">
-                Esta tarea ya fue completada. Solo lectura.
-              </div>
-            )}
-            
-            {schema.map(field => renderField(field))}
-          </div>
-        )}
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {isInitializing ? (
+            <div className="py-20 flex flex-col items-center justify-center text-muted-foreground">
+              <Loader2 className="w-10 h-10 animate-spin mb-4" />
+              <p>Cargando...</p>
+            </div>
+          ) : initError ? (
+            <div className="py-10 flex flex-col items-center justify-center text-destructive text-center">
+              <AlertCircle className="w-10 h-10 mb-4" />
+              <p className="mb-4 text-sm px-4">{initError}</p>
+              <Button variant="outline" onClick={loadTaskData}>Reintentar</Button>
+            </div>
+          ) : (
+            <div className={`space-y-6 pb-4 ${!canPerformAction ? 'opacity-80 pointer-events-none' : ''}`}>
+              {!canPerformAction && (
+                <div className="bg-muted p-3 rounded-md text-sm text-center text-muted-foreground mb-2">
+                  Solo lectura.
+                </div>
+              )}
+              {schema.map(field => renderField(field))}
+            </div>
+          )}
+        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        {/* Footer Sticky */}
+        <DialogFooter className="p-4 border-t bg-background mt-auto sticky bottom-0 z-10 gap-2 sm:gap-0">
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
             {canPerformAction ? 'Cancelar' : 'Cerrar'}
           </Button>
           
@@ -416,10 +434,10 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             <Button 
               onClick={handleComplete} 
               disabled={isInitializing || isProcessing || isUploading || !!initError}
-              className="bg-green-600 hover:bg-green-700"
+              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
             >
               {isProcessing && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              {isTaskPending ? 'Finalizar Tarea' : 'Actualizar Tarea'}
+              {isTaskPending ? 'Finalizar Tarea' : 'Actualizar'}
             </Button>
           )}
         </DialogFooter>
