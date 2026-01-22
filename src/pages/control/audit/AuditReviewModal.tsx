@@ -103,18 +103,26 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       if (error) throw error;
 
       // 2. Si es RECHAZO -> Enviar Mensaje Directo al usuario
-      if (status === 'reject' && task.completado_por) {
+      // CORRECCIÓN: Usamos task.profiles.id para garantizar que tenemos el ID correcto del usuario
+      const targetUserId = task.profiles?.id || task.completado_por;
+
+      if (status === 'reject' && targetUserId) {
         const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
 
-        await supabase.rpc('send_broadcast_message', {
+        const { error: msgError } = await supabase.rpc('send_broadcast_message', {
           p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
           p_cuerpo: messageBody,
           p_tipo: 'mensaje',
           p_prioridad: 'alta',
           p_requiere_confirmacion: true,
           p_recipient_type: 'user',
-          p_recipient_id: task.completado_por // ID del usuario que completó la tarea
+          p_recipient_id: targetUserId // ID explícito del perfil
         });
+
+        if (msgError) {
+          console.error("Error enviando mensaje:", msgError);
+          toast({ variant: "destructive", title: "Advertencia", description: "Se rechazó la tarea pero falló el envío del mensaje." });
+        }
       }
 
       toast({ 
