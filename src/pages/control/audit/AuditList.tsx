@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Search, Filter, CheckCircle2, Eye, Clock, MapPin, Camera, Box, FileText, Mail, MessageSquareText, CalendarIcon, X } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Search, Filter, CheckCircle2, Eye, Clock, MapPin, Camera, Box, FileText, Mail, MessageSquareText, CalendarIcon, X, User } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -134,9 +135,50 @@ export default function AuditList() {
       </div>
 
       {/* --- PANEL DE FILTROS --- */}
-      <Card className="bg-muted/20 border-primary/10">
-        <CardHeader className="pb-2 pt-4 px-4">
-          <div className="flex items-center justify-between">
+      <Card className="bg-muted/20 border-primary/10 overflow-hidden">
+        {/* En móvil usamos Accordion para ahorrar espacio */}
+        <div className="md:hidden">
+          <Accordion type="single" collapsible>
+            <AccordionItem value="filters" className="border-none">
+              <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <Filter className="w-4 h-4" /> Filtros Avanzados
+                  {hasActiveFilters && <span className="h-2 w-2 rounded-full bg-primary" />}
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-4 pb-4">
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Desde</Label>
+                    <Input type="date" className="h-9" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Hasta</Label>
+                    <Input type="date" className="h-9" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Estado Auditoría</Label>
+                    <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Puntos de Venta</Label>
+                    <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
+                  </div>
+                  {/* Otros filtros ocultos en móvil para simplificar, o agregados si son críticos */}
+                  {hasActiveFilters && (
+                    <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full mt-2 text-destructive">
+                      Limpiar Filtros
+                    </Button>
+                  )}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </div>
+
+        {/* En desktop mostramos todo expandido */}
+        <CardContent className="hidden md:block px-4 py-4">
+          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-sm font-medium text-primary">
               <Filter className="w-4 h-4" /> Filtros Avanzados
             </div>
@@ -146,23 +188,14 @@ export default function AuditList() {
               </Button>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          {/* Grid responsiva: 1 col en móvil, 2 en sm, etc. */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-              </div>
+              <Input type="date" className="h-8 pl-2 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-              </div>
+              <Input type="date" className="h-8 pl-2 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Estado Auditoría</Label>
@@ -184,10 +217,54 @@ export default function AuditList() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* --- VISTA MÓVIL: TARJETAS --- */}
+      <div className="grid grid-cols-1 gap-4 md:hidden">
+        {filteredTasks.map((task) => {
+          const r = task.routine_templates || {};
+          const deadline = calculateTaskDeadline(task);
+          
+          return (
+            <Card key={task.id} className="p-4 shadow-sm border-l-4" style={{ borderLeftColor: task.audit_status === 'rechazado' ? '#EF4444' : task.audit_status === 'aprobado' ? '#22C55E' : '#94A3B8' }}>
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h4 className="font-bold text-sm line-clamp-1">{r.nombre}</h4>
+                  <p className="text-xs text-muted-foreground">{task.pdv?.nombre}</p>
+                </div>
+                {(!task.audit_status || task.audit_status === 'pendiente') ? (
+                  <Badge variant="outline" className="text-[10px]">Pendiente</Badge>
+                ) : (
+                  <Badge className={task.audit_status === 'aprobado' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+                    {task.audit_status}
+                  </Badge>
+                )}
+              </div>
+
+              <div className="space-y-1.5 mb-4">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <User className="w-3 h-3" />
+                  <span>{task.profiles ? `${task.profiles.nombre} ${task.profiles.apellido}` : 'N/A'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock className="w-3 h-3" />
+                  <span>Ejecutado: {task.completado_at ? format(new Date(task.completado_at), "dd MMM HH:mm") : '-'}</span>
+                </div>
+              </div>
+
+              <Button className="w-full h-8 text-xs" variant="outline" onClick={() => handleReview(task)}>
+                <Eye className="w-3 h-3 mr-2" /> Revisar Detalles
+              </Button>
+            </Card>
+          );
+        })}
+        {filteredTasks.length === 0 && !loading && (
+          <div className="text-center py-8 text-muted-foreground text-sm">No se encontraron tareas.</div>
+        )}
+      </div>
+
+      {/* --- VISTA DESKTOP: TABLA --- */}
+      <Card className="hidden md:block">
         <CardContent className="p-0">
-          {/* Wrapper para scroll horizontal en móviles */}
-          <div className="rounded-md border overflow-x-auto">
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>

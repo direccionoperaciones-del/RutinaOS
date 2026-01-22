@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box } from "lucide-react";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box, ChevronRight } from "lucide-react";
 import { RoutineForm } from "./RoutineForm";
 import { useToast } from "@/hooks/use-toast";
 
@@ -62,30 +62,73 @@ export default function RoutineList() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Catálogo de Rutinas</h2>
           <p className="text-muted-foreground">Define las plantillas de tareas que se ejecutarán en los PDV.</p>
         </div>
-        <Button onClick={handleCreate}>
+        <Button onClick={handleCreate} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" /> Nueva Rutina
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar rutina..."
-              className="pl-8 max-w-sm"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </CardHeader>
-        <CardContent>
+      <div className="relative">
+        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Buscar rutina..."
+          className="pl-8"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      {/* --- VISTA MÓVIL: TARJETAS --- */}
+      <div className="grid grid-cols-1 gap-4 md:hidden">
+        {filteredRoutines.map((routine) => (
+          <Card key={routine.id} className="overflow-hidden border-l-4 shadow-sm" style={{ borderLeftColor: 'var(--primary)' }}>
+            <CardContent className="p-4">
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="font-bold text-lg">{routine.nombre}</h3>
+                <Badge className={getPriorityColor(routine.prioridad)}>{routine.prioridad}</Badge>
+              </div>
+              
+              <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                {routine.descripcion}
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mb-4">
+                <div className="flex items-center gap-1 bg-muted/50 p-1.5 rounded">
+                  <Calendar className="w-3 h-3" /> 
+                  <span className="capitalize">{routine.frecuencia}</span>
+                </div>
+                <div className="flex items-center gap-1 bg-muted/50 p-1.5 rounded">
+                  <Clock className="w-3 h-3" /> 
+                  {routine.hora_inicio?.slice(0,5)} - {routine.hora_limite?.slice(0,5)}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-dashed">
+                <div className="flex gap-2">
+                  {routine.gps_obligatorio && <MapPin className="w-4 h-4 text-blue-500" />}
+                  {routine.fotos_obligatorias && <Camera className="w-4 h-4 text-purple-500" />}
+                  {routine.requiere_inventario && <Box className="w-4 h-4 text-orange-500" />}
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => handleEdit(routine)} className="h-8">
+                  Editar <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+        {filteredRoutines.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">No se encontraron rutinas.</div>
+        )}
+      </div>
+
+      {/* --- VISTA DESKTOP: TABLA --- */}
+      <Card className="hidden md:block">
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
