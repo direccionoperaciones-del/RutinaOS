@@ -6,32 +6,31 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Obtiene la fecha actual OFICIAL DE COLOMBIA (GMT-5) en formato YYYY-MM-DD.
- * Esto corrige definitivamente el problema de que después de las 7PM aparezca el día siguiente (UTC).
- * Usa 'en-CA' para garantizar el formato ISO YYYY-MM-DD.
+ * Obtiene la fecha actual OFICIAL DE COLOMBIA (GMT-5)
+ * Implementación manual radical: Resta 5 horas al tiempo UTC directamente.
+ * Esto ignora cualquier configuración del navegador/servidor y garantiza la fecha colombiana.
  */
 export function getLocalDate(date: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { 
-    timeZone: 'America/Bogota',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(date);
+  // Obtener timestamp UTC
+  const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+  
+  // Restar 5 horas exactas (3600000 ms * 5) para llegar a Colombia
+  const bogotaTime = new Date(utc - (3600000 * 5));
+  
+  // Formatear manualmente YYYY-MM-DD para evitar conversiones implícitas
+  const year = bogotaTime.getFullYear();
+  const month = (bogotaTime.getMonth() + 1).toString().padStart(2, '0');
+  const day = bogotaTime.getDate().toString().padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
 }
 
 /**
- * Convierte un string de fecha "YYYY-MM-DD" (de la BD) a un objeto Date
- * interpretado como medianoche LOCAL, no UTC.
- * Evita el error donde "2026-01-21" se muestra como "20 Ene" por diferencias horarias.
+ * Parsea una fecha YYYY-MM-DD y la interpreta como una fecha local a las 00:00:00
+ * Fundamental para que los filtros de fecha funcionen con precisión.
  */
 export function parseLocalDate(dateStr: string): Date {
   if (!dateStr) return new Date();
-  // Aseguramos que el string tenga el formato correcto y forzamos la interpretación local
-  // al usar el constructor new Date(y, m, d)
-  const parts = dateStr.split('-');
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1; // Meses en JS son 0-11
-  const day = parseInt(parts[2], 10);
-  
-  return new Date(year, month, day);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
 }

@@ -27,18 +27,15 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           profiles:completado_por (id, nombre, apellido)
         `);
 
-      // FILTRO DE FECHAS ESTRICTO:
-      // Mostrar tarea SI:
-      // 1. Su fecha programada está en el rango (fecha_programada >= from AND fecha_programada <= to)
-      // 2. O SI se completó dentro del rango (completado_at >= from 00:00 AND completado_at <= to 23:59)
+      // --- FILTRO RADICAL Y ESTRICTO ---
+      // Solo traemos tareas cuya fecha PROGRAMADA esté en el rango.
+      // Eliminamos la condición "OR completado_at" que traía tareas de otros días.
+      query = query
+        .gte('fecha_programada', dateFrom)
+        .lte('fecha_programada', dateTo);
       
-      const rangeFilter = `and(fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo}),and(completado_at.gte.${dateFrom}T00:00:00,completado_at.lte.${dateTo}T23:59:59)`;
-      
-      query = query.or(rangeFilter);
-      
-      // --- RESTRICCIÓN DE SEGURIDAD PARA ADMINISTRADOR ---
+      // --- RESTRICCIÓN DE SEGURIDAD ---
       if (profile?.role === 'administrador') {
-        // 1. Obtener mis PDVs activos
         const { data: assignments } = await supabase
           .from('pdv_assignments')
           .select('pdv_id')
@@ -48,9 +45,10 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         const myPdvIds = assignments?.map(a => a.pdv_id) || [];
         
         if (myPdvIds.length > 0) {
-          // Filtrar por mis PDVs asignados O tareas que yo completé
-          query = query.or(`pdv_id.in.(${myPdvIds.join(',')}),completado_por.eq.${user.id}`);
+          query = query.in('pdv_id', myPdvIds);
         } else {
+          // Si no tiene PDV, solo ve lo que haya completado él (histórico)
+          // pero respetando el filtro de fecha estricto de arriba
           query = query.eq('completado_por', user.id);
         }
       }

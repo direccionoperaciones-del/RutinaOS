@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -160,17 +160,24 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
-  // Usamos getLocalDate() que ahora está forzado a America/Bogota
-  const todayStr = getLocalDate();
+  // Inicializar estado de fechas vacío para evitar parpadeos
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   
-  const [dateFrom, setDateFrom] = useState<string>(todayStr);
-  const [dateTo, setDateTo] = useState<string>(todayStr);
+  // Efecto único para calcular la fecha al montar el componente en el cliente
+  useEffect(() => {
+    const today = getLocalDate(); // Esto ahora retorna 21/01 seguro si estamos en Colombia
+    setDateFrom(today);
+    setDateTo(today);
+  }, []);
   
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
-  // Hook handles fetching logic
+  // Solo consultar cuando las fechas estén listas
+  const shouldFetch = !!dateFrom && !!dateTo;
+  
   const { data: tasks = [], isLoading, error, refetch } = useMyTasks(dateFrom, dateTo);
 
   const handleStartTask = (task: any) => {
@@ -178,7 +185,40 @@ export default function TasksList() {
     setIsExecutionOpen(true);
   };
 
-  // --- FILTROS Y OPCIONES ---
+  const filteredTasks = tasks.filter(t => {
+    if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
+    if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
+    if (selectedUsers.length > 0 && (!t.profiles || !selectedUsers.includes(t.profiles.id))) return false;
+    return true;
+  });
+
+  const allTasks = filteredTasks;
+  const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
+  const completedTasks = filteredTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
+
+  const totalFiltered = filteredTasks.length;
+  const totalDone = completedTasks.length;
+  const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
+
+  // Lógica de Felicitación ajustada: Solo si fecha fin no es futuro
+  const todayStr = getLocalDate();
+  const showCongratulation = 
+    totalFiltered > 0 && 
+    pendingTasks.length === 0 && 
+    dateTo <= todayStr;
+
+  const clearFilters = () => {
+    const today = getLocalDate();
+    setDateFrom(today);
+    setDateTo(today);
+    setSelectedPdvs([]);
+    setSelectedRoutines([]);
+    setSelectedUsers([]);
+  };
+
+  const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
+
+  // Opciones de filtros
   const pdvOptions = useMemo(() => {
     const map = new Map();
     tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); });
@@ -201,44 +241,9 @@ export default function TasksList() {
     return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
-  const filteredTasks = tasks.filter(t => {
-    if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
-    if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
-    if (selectedUsers.length > 0 && (!t.profiles || !selectedUsers.includes(t.profiles.id))) return false;
-    return true;
-  });
-
-  // --- LOGICA DE TABS ---
-  const allTasks = filteredTasks;
-  const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
-  const completedTasks = filteredTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
-
-  const totalFiltered = filteredTasks.length;
-  const totalDone = completedTasks.length;
-  const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
-
-  // Lógica de Felicitación: 
-  // 1. Hay tareas totales (> 0)
-  // 2. NO hay pendientes (== 0)
-  // 3. La fecha de fin del filtro NO es futura (dateTo <= todayStr)
-  const showCongratulation = 
-    totalFiltered > 0 && 
-    pendingTasks.length === 0 && 
-    dateTo <= todayStr;
-
-  const clearFilters = () => {
-    const today = getLocalDate();
-    setDateFrom(today);
-    setDateTo(today);
-    setSelectedPdvs([]);
-    setSelectedRoutines([]);
-    setSelectedUsers([]);
-  };
-
-  const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
-
-  // Formato visual del título de fecha
+  // Formato visual del título
   const displayDate = useMemo(() => {
+    if (!dateFrom || !dateTo) return "Cargando...";
     if (dateFrom === dateTo) {
       return format(parseLocalDate(dateFrom), "EEEE, d 'de' MMMM", { locale: es });
     }
@@ -250,7 +255,7 @@ export default function TasksList() {
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-bold tracking-tight">Mis Tareas</h2>
         <div className="flex justify-between items-center">
-          <p className="text-muted-foreground capitalize">
+          <p className="text-muted-foreground capitalize text-lg font-medium">
             {displayDate}
           </p>
         </div>
@@ -338,8 +343,8 @@ export default function TasksList() {
               <Trophy className="h-6 w-6 text-green-600" />
             </div>
             <h3 className="text-xl font-bold text-green-800 tracking-tight">¡FELICITACIONES!</h3>
-            <p className="text-green-700 font-medium">La operación de tus puntos de venta quedó controlada.</p>
-            <p className="text-sm text-green-600/80">Has completado todas tus tareas asignadas para este periodo.</p>
+            <p className="text-green-700 font-medium">La operación del día está completa.</p>
+            <p className="text-sm text-green-600/80">Has completado todas tus tareas asignadas para el {format(parseLocalDate(dateTo), "d 'de' MMMM", {locale: es})}.</p>
           </div>
         </div>
       )}
@@ -365,7 +370,7 @@ export default function TasksList() {
             items={allTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="No hay tareas para este rango de fechas." 
+            emptyMessage="No hay tareas programadas para este rango de fechas." 
             onAction={handleStartTask} 
           />
         </TabsContent>
