@@ -342,7 +342,7 @@ export default function AssignmentList() {
           <p className="text-muted-foreground">Vincula tus rutinas operativas a los puntos de venta correspondientes.</p>
         </div>
         
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -352,35 +352,36 @@ export default function AssignmentList() {
           />
           
           <Button variant="outline" size="sm" onClick={downloadTemplate} disabled={isDownloading} title="Descargar plantilla con referencias">
-            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />} 
-            Plantilla
+            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} 
+            <span className="ml-2 hidden sm:inline">Plantilla</span>
           </Button>
           
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-            {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
-            Carga Masiva
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} 
+            <span className="ml-2 hidden sm:inline">Carga Masiva</span>
           </Button>
 
-          <Button onClick={() => setIsModalOpen(true)} size="sm">
-            <Plus className="w-4 h-4 mr-2" /> Nueva Asignación
+          <Button onClick={() => setIsModalOpen(true)} size="sm" className="whitespace-nowrap">
+            <Plus className="w-4 h-4 sm:mr-2" /> <span className="hidden sm:inline">Nueva Asignación</span>
+            <span className="sm:hidden">Nueva</span>
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-col sm:flex-row gap-4 space-y-0 p-4 sm:p-6">
+      <Card className="border-none shadow-none bg-transparent sm:bg-card sm:border sm:shadow">
+        <CardHeader className="flex flex-col sm:flex-row gap-4 space-y-0 p-0 sm:p-6 mb-4 sm:mb-0">
           <div className="relative flex-1">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por PDV o Rutina..."
-              className="pl-8"
+              className="pl-8 bg-white sm:bg-background"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <div className="w-full sm:w-[250px]">
             <Select value={filterRoutine} onValueChange={setFilterRoutine}>
-              <SelectTrigger>
+              <SelectTrigger className="bg-white sm:bg-background">
                 <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
                 <SelectValue placeholder="Filtrar por Rutina" />
               </SelectTrigger>
@@ -393,8 +394,49 @@ export default function AssignmentList() {
             </Select>
           </div>
         </CardHeader>
-        <CardContent className="p-0 sm:p-6 pt-0">
-          <div className="rounded-md border overflow-hidden">
+        
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
+          
+          {/* --- MOBILE VIEW: CARDS --- */}
+          <div className="grid grid-cols-1 gap-3 md:hidden">
+            {filteredAssignments.map((assignment) => (
+              <Card key={assignment.id} className="p-4 border-l-4 border-l-primary shadow-sm">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="font-bold text-sm">{assignment.routine_templates?.nombre}</h3>
+                  <Badge variant={assignment.estado === 'activa' ? 'default' : 'secondary'} className="text-[10px]">
+                    {assignment.estado}
+                  </Badge>
+                </div>
+                
+                <div className="flex items-center gap-2 text-sm text-slate-600 mb-3">
+                  <Store className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-medium">{assignment.pdv?.nombre}</span>
+                  <span className="text-xs text-muted-foreground">({assignment.pdv?.codigo_interno})</span>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-dashed">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+                    <CalendarClock className="w-3 h-3" />
+                    <span className="capitalize">{assignment.routine_templates?.frecuencia}</span>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-destructive h-8 px-2 hover:bg-destructive/10"
+                    onClick={() => handleDelete(assignment.id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" /> Eliminar
+                  </Button>
+                </div>
+              </Card>
+            ))}
+            {filteredAssignments.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground text-sm">No se encontraron asignaciones.</div>
+            )}
+          </div>
+
+          {/* --- DESKTOP VIEW: TABLE --- */}
+          <div className="hidden md:block rounded-md border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>

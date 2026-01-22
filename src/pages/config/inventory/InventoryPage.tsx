@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Edit, Package, Layers, Download, Upload, Loader2 } from "lucide-react";
+import { Search, Plus, Edit, Package, Layers, Download, Upload, Loader2, Tag } from "lucide-react";
 import { CategoryForm } from "./CategoryForm";
 import { ProductForm } from "./ProductForm";
 import { useToast } from "@/hooks/use-toast";
@@ -256,7 +256,7 @@ export default function InventoryPage() {
   const filteredProducts = products.filter(p => p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || p.codigo_sku?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex flex-col gap-2">
           <h2 className="text-3xl font-bold tracking-tight">Inventarios</h2>
@@ -264,7 +264,7 @@ export default function InventoryPage() {
         </div>
         
         {/* BOTONES DE ACCION GLOBAL */}
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <input 
             type="file" 
             ref={fileInputRef} 
@@ -274,20 +274,20 @@ export default function InventoryPage() {
           />
           
           <Button variant="outline" size="sm" onClick={downloadTemplate} disabled={isDownloading} title={`Descargar plantilla de ${activeTab === 'products' ? 'productos' : 'categorías'}`}>
-            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />} 
-            Plantilla
+            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} 
+            <span className="ml-2 hidden sm:inline">Plantilla</span>
           </Button>
           
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading} title={`Cargar ${activeTab === 'products' ? 'productos' : 'categorías'} masivamente`}>
-            {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
-            Importar
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} 
+            <span className="ml-2 hidden sm:inline">Importar</span>
           </Button>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex justify-between items-center mb-4">
-          <TabsList>
+          <TabsList className="w-full sm:w-auto grid grid-cols-2">
             <TabsTrigger value="products"><Package className="w-4 h-4 mr-2"/> Productos</TabsTrigger>
             <TabsTrigger value="categories"><Layers className="w-4 h-4 mr-2"/> Categorías</TabsTrigger>
           </TabsList>
@@ -295,126 +295,185 @@ export default function InventoryPage() {
 
         {/* CONTENIDO PRODUCTOS */}
         <TabsContent value="products">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div className="space-y-1">
+          <Card className="border-none shadow-none bg-transparent sm:bg-card sm:border sm:shadow">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-4 sm:space-y-0 pb-2 p-0 sm:p-6 sm:pb-2">
+              <div className="space-y-1 hidden sm:block">
                 <CardTitle>Productos</CardTitle>
                 <CardDescription>Items individuales que se cuentan en las rutinas.</CardDescription>
               </div>
-              <Button onClick={() => { setSelectedItem(null); setIsProductModalOpen(true); }}>
+              <Button onClick={() => { setSelectedItem(null); setIsProductModalOpen(true); }} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 mr-2"/> Nuevo Producto
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0 sm:p-6">
               <div className="flex items-center py-4">
-                <Search className="w-4 h-4 mr-2 text-muted-foreground" />
+                <Search className="w-4 h-4 mr-2 text-muted-foreground absolute left-3" />
                 <Input 
                   placeholder="Buscar producto..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm"
+                  className="pl-8 w-full sm:max-w-sm bg-white sm:bg-background"
                 />
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Categoría</TableHead>
-                    <TableHead>Unidad</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredProducts.map((prod) => (
-                    <TableRow key={prod.id}>
-                      <TableCell className="font-mono text-xs">{prod.codigo_sku || '-'}</TableCell>
-                      <TableCell className="font-medium">{prod.nombre}</TableCell>
-                      <TableCell>{prod.inventory_categories?.nombre}</TableCell>
-                      <TableCell>{prod.unidad}</TableCell>
-                      <TableCell>
-                        <Badge variant={prod.activo ? "default" : "secondary"}>
-                          {prod.activo ? "Activo" : "Inactivo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditProduct(prod)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {filteredProducts.length === 0 && (
+
+              {/* MOBILE PRODUCTS */}
+              <div className="grid grid-cols-1 gap-3 md:hidden">
+                {filteredProducts.map((prod) => (
+                  <Card key={prod.id} className="p-4 shadow-sm border-l-4 border-l-primary">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h4 className="font-bold text-sm">{prod.nombre}</h4>
+                        <p className="text-xs text-muted-foreground font-mono">{prod.codigo_sku || 'Sin SKU'}</p>
+                      </div>
+                      <Badge variant={prod.activo ? "default" : "secondary"} className="text-[10px]">
+                        {prod.activo ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center text-xs text-muted-foreground mt-2">
+                      <div className="flex items-center gap-2">
+                        <span className="bg-muted px-2 py-0.5 rounded">{prod.inventory_categories?.nombre}</span>
+                        <span>{prod.unidad}</span>
+                      </div>
+                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => handleEditProduct(prod)}>
+                        <Edit className="w-3 h-3 mr-1" /> Editar
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* DESKTOP PRODUCTS */}
+              <div className="hidden md:block rounded-md border">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
-                        No hay productos registrados.
-                      </TableCell>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Categoría</TableHead>
+                      <TableHead>Unidad</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredProducts.map((prod) => (
+                      <TableRow key={prod.id}>
+                        <TableCell className="font-mono text-xs">{prod.codigo_sku || '-'}</TableCell>
+                        <TableCell className="font-medium">{prod.nombre}</TableCell>
+                        <TableCell>{prod.inventory_categories?.nombre}</TableCell>
+                        <TableCell>{prod.unidad}</TableCell>
+                        <TableCell>
+                          <Badge variant={prod.activo ? "default" : "secondary"}>
+                            {prod.activo ? "Activo" : "Inactivo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => handleEditProduct(prod)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {filteredProducts.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
+                          No hay productos registrados.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* CONTENIDO CATEGORÍAS */}
         <TabsContent value="categories">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div className="space-y-1">
+          <Card className="border-none shadow-none bg-transparent sm:bg-card sm:border sm:shadow">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-0 sm:p-6">
+              <div className="space-y-1 hidden sm:block">
                 <CardTitle>Categorías</CardTitle>
                 <CardDescription>Agrupadores para organizar los productos.</CardDescription>
               </div>
-              <Button onClick={() => { setSelectedItem(null); setIsCategoryModalOpen(true); }}>
+              <Button onClick={() => { setSelectedItem(null); setIsCategoryModalOpen(true); }} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4 mr-2"/> Nueva Categoría
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0 sm:p-6">
               <div className="flex items-center py-4">
-                <Search className="w-4 h-4 mr-2 text-muted-foreground" />
+                <Search className="w-4 h-4 mr-2 text-muted-foreground absolute left-3" />
                 <Input 
                   placeholder="Buscar categoría..." 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm"
+                  className="pl-8 w-full sm:max-w-sm bg-white sm:bg-background"
                 />
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredCategories.map((cat) => (
-                    <TableRow key={cat.id}>
-                      <TableCell className="font-mono text-xs">{cat.codigo || '-'}</TableCell>
-                      <TableCell className="font-medium">{cat.nombre}</TableCell>
-                      <TableCell>
-                        <Badge variant={cat.activo ? "default" : "secondary"}>
-                          {cat.activo ? "Activa" : "Inactiva"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleEditCategory(cat)}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                   {filteredCategories.length === 0 && (
+
+              {/* MOBILE CATEGORIES */}
+              <div className="grid grid-cols-1 gap-3 md:hidden">
+                {filteredCategories.map((cat) => (
+                  <Card key={cat.id} className="p-4 shadow-sm flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-primary/10 p-2 rounded-full text-primary">
+                        <Tag className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm">{cat.nombre}</h4>
+                        <p className="text-xs text-muted-foreground font-mono">{cat.codigo || '-'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={cat.activo ? "default" : "secondary"} className="text-[10px]">
+                        {cat.activo ? "Activa" : "Inactiva"}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditCategory(cat)}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* DESKTOP CATEGORIES */}
+              <div className="hidden md:block rounded-md border">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
-                        No hay categorías registradas.
-                      </TableCell>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCategories.map((cat) => (
+                      <TableRow key={cat.id}>
+                        <TableCell className="font-mono text-xs">{cat.codigo || '-'}</TableCell>
+                        <TableCell className="font-medium">{cat.nombre}</TableCell>
+                        <TableCell>
+                          <Badge variant={cat.activo ? "default" : "secondary"}>
+                            {cat.activo ? "Activa" : "Inactiva"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => handleEditCategory(cat)}>
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                     {filteredCategories.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                          No hay categorías registradas.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

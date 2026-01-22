@@ -5,9 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Search, Plus, MapPin, Loader2, Edit, Power, PowerOff, Download, Upload, FileSpreadsheet } from "lucide-react";
+import { Search, Plus, MapPin, Loader2, Edit, Power, PowerOff, Download, Upload, MoreHorizontal } from "lucide-react";
 import { PDVForm } from "./PDVForm";
 import { useToast } from "@/hooks/use-toast";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function PDVList() {
   const { toast } = useToast();
@@ -205,78 +206,128 @@ export default function PDVList() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Puntos de Venta</h2>
           <p className="text-muted-foreground">Administra tus sucursales y sus ubicaciones.</p>
         </div>
-        <div className="flex gap-2">
+        
+        <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
           <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.txt" onChange={handleFileUpload} />
-          <Button variant="outline" onClick={downloadTemplate} disabled={isDownloading} title="Descargar plantilla">
-            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />} Plantilla
+          
+          <Button variant="outline" size="sm" onClick={downloadTemplate} disabled={isDownloading} title="Descargar plantilla">
+            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} 
+            <span className="ml-2 hidden sm:inline">Plantilla</span>
           </Button>
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
-            {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} Carga Masiva
+          
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} 
+            <span className="ml-2 hidden sm:inline">Importar</span>
           </Button>
-          <Button onClick={handleCreate}><Plus className="w-4 h-4 mr-2" /> Nuevo PDV</Button>
+          
+          <Button onClick={handleCreate} size="sm" className="whitespace-nowrap">
+            <Plus className="w-4 h-4 sm:mr-2" /> 
+            <span className="hidden sm:inline">Nuevo PDV</span>
+            <span className="sm:hidden">Nuevo</span>
+          </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="border-none shadow-none bg-transparent sm:bg-card sm:border sm:shadow">
+        <CardHeader className="p-0 sm:p-6 mb-4 sm:mb-0">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar por nombre, código o ciudad..." className="pl-8 max-w-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            <Input 
+              placeholder="Buscar por nombre, código o ciudad..." 
+              className="pl-8 max-w-sm bg-white sm:bg-background" 
+              value={searchTerm} 
+              onChange={(e) => setSearchTerm(e.target.value)} 
+            />
           </div>
         </CardHeader>
-        <CardContent>
+        
+        <CardContent className="p-0 sm:p-6 sm:pt-0">
           {loading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
           ) : filteredPDVs.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No se encontraron puntos de venta.</div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Ciudad</TableHead>
-                    <TableHead>Ubicación</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPDVs.map((pdv) => (
-                    <TableRow key={pdv.id}>
-                      <TableCell className="font-medium">{pdv.codigo_interno}</TableCell>
-                      <TableCell className="whitespace-nowrap">{pdv.nombre}</TableCell>
-                      <TableCell>{pdv.ciudad}</TableCell>
-                      <TableCell>
+            <>
+              {/* --- MOBILE CARD VIEW --- */}
+              <div className="grid grid-cols-1 gap-3 md:hidden">
+                {filteredPDVs.map((pdv) => (
+                  <Card key={pdv.id} className="p-4 shadow-sm">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-bold text-sm">{pdv.nombre}</h3>
+                        <p className="text-xs text-muted-foreground">{pdv.ciudad} • {pdv.codigo_interno}</p>
+                      </div>
+                      <Badge variant={pdv.activo ? "default" : "secondary"}>{pdv.activo ? "Activo" : "Inactivo"}</Badge>
+                    </div>
+                    
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-dashed">
+                      <div className="text-xs">
                         {pdv.latitud && pdv.longitud ? (
-                          <div className="flex items-center text-green-600 text-xs"><MapPin className="w-3 h-3 mr-1" /> GPS Configurado</div>
+                          <div className="flex items-center text-green-600"><MapPin className="w-3 h-3 mr-1" /> GPS OK</div>
                         ) : (
-                          <div className="text-muted-foreground text-xs">Sin GPS</div>
+                          <div className="text-muted-foreground">Sin GPS</div>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={pdv.activo ? "default" : "secondary"}>{pdv.activo ? "Activo" : "Inactivo"}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(pdv)}><Edit className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="icon" className={pdv.activo ? "text-destructive hover:text-destructive" : "text-green-600 hover:text-green-600"} onClick={() => handleToggleStatus(pdv)}>
-                            {pdv.activo ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
-                          </Button>
-                        </div>
-                      </TableCell>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(pdv)}><Edit className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" className={`h-8 w-8 ${pdv.activo ? "text-destructive" : "text-green-600"}`} onClick={() => handleToggleStatus(pdv)}>
+                          {pdv.activo ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* --- DESKTOP TABLE VIEW --- */}
+              <div className="hidden md:block rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Ciudad</TableHead>
+                      <TableHead>Ubicación</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredPDVs.map((pdv) => (
+                      <TableRow key={pdv.id}>
+                        <TableCell className="font-medium">{pdv.codigo_interno}</TableCell>
+                        <TableCell className="whitespace-nowrap">{pdv.nombre}</TableCell>
+                        <TableCell>{pdv.ciudad}</TableCell>
+                        <TableCell>
+                          {pdv.latitud && pdv.longitud ? (
+                            <div className="flex items-center text-green-600 text-xs"><MapPin className="w-3 h-3 mr-1" /> GPS Configurado</div>
+                          ) : (
+                            <div className="text-muted-foreground text-xs">Sin GPS</div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={pdv.activo ? "default" : "secondary"}>{pdv.activo ? "Activo" : "Inactivo"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(pdv)}><Edit className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" className={pdv.activo ? "text-destructive hover:text-destructive" : "text-green-600 hover:text-green-600"} onClick={() => handleToggleStatus(pdv)}>
+                              {pdv.activo ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
