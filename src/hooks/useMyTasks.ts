@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { addDays, format, subDays } from "date-fns";
 
 export function useMyTasks(dateFrom: string, dateTo: string) {
   const { user, profile } = useCurrentUser();
@@ -10,6 +11,10 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
     enabled: !!user && !!profile,
     queryFn: async () => {
       if (!user) throw new Error("No autenticado");
+
+      // Calcular fecha de corte para traer historial reciente (cubrir mes actual + margen)
+      // Esto permite traer la tarea generada el día 1 aunque hoy sea 25.
+      const searchStart = format(subDays(new Date(dateFrom), 45), 'yyyy-MM-dd');
 
       // Construcción de la consulta
       let query = supabase
@@ -28,13 +33,10 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           profiles:completado_por (id, nombre, apellido)
         `);
 
-      // Lógica de Filtro:
-      // 1. Tareas programadas en el rango de fechas
-      // 2. O tareas pendientes antiguas (Backlog)
-      
-      // Combinamos: (Rango Fechas) OR (Pendientes)
-      // Para que el usuario vea lo que tiene que hacer HOY (pendiente) + lo que hizo HOY.
-      query = query.or(`fecha_programada.eq.${dateTo},estado.in.(pendiente,en_proceso)`);
+      // ESTRATEGIA DE CARGA:
+      // 1. Traer TODAS las pendientes (Backlog histórico completo)
+      // 2. Traer tareas recientes (desde hace 45 días) para cubrir el ciclo mensual actual
+      query = query.or(`estado.in.(pendiente,en_proceso),fecha_programada.gte.${searchStart}`);
       
       // --- RESTRICCIÓN DE SEGURIDAD PARA ADMINISTRADOR ---
       if (profile?.role === 'administrador') {
@@ -65,12 +67,26 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         throw error;
       }
 
-      // Filtrado adicional en memoria para asegurar rango de fechas en las completadas
-      // (Ya que el OR trajo pendientes de cualquier fecha, pero queremos completadas solo del rango)
+      // FILTRADO EN MEMORIA (Lógica de Visualización "Mis Tareas")
       const filteredData = (data || []).filter((task: any) => {
-        if (task.estado === 'pendiente' || task.estado === 'en_proceso') return true;
-        // Si está completada, debe estar en el rango seleccionado
-        return task.fecha_programada >= dateFrom && task.fecha_programada <= dateTo;
+        // 1. Tareas Pendientes: Mostrar SIEMPRE (Backlog)
+        if (task.estado === 'pendiente' || task.estado === 'en_proceso') {
+          return true;
+        }
+
+        // 2. Tareas Completadas/Vencidas: Mostrar si son relevantes para el rango seleccionado
+        
+        // A. Programadas en el rango (Ej: Tarea diaria de hoy)
+        const scheduledInRange = task.fecha_programada >= dateFrom && task.fecha_programada <= dateTo;
+        
+        // B. Completadas en el rango (Ej: Tarea mensual del día 1, completada hoy día 22)
+        let completedInRange = false;
+        if (task.completado_at) {
+          const completedDate = task.completado_at.split('T')[0]; // YYYY-MM-DD
+          completedInRange = completedDate >= dateFrom && completedDate <= dateTo;
+        }
+
+        return scheduledInRange || completedInRange;
       });
 
       return filteredData;
