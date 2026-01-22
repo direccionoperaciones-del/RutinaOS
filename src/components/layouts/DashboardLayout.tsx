@@ -23,20 +23,19 @@ import {
   Users,
   CalendarOff,
   Search,
-  ChevronRight
+  Check
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/hooks/use-notifications";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 
 // Sidebar Group Component
 const SidebarGroup = ({ title, children }: any) => (
   <div className="mb-6 px-4">
-    <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+    <h3 className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wider text-slate-400/80">
       {title}
     </h3>
     <div className="space-y-1">
@@ -45,23 +44,26 @@ const SidebarGroup = ({ title, children }: any) => (
   </div>
 );
 
-// Sidebar Item Component - Active state blue
+// Sidebar Item Component
 const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <button
     className={cn(
       "group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
       active 
-        ? "bg-blue-600/10 text-blue-400 border-l-4 border-blue-500 shadow-sm" // Azul activo
-        : "text-slate-400 hover:bg-white/5 hover:text-white border-l-4 border-transparent"
+        ? "bg-movacheck-blue text-white shadow-md shadow-blue-900/20" 
+        : "text-slate-400 hover:bg-white/5 hover:text-white"
     )}
     onClick={onClick}
   >
     <div className="flex items-center gap-3">
-      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-blue-400" : "text-slate-500 group-hover:text-white")} />
+      <Icon className={cn("h-5 w-5", active ? "text-white" : "text-slate-400 group-hover:text-white")} />
       <span>{label}</span>
     </div>
     {badgeCount > 0 && (
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">
+      <span className={cn(
+        "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
+        active ? "bg-white text-movacheck-blue" : "bg-movacheck-blue text-white"
+      )}>
         {badgeCount > 99 ? '99+' : badgeCount}
       </span>
     )}
@@ -81,8 +83,8 @@ const NAV_CONFIG = [
   {
     group: "Control",
     items: [
-      { icon: FileCheck, label: "Auditoría Calidad", path: "/audit", roles: ['director', 'lider', 'auditor'] },
-      { icon: History, label: "Log del Sistema", path: "/system-audit", roles: ['director'] },
+      { icon: FileCheck, label: "Auditoría", path: "/audit", roles: ['director', 'lider', 'auditor'] },
+      { icon: History, label: "Log Sistema", path: "/system-audit", roles: ['director'] },
       { icon: Image, label: "Galería", path: "/gallery", roles: ['director', 'lider', 'auditor'] },
       { icon: FileText, label: "Reportes", path: "/reports", roles: ['director', 'lider', 'auditor'] },
     ]
@@ -91,7 +93,7 @@ const NAV_CONFIG = [
     group: "Configuración",
     items: [
       { icon: Store, label: "Puntos de Venta", path: "/config/pdv", roles: ['director'] },
-      { icon: Users, label: "Gestión de Usuarios", path: "/config/users", roles: ['director'] },
+      { icon: Users, label: "Usuarios", path: "/config/users", roles: ['director'] },
       { icon: CalendarOff, label: "Novedades", path: "/config/absences", roles: ['director'] },
       { icon: ClipboardList, label: "Rutinas", path: "/config/routines", roles: ['director'] },
       { icon: Link, label: "Asignaciones", path: "/config/assignments", roles: ['director'] },
@@ -165,17 +167,19 @@ const DashboardLayout = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-movacheck-navy">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-full border-4 border-movacheck-blue border-t-transparent animate-spin" />
-          <p className="text-sm font-medium text-slate-500 animate-pulse">Cargando Movacheck...</p>
+          <div className="h-12 w-12 rounded-xl bg-movacheck-blue flex items-center justify-center shadow-lg shadow-blue-500/20">
+             <Check className="h-7 w-7 text-white stroke-[3]" />
+          </div>
+          <p className="text-sm font-medium text-slate-400 animate-pulse">Cargando sistema...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
+    <div className="flex min-h-screen bg-background">
       
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
@@ -185,25 +189,24 @@ const DashboardLayout = () => {
         />
       )}
 
-      {/* Sidebar - Dark Aesthetic (Fixed) */}
+      {/* Sidebar */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[240px] flex-col bg-movacheck-navy text-white transition-transform duration-300 lg:translate-x-0 shadow-xl border-r border-white/5",
+          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-movacheck-navy text-white transition-transform duration-300 lg:translate-x-0 border-r border-white/5 shadow-2xl",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Sidebar Header / Logo */}
-        <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10 bg-movacheck-navy/50">
+        {/* Logo Area */}
+        <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/5 bg-movacheck-navy">
           <div className="flex items-center gap-3">
-            {/* Logo Placeholder */}
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-movacheck-blue text-white font-bold text-xl shadow-lg shadow-blue-900/50">
-              M
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-movacheck-blue text-white shadow-lg shadow-blue-500/30">
+              <Check className="h-5 w-5 stroke-[3]" />
             </div>
             <span className="text-lg font-bold tracking-tight text-white">Movacheck</span>
           </div>
         </div>
 
-        {/* Sidebar Navigation */}
+        {/* Navigation */}
         <div className="flex-1 overflow-y-auto py-6 sidebar-scroll">
           {NAV_CONFIG.map((group, idx) => {
             const allowedItems = group.items.filter(item => hasPermission(item.roles));
@@ -230,12 +233,12 @@ const DashboardLayout = () => {
           })}
         </div>
 
-        {/* Sidebar User Profile (Bottom) */}
-        <div className="border-t border-white/10 p-4 bg-black/10">
+        {/* User Profile */}
+        <div className="border-t border-white/5 p-4 bg-black/20">
           <div className="flex items-center gap-3 rounded-lg bg-white/5 p-3 hover:bg-white/10 transition-colors cursor-pointer group" onClick={handleLogout}>
-            <Avatar className="h-9 w-9 border-2 border-movacheck-blue">
-              <AvatarFallback className="bg-slate-800 text-white font-bold">
-                {userProfile?.nombre?.[0]}
+            <Avatar className="h-9 w-9 border border-white/10">
+              <AvatarFallback className="bg-slate-800 text-white font-bold text-xs">
+                {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 overflow-hidden">
@@ -246,55 +249,55 @@ const DashboardLayout = () => {
                 {userProfile?.role}
               </p>
             </div>
-            <LogOut className="h-4 w-4 text-slate-400 group-hover:text-white" />
+            <LogOut className="h-4 w-4 text-slate-500 group-hover:text-white transition-colors" />
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex flex-1 flex-col lg:pl-[240px] transition-all duration-300">
+      {/* Main Content */}
+      <div className="flex flex-1 flex-col lg:pl-[260px] transition-all duration-300 min-h-screen">
         
         {/* Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white/80 backdrop-blur-md px-6 shadow-sm transition-all border-slate-200">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-card/80 backdrop-blur-md px-6 shadow-sm">
           <div className="flex items-center gap-4">
             <button 
-              className="lg:hidden p-2 -ml-2 hover:bg-slate-100 rounded-full" 
+              className="lg:hidden p-2 -ml-2 hover:bg-accent rounded-full text-foreground" 
               onClick={() => setIsMobileMenuOpen(true)}
             >
-              <Menu className="h-6 w-6 text-slate-600" />
+              <Menu className="h-6 w-6" />
             </button>
             
-            {/* Search Bar (Hidden on small mobile) */}
+            {/* Search (Desktop) */}
             <div className="hidden md:flex items-center gap-2 relative">
-              <Search className="absolute left-3 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
               <Input 
-                placeholder="Buscar..." 
-                className="h-9 w-64 rounded-full bg-slate-100 border-transparent pl-9 focus-visible:bg-white focus-visible:border-movacheck-blue transition-all placeholder:text-slate-400"
+                placeholder="Buscar en la plataforma..." 
+                className="h-9 w-72 rounded-full bg-accent/50 border-transparent pl-9 focus-visible:bg-card focus-visible:border-movacheck-blue transition-all"
               />
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <ThemeToggle />
             
             <div 
-              className="relative cursor-pointer p-2 hover:bg-slate-100 rounded-full transition-colors" 
+              className="relative cursor-pointer p-2 hover:bg-accent rounded-full transition-colors" 
               onClick={() => navigate('/messages')}
             >
-              <Bell className="h-5 w-5 text-slate-600" />
+              <Bell className="h-5 w-5 text-muted-foreground" />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
+                <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-card" />
               )}
             </div>
 
-            <div className="h-8 w-px bg-slate-200 mx-1 hidden sm:block" />
+            <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/settings')}>
               <div className="hidden sm:block text-right">
-                <p className="text-sm font-medium leading-none text-slate-700">Hola, {userProfile?.nombre}</p>
-                <p className="text-xs text-slate-500 mt-1">{userProfile?.tenants?.nombre}</p>
+                <p className="text-sm font-medium leading-none text-foreground">{userProfile?.nombre}</p>
+                <p className="text-xs text-muted-foreground mt-1">{userProfile?.tenants?.nombre}</p>
               </div>
-              <Avatar className="h-8 w-8 ring-2 ring-offset-2 ring-blue-100 cursor-pointer" onClick={() => navigate('/settings')}>
+              <Avatar className="h-8 w-8 ring-2 ring-transparent group-hover:ring-movacheck-blue transition-all">
                 <AvatarFallback className="bg-gradient-to-br from-movacheck-blue to-indigo-600 text-white font-bold text-xs">
                   {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
                 </AvatarFallback>
@@ -303,8 +306,8 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto bg-slate-50/50">
+        {/* Main */}
+        <main className="flex-1 p-4 md:p-8 bg-background">
           <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Outlet />
           </div>

@@ -4,19 +4,28 @@
 
 @layer base {
   :root {
-    /* Modo Claro - Alto Contraste */
-    --background: 210 20% 96%; /* #F1F5F9 (Slate-100) - Fondo App */
+    /* --- PALETA MOVACHECK (Base HSL para Shadcn) --- */
+    
+    /* Azul Principal (#2563EB) - Usado para acciones primarias */
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Verde Mint (#34D399) - Usado para éxito/validación */
+    --success: 158 64% 52%;
+    --success-foreground: 210 40% 98%;
+
+    /* Navy (#1E293B) - Sidebar y fondos oscuros */
+    --navy: 215 28% 17%;
+    
+    /* MODO CLARO */
+    --background: 210 20% 96%; /* #F1F5F9 (Slate-100) */
     --foreground: 222.2 47.4% 11.2%; /* #1E293B */
 
-    --card: 0 0% 100%; /* #FFFFFF - Blanco Puro */
+    --card: 0 0% 100%; /* White */
     --card-foreground: 222.2 47.4% 11.2%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 47.4% 11.2%;
-
-    /* Primary Mapped to Blue (#2563EB) for Actions */
-    --primary: 221 83% 53%; 
-    --primary-foreground: 210 40% 98%;
 
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -30,26 +39,29 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    /* Border Color Increased Contrast */
-    --border: 214 32% 84%; /* #CBD5E1 (Slate-300) - Más visible */
+    --border: 214 32% 84%; /* #CBD5E1 */
     --input: 214 32% 84%;
-    --ring: 221 83% 53%; /* Blue Ring */
+    --ring: 221 83% 53%;
 
     --radius: 0.75rem;
+    
+    /* Custom Backgrounds */
+    --bg-app: #F1F5F9;
+    --bg-sidebar: #1E293B;
   }
 
   .dark {
-    /* Modo Oscuro */
-    --background: 222.2 47.4% 11.2%; /* #0F172A */
+    /* MODO OSCURO - CRÍTICO: Fondo #0F172A */
+    --background: 222 47% 11%; /* #0F172A */
     --foreground: 210 40% 98%;
 
-    --card: 217.2 32.6% 17.5%; /* #1E293B */
+    --card: 215 28% 17%; /* #1E293B (Navy) */
     --card-foreground: 210 40% 98%;
 
-    --popover: 217.2 32.6% 17.5%;
+    --popover: 215 28% 17%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 217 91% 60%; /* Blue Lighter for Dark Mode */
+    --primary: 217 91% 60%; /* Azul más brillante para dark mode */
     --primary-foreground: 222.2 47.4% 11.2%;
 
     --secondary: 217.2 32.6% 17.5%;
@@ -66,7 +78,11 @@
 
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224 76% 48%;
+    --ring: 217 91% 60%;
+    
+    /* Custom Backgrounds Dark */
+    --bg-app: #0F172A;
+    --bg-sidebar: #0F172A; /* Sidebar se funde con el fondo en dark mode */
   }
 }
 
@@ -74,23 +90,56 @@
   * {
     @apply border-border;
   }
-  body {
-    @apply bg-background text-foreground transition-colors duration-300;
-    font-feature-settings: "rlig" 1, "calt" 1;
+  
+  html, body {
+    @apply bg-background text-foreground transition-colors duration-300 min-h-screen font-sans antialiased;
+    background-color: var(--bg-app); /* Forzar color de fondo específico */
+  }
+
+  /* Jerarquía Tipográfica */
+  h1, .h1 {
+    @apply text-3xl md:text-4xl font-bold tracking-tight text-foreground mb-2;
+  }
+  
+  h2, .h2 {
+    @apply text-2xl font-semibold tracking-tight text-foreground mb-4;
+  }
+  
+  h3, .h3 {
+    @apply text-lg font-semibold text-foreground;
+  }
+  
+  p, .body {
+    @apply text-base text-muted-foreground leading-relaxed;
+  }
+  
+  small, .caption {
+    @apply text-xs text-muted-foreground;
   }
 }
 
-/* Scrollbar Sidebar */
-.sidebar-scroll::-webkit-scrollbar {
-  width: 5px;
-}
-.sidebar-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-}
-.sidebar-scroll:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+@layer components {
+  /* Scrollbar personalizado para el sidebar */
+  .sidebar-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+  .sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+  .sidebar-scroll:hover::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  
+  /* Utilidad para inputs autofill en dark mode */
+  .dark input:-webkit-autofill,
+  .dark input:-webkit-autofill:hover, 
+  .dark input:-webkit-autofill:focus, 
+  .dark input:-webkit-autofill:active{
+      -webkit-box-shadow: 0 0 0 30px #1E293B inset !important;
+      -webkit-text-fill-color: white !important;
+  }
 }

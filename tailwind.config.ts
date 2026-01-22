@@ -28,9 +28,9 @@ export default {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         
-        // Movacheck Brand Colors Updated
+        // Movacheck Brand Palette
         movacheck: {
-          mint: "#34D399",      // Primary from Logo - Success/Checks ONLY
+          mint: "#34D399",      // Primary from Logo - Success/Checks
           mintHover: "#10B981",
           
           blue: "#2563EB",      // Secondary from Logo - MAIN ACTION
@@ -38,7 +38,7 @@ export default {
           blueLight: "#3B82F6",
           
           navy: "#1E293B",      // Sidebar / Dark BG
-          sidebar: "#1E293B",
+          dark: "#0F172A",      // Deep Dark BG
           
           success: "#22C55E",
           warning: "#F59E0B",
@@ -75,9 +75,9 @@ export default {
         },
       },
       borderRadius: {
-        lg: "12px", // Standardizing radius
-        md: "8px",
-        sm: "4px",
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
         'soft': '0 1px 3px rgba(0,0,0,0.1)',
