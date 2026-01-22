@@ -71,22 +71,27 @@ export default function InventoryPage() {
         // Plantilla Productos (Con referencia de categorías)
         const { data: cats } = await supabase.from('inventory_categories').select('nombre').eq('activo', true).order('nombre');
         
-        const headers = ["NOMBRE_PRODUCTO", "SKU", "UNIDAD", "NOMBRE_CATEGORIA", "", "--- CATEGORIAS DISPONIBLES ---"];
+        const headers = ["NOMBRE_PRODUCTO", "SKU", "UNIDAD", "NOMBRE_CATEGORIA", "", "--- CATEGORIAS DISPONIBLES (COPIAR) ---"];
+        csvContent = bom + headers.join(";") + "\n";
         
         // Construir filas
-        const maxRows = Math.max(cats?.length || 0, 2);
-        let rows = "";
+        // Aseguramos al menos 1 fila para el ejemplo
+        const maxRows = Math.max(cats?.length || 0, 1);
         
-        // Fila ejemplo
-        rows += "Coca Cola 1.5L;CC15;UND;Bebidas;;Ref: Copie el nombre exacto\n";
-
         for (let i = 0; i < maxRows; i++) {
            const catName = cats && i < cats.length ? cats[i].nombre : "";
-           // Solo llenamos la columna de referencia (F), las primeras 4 vacías para que el usuario llene
-           if (i > 0) rows += ";;;;;" + catName + "\n";
+           
+           // Fila 0: Ponemos un ejemplo de datos
+           if (i === 0) {
+             // Si hay categorías, usamos la primera como ejemplo, si no, texto genérico
+             const exampleCat = catName || "Bebidas";
+             csvContent += `Coca Cola 1.5L;CC15;UND;${exampleCat};;${catName}\n`;
+           } else {
+             // Filas siguientes: Datos vacíos, solo referencia de categoría en columna F
+             csvContent += `;;;;;${catName}\n`;
+           }
         }
         
-        csvContent = bom + headers.join(";") + "\n" + rows;
         fileName = "plantilla_productos.csv";
       }
 
