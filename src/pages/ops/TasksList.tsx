@@ -161,48 +161,43 @@ export default function TasksList() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
-  // Inicializar estado de fechas vacío para evitar parpadeos
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   
-  // Estado para la novedad activa
   const [activeAbsence, setActiveAbsence] = useState<any>(null);
   
-  // Efecto único para calcular la fecha al montar el componente en el cliente
+  // 1. Inicializar fecha
   useEffect(() => {
-    const today = getLocalDate(); // Esto ahora retorna 21/01 seguro si estamos en Colombia
+    const today = getLocalDate(); 
     setDateFrom(today);
     setDateTo(today);
   }, []);
   
-  // Efecto para buscar novedades vigentes del usuario
+  // 2. Buscar novedades que coincidan con el rango seleccionado
   useEffect(() => {
     const checkAbsences = async () => {
-      if (!user) return;
+      if (!user || !dateFrom || !dateTo) return;
       
-      const today = getLocalDate();
-      
+      // Buscamos cualquier ausencia que se solape con el rango seleccionado
+      // Logica de solapamiento: (StartA <= EndB) and (EndA >= StartB)
       const { data } = await supabase
         .from('user_absences')
         .select('*, absence_types(nombre)')
         .eq('user_id', user.id)
-        .lte('fecha_desde', today)
-        .gte('fecha_hasta', today)
-        .maybeSingle();
+        .lte('fecha_desde', dateTo) 
+        .gte('fecha_hasta', dateFrom)
+        .maybeSingle(); // Tomamos la primera si hay varias
       
       setActiveAbsence(data);
     };
     
     checkAbsences();
-  }, [user]);
+  }, [user, dateFrom, dateTo]); // Dependemos de las fechas seleccionadas
   
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
-  // Solo consultar cuando las fechas estén listas
-  const shouldFetch = !!dateFrom && !!dateTo;
-  
   const { data: tasks = [], isLoading, error, refetch } = useMyTasks(dateFrom, dateTo);
 
   const handleStartTask = (task: any) => {
@@ -225,13 +220,12 @@ export default function TasksList() {
   const totalDone = completedTasks.length;
   const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
 
-  // Lógica de Felicitación ajustada: Solo si fecha fin no es futuro
   const todayStr = getLocalDate();
   const showCongratulation = 
     totalFiltered > 0 && 
     pendingTasks.length === 0 && 
     dateTo <= todayStr &&
-    !activeAbsence; // No felicitar si está ausente (ya que no tendrá tareas)
+    !activeAbsence; 
 
   const clearFilters = () => {
     const today = getLocalDate();
@@ -267,7 +261,6 @@ export default function TasksList() {
     return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
-  // Formato visual del título
   const displayDate = useMemo(() => {
     if (!dateFrom || !dateTo) return "Cargando...";
     if (dateFrom === dateTo) {
@@ -295,14 +288,18 @@ export default function TasksList() {
           </div>
           <div>
             <h4 className="font-bold text-blue-900 text-lg">
-              Hoy tienes una novedad registrada: {activeAbsence.absence_types?.nombre}
+              Tienes una novedad registrada: {activeAbsence.absence_types?.nombre}
             </h4>
-            <p className="text-blue-800">
-              No tienes actividades asignadas para el día de hoy. Disfruta tu tiempo.
+            <p className="text-blue-800 text-sm">
+              Desde el {format(parseLocalDate(activeAbsence.fecha_desde), 'dd/MM/yyyy')} hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}
             </p>
-            {activeAbsence.politica === 'reasignar' && (
-              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+            {activeAbsence.politica === 'reasignar' ? (
+              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
                 <Info className="w-3 h-3"/> Tus tareas han sido reasignadas temporalmente.
+              </p>
+            ) : (
+              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
+                <Info className="w-3 h-3"/> No se generarán tareas durante este periodo.
               </p>
             )}
           </div>
