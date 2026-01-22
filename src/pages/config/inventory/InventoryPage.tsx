@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -6,20 +6,27 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Edit, Package, Layers } from "lucide-react";
+import { Search, Plus, Edit, Package, Layers, Download, Upload, Loader2 } from "lucide-react";
 import { CategoryForm } from "./CategoryForm";
 import { ProductForm } from "./ProductForm";
 import { useToast } from "@/hooks/use-toast";
 
 export default function InventoryPage() {
+  const { toast } = useToast();
   const [categories, setCategories] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("products");
   
   // Modals state
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+
+  // Bulk Upload State
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchCategories = async () => {
     const { data } = await supabase.from('inventory_categories').select('*').order('nombre');
@@ -46,17 +53,217 @@ export default function InventoryPage() {
     setIsProductModalOpen(true);
   };
 
+  // --- LOGICA DE PLANTILLA Y CARGA MASIVA ---
+
+  const downloadTemplate = async () => {
+    setIsDownloading(true);
+    try {
+      let fileName = "";
+      let csvContent = "";
+      const bom = "\uFEFF"; 
+
+      if (activeTab === 'categories') {
+        // Plantilla Categorías
+        const headers = ["NOMBRE", "CODIGO (OPCIONAL)"];
+        csvContent = bom + headers.join(";") + "\n" + "Bebidas;BEB\nSnacks;SNK";
+        fileName = "plantilla_categorias.csv";
+      } else {
+        // Plantilla Productos (Con referencia de categorías)
+        const { data: cats } = await supabase.from('inventory_categories').select('nombre').eq('activo', true).order('nombre');
+        
+        const headers = ["NOMBRE_PRODUCTO", "SKU", "UNIDAD", "NOMBRE_CATEGORIA", "", "--- CATEGORIAS DISPONIBLES ---"];
+        
+        // Construir filas
+        const maxRows = Math.max(cats?.length || 0, 2);
+        let rows = "";
+        
+        // Fila ejemplo
+        rows += "Coca Cola 1.5L;CC15;UND;Bebidas;;Ref: Copie el nombre exacto\n";
+
+        for (let i = 0; i < maxRows; i++) {
+           const catName = cats && i < cats.length ? cats[i].nombre : "";
+           // Solo llenamos la columna de referencia (F), las primeras 4 vacías para que el usuario llene
+           if (i > 0) rows += ";;;;;" + catName + "\n";
+        }
+        
+        csvContent = bom + headers.join(";") + "\n" + rows;
+        fileName = "plantilla_productos.csv";
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      toast({ title: "Plantilla descargada", description: `Usa ';' como separador.` });
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (text) await processBatch(text);
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
+  const processBatch = async (csvText: string) => {
+    try {
+      const lines = csvText.split(/\r?\n/);
+      const rows = lines.slice(1).filter(line => line.trim() !== '');
+      if (rows.length === 0) throw new Error("Archivo vacío");
+
+      const separator = lines[0].includes(';') ? ';' : ',';
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("No autenticado");
+      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
+      if (!profile?.tenant_id) throw new Error("Sin tenant");
+
+      let successCount = 0;
+      let errors: string[] = [];
+
+      if (activeTab === 'categories') {
+        // --- PROCESAR CATEGORIAS ---
+        for (let i = 0; i < rows.length; i++) {
+          const cols = rows[i].split(separator).map(c => c.trim().replace(/^"|"$/g, ''));
+          const nombre = cols[0];
+          const codigo = cols[1] || null;
+
+          if (!nombre) continue;
+
+          // Verificar si ya existe para no duplicar (Opcional, la BD tiene unique constraint)
+          // Intentamos insertar
+          const { error } = await supabase.from('inventory_categories').insert({
+            tenant_id: profile.tenant_id,
+            nombre,
+            codigo,
+            activo: true
+          });
+
+          if (error) {
+             // 23505 = unique_violation
+             if (error.code === '23505') errors.push(`Fila ${i+2}: Categoría "${nombre}" ya existe.`);
+             else errors.push(`Fila ${i+2}: Error - ${error.message}`);
+          } else {
+            successCount++;
+          }
+        }
+        fetchCategories();
+
+      } else {
+        // --- PROCESAR PRODUCTOS ---
+        // 1. Cargar mapa de categorías
+        const { data: cats } = await supabase.from('inventory_categories').select('id, nombre').eq('tenant_id', profile.tenant_id);
+        const catMap = new Map();
+        cats?.forEach(c => catMap.set(c.nombre.toLowerCase().trim(), c.id));
+
+        for (let i = 0; i < rows.length; i++) {
+          const cols = rows[i].split(separator).map(c => c.trim().replace(/^"|"$/g, ''));
+          // Ignorar filas donde el nombre del producto esté vacío (pueden ser las filas de referencia)
+          if (!cols[0]) continue;
+
+          const nombre = cols[0];
+          const sku = cols[1] || `SKU-${Date.now()}-${i}`;
+          const unidad = cols[2] || 'UND';
+          const catName = cols[3];
+
+          if (!catName) {
+            errors.push(`Fila ${i+2}: Falta categoría para "${nombre}"`);
+            continue;
+          }
+
+          const catId = catMap.get(catName.toLowerCase().trim());
+          if (!catId) {
+            errors.push(`Fila ${i+2}: Categoría "${catName}" no encontrada en el sistema.`);
+            continue;
+          }
+
+          const { error } = await supabase.from('inventory_products').insert({
+            tenant_id: profile.tenant_id,
+            categoria_id: catId,
+            nombre,
+            codigo_sku: sku,
+            unidad,
+            activo: true
+          });
+
+          if (error) {
+             if (error.code === '23505') errors.push(`Fila ${i+2}: Producto/SKU ya existe.`);
+             else errors.push(`Fila ${i+2}: Error - ${error.message}`);
+          } else {
+            successCount++;
+          }
+        }
+        fetchProducts();
+      }
+
+      if (errors.length > 0) {
+        toast({ 
+          variant: "default", 
+          title: "Carga finalizada con observaciones", 
+          description: `Importados: ${successCount}. Errores: ${errors.length}` 
+        });
+        alert(`Errores:\n${errors.slice(0,10).join('\n')}\n...`);
+      } else {
+        toast({ title: "Éxito", description: `Se importaron ${successCount} registros.` });
+      }
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error crítico", description: error.message });
+    }
+  };
+
   const filteredCategories = categories.filter(c => c.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
   const filteredProducts = products.filter(p => p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || p.codigo_sku?.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold tracking-tight">Inventarios</h2>
-        <p className="text-muted-foreground">Gestiona el catálogo de productos y categorías para las rutinas.</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-3xl font-bold tracking-tight">Inventarios</h2>
+          <p className="text-muted-foreground">Gestiona el catálogo de productos y categorías para las rutinas.</p>
+        </div>
+        
+        {/* BOTONES DE ACCION GLOBAL */}
+        <div className="flex gap-2 w-full sm:w-auto">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept=".csv,.txt" 
+            onChange={handleFileUpload} 
+          />
+          
+          <Button variant="outline" size="sm" onClick={downloadTemplate} disabled={isDownloading} title={`Descargar plantilla de ${activeTab === 'products' ? 'productos' : 'categorías'}`}>
+            {isDownloading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />} 
+            Plantilla
+          </Button>
+          
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading} title={`Cargar ${activeTab === 'products' ? 'productos' : 'categorías'} masivamente`}>
+            {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
+            Importar
+          </Button>
+        </div>
       </div>
 
-      <Tabs defaultValue="products" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex justify-between items-center mb-4">
           <TabsList>
             <TabsTrigger value="products"><Package className="w-4 h-4 mr-2"/> Productos</TabsTrigger>
