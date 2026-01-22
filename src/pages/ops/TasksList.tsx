@@ -11,7 +11,8 @@ import {
   Calendar as CalendarIcon, Eye, Camera, Mail, 
   MessageSquareText, Box, FileText,
   Repeat, CalendarDays, CalendarRange, ArrowRight,
-  User, Filter, Loader2, RefreshCw, AlertCircle
+  User, Filter, Loader2, RefreshCw, AlertCircle,
+  Trophy, PartyPopper
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -216,6 +217,9 @@ export default function TasksList() {
   const totalDone = completedTasks.length;
   const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
 
+  // Lógica de Felicitación: Hay tareas totales, y NO hay pendientes.
+  const showCongratulation = totalFiltered > 0 && pendingTasks.length === 0;
+
   const clearFilters = () => {
     const today = getLocalDate();
     setDateFrom(today);
@@ -309,6 +313,23 @@ export default function TasksList() {
         </div>
       </div>
 
+      {/* --- MENSAJE DE FELICITACIÓN --- */}
+      {showCongratulation && !isLoading && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden">
+          <div className="absolute top-0 right-0 opacity-10">
+            <PartyPopper className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-green-600" />
+          </div>
+          <div className="flex flex-col items-center gap-2 relative z-10">
+            <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce">
+              <Trophy className="h-6 w-6 text-green-600" />
+            </div>
+            <h3 className="text-xl font-bold text-green-800 tracking-tight">¡FELICITACIONES!</h3>
+            <p className="text-green-700 font-medium">La operación de tus puntos de venta quedó controlada.</p>
+            <p className="text-sm text-green-600/80">Has completado todas tus tareas asignadas para este periodo.</p>
+          </div>
+        </div>
+      )}
+
       {/* Manejo de Errores */}
       {error && (
         <div className="p-4 rounded border border-red-200 bg-red-50 text-red-700 flex items-center gap-2">
@@ -340,7 +361,7 @@ export default function TasksList() {
             items={pendingTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage="¡Todo al día! No tienes tareas pendientes en estas fechas." 
+            emptyMessage={showCongratulation ? "¡Todo listo! No queda nada pendiente." : "No tienes tareas pendientes."} 
             onAction={handleStartTask} 
           />
         </TabsContent>
