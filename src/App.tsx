@@ -11,7 +11,8 @@ import PDVList from "./pages/config/pdv/PDVList";
 import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
-import PersonnelPage from "./pages/config/personnel/PersonnelList";
+import UsersList from "./pages/config/users/UsersList"; // Nueva página de usuarios
+import AbsencesPage from "./pages/config/absences/AbsencesPage"; // Nueva página de novedades
 import CalendarPage from "./pages/config/calendar/CalendarPage";
 import GeneralConfigPage from "./pages/config/general/GeneralConfigPage";
 import CommandCenter from "./pages/ops/CommandCenter";
@@ -56,9 +57,14 @@ const App = () => (
             <Route path="config/routines" element={<RoutineList />} />
             <Route path="config/assignments" element={<AssignmentList />} />
             <Route path="config/general" element={<GeneralConfigPage />} />
+            <Route path="config/users" element={<UsersList />} />
+            <Route path="config/absences" element={<AbsencesPage />} />
             <Route path="calendar" element={<CalendarPage />} />
-            <Route path="personnel" element={<PersonnelPage />} />
+            
             <Route path="settings" element={<SettingsPage />} />
+            
+            {/* Ruta legacy para no romper links antiguos por si acaso */}
+            <Route path="personnel" element={<UsersList />} />
             
           </Route>
 

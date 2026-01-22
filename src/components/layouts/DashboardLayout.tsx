@@ -21,7 +21,9 @@ import {
   Package,
   History,
   Settings2,
-  Bell
+  Bell,
+  Users,
+  CalendarOff
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -83,7 +85,7 @@ const NAV_CONFIG = [
         label: "Mensajes", 
         path: "/messages", 
         roles: ['all'],
-        showBadge: true // Flag para indicar que este item lleva badge
+        showBadge: true
       },
       { 
         icon: Activity, 
@@ -132,6 +134,18 @@ const NAV_CONFIG = [
         roles: ['director'] 
       },
       { 
+        icon: Users, 
+        label: "Gestión de Usuarios", 
+        path: "/config/users", 
+        roles: ['director'] 
+      },
+      { 
+        icon: CalendarOff, 
+        label: "Novedades Usuarios", 
+        path: "/config/absences", 
+        roles: ['director'] 
+      },
+      { 
         icon: ClipboardList, 
         label: "Rutinas", 
         path: "/config/routines", 
@@ -154,12 +168,6 @@ const NAV_CONFIG = [
         label: "Calendario", 
         path: "/calendar", 
         roles: ['director', 'lider', 'administrador'] 
-      },
-      { 
-        icon: UserCog, 
-        label: "Gestión Personal", 
-        path: "/personnel", 
-        roles: ['director'] 
       },
       { 
         icon: Settings2, 
@@ -185,7 +193,6 @@ const DashboardLayout = () => {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Usar nuestro nuevo hook de notificaciones
   const { unreadCount } = useNotifications();
 
   useEffect(() => {
@@ -265,7 +272,6 @@ const DashboardLayout = () => {
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Header del Sidebar */}
         <div className="p-6 border-b flex items-center justify-between shrink-0">
           <div>
             <h1 className="text-xl font-bold text-primary">Operaciones</h1>
@@ -280,7 +286,6 @@ const DashboardLayout = () => {
           </button>
         </div>
 
-        {/* User Info & Notification Bell */}
         <div className="p-4 bg-muted/30 border-b flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold uppercase shrink-0">
@@ -299,7 +304,6 @@ const DashboardLayout = () => {
             </div>
           </div>
           
-          {/* Icono de Campana con Badge */}
           <div className="relative cursor-pointer hover:bg-muted p-1.5 rounded-full transition-colors" onClick={() => navigate('/messages')}>
             <Bell className="w-5 h-5 text-muted-foreground" />
             {unreadCount > 0 && (
@@ -308,7 +312,6 @@ const DashboardLayout = () => {
           </div>
         </div>
 
-        {/* Navigation Items */}
         <div className="flex-1 overflow-y-auto py-6 px-3">
           {NAV_CONFIG.map((group, idx) => {
             const allowedItems = group.items.filter(item => hasPermission(item.roles));
@@ -323,7 +326,6 @@ const DashboardLayout = () => {
                     label={item.label}
                     path={item.path}
                     active={location.pathname === item.path}
-                    // Pasar el conteo SOLO si es el item de Mensajes
                     badgeCount={item.showBadge ? unreadCount : 0}
                     onClick={() => {
                       navigate(item.path);
@@ -336,7 +338,6 @@ const DashboardLayout = () => {
           })}
         </div>
 
-        {/* Footer */}
         <div className="p-4 border-t shrink-0">
           <Button 
             variant="ghost" 
@@ -349,9 +350,7 @@ const DashboardLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Mobile Header */}
         <header className="lg:hidden h-16 border-b flex items-center justify-between px-4 bg-card shrink-0">
           <div className="flex items-center">
             <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
@@ -359,8 +358,6 @@ const DashboardLayout = () => {
             </Button>
             <span className="ml-4 font-semibold">Menú</span>
           </div>
-          
-          {/* Mobile Bell */}
           <div className="relative mr-2" onClick={() => navigate('/messages')}>
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
@@ -371,7 +368,6 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 bg-muted/10">
           <Outlet />
         </main>
