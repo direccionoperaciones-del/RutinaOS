@@ -68,30 +68,47 @@ export default function InventoryPage() {
         csvContent = bom + headers.join(";") + "\n" + "Bebidas;BEB\nSnacks;SNK";
         fileName = "plantilla_categorias.csv";
       } else {
-        // Plantilla Productos (Con referencia de categorías)
+        // Plantilla Productos (Con referencia de categorías y unidades)
+        // 1. Obtener Categorías
         const { data: cats } = await supabase.from('inventory_categories').select('nombre').eq('activo', true).order('nombre');
         
-        const headers = ["NOMBRE_PRODUCTO", "SKU", "UNIDAD", "NOMBRE_CATEGORIA", "", "--- CATEGORIAS DISPONIBLES (COPIAR) ---"];
-        csvContent = bom + headers.join(";") + "\n";
+        // 2. Obtener Unidades
+        const { data: units } = await supabase.from('measurement_units').select('simbolo, nombre').eq('activo', true).order('nombre');
+
+        const headers = [
+          "NOMBRE_PRODUCTO", 
+          "SKU", 
+          "UNIDAD (USAR SIMBOLO)", 
+          "NOMBRE_CATEGORIA", 
+          "", 
+          "--- CATEGORIAS (REF) ---",
+          "--- UNIDADES (REF) ---"
+        ];
         
         // Construir filas
-        // Aseguramos al menos 1 fila para el ejemplo
-        const maxRows = Math.max(cats?.length || 0, 1);
+        const maxRows = Math.max(cats?.length || 0, units?.length || 0, 2);
+        let rows = "";
         
-        for (let i = 0; i < maxRows; i++) {
+        // Fila ejemplo (Fila 0 de datos)
+        // Usamos la primera unidad disponible si existe, sino 'UND'
+        const exUnit = units && units.length > 0 ? units[0].simbolo : "UND";
+        const exCat = cats && cats.length > 0 ? cats[0].nombre : "Bebidas";
+
+        // Referencias de la primera fila
+        const refCat0 = cats && cats.length > 0 ? cats[0].nombre : "";
+        const refUnit0 = units && units.length > 0 ? `${units[0].simbolo} (${units[0].nombre})` : "";
+
+        rows += `Coca Cola 1.5L;CC15;${exUnit};${exCat};;${refCat0};${refUnit0}\n`;
+
+        for (let i = 1; i < maxRows; i++) {
            const catName = cats && i < cats.length ? cats[i].nombre : "";
+           const unitName = units && i < units.length ? `${units[i].simbolo} (${units[i].nombre})` : "";
            
-           // Fila 0: Ponemos un ejemplo de datos
-           if (i === 0) {
-             // Si hay categorías, usamos la primera como ejemplo, si no, texto genérico
-             const exampleCat = catName || "Bebidas";
-             csvContent += `Coca Cola 1.5L;CC15;UND;${exampleCat};;${catName}\n`;
-           } else {
-             // Filas siguientes: Datos vacíos, solo referencia de categoría en columna F
-             csvContent += `;;;;;${catName}\n`;
-           }
+           // Filas siguientes: Datos vacíos, solo referencias en col F y G
+           rows += `;;;;;${catName};${unitName}\n`;
         }
         
+        csvContent = bom + headers.join(";") + "\n" + rows;
         fileName = "plantilla_productos.csv";
       }
 
