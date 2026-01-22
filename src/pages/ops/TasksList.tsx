@@ -217,8 +217,14 @@ export default function TasksList() {
   const totalDone = completedTasks.length;
   const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
 
-  // Lógica de Felicitación: Hay tareas totales, y NO hay pendientes.
-  const showCongratulation = totalFiltered > 0 && pendingTasks.length === 0;
+  // Lógica de Felicitación: 
+  // 1. Hay tareas totales (> 0)
+  // 2. NO hay pendientes (== 0)
+  // 3. La fecha de fin del filtro NO es futura (dateTo <= todayStr)
+  const showCongratulation = 
+    totalFiltered > 0 && 
+    pendingTasks.length === 0 && 
+    dateTo <= todayStr;
 
   const clearFilters = () => {
     const today = getLocalDate();
