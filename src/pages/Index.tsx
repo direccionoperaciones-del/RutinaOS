@@ -5,20 +5,28 @@ import { Button } from "@/components/ui/button";
 import { 
   Activity, CheckCircle2, AlertTriangle, Clock, TrendingUp, 
   BarChart3, Filter, X, Search, ArrowUpRight, 
-  AlertOctagon, Users, ListChecks 
+  AlertOctagon, Users, ListChecks, PieChart as PieChartIcon
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, Legend, AreaChart, Area, Cell 
+  Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell 
 } from 'recharts';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { getLocalDate, parseLocalDate } from "@/lib/utils";
+
+// --- COLORES SEMÁNTICOS PARA ESTADOS ---
+const COLORS = {
+  a_tiempo: "#34D399",  // Verde Mint
+  vencida: "#F59E0B",   // Naranja Ambar
+  pendiente: "#3B82F6", // Azul
+  incumplida: "#EF4444" // Rojo
+};
 
 // --- COMPONENTES UI AUXILIARES ---
 
@@ -59,6 +67,33 @@ const SectionHeader = ({ title, description, icon: Icon }: any) => (
   </div>
 );
 
+// Custom Tooltip para Rutinas con Porcentajes
+const CustomRoutineTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const total = data.cumples + data.fallas;
+    const pctCumples = total > 0 ? Math.round((data.cumples / total) * 100) : 0;
+    const pctFallas = 100 - pctCumples;
+
+    return (
+      <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg text-xs">
+        <p className="font-bold mb-2 text-slate-700">{label}</p>
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+          <span className="text-slate-600">Cumplimiento:</span>
+          <span className="font-bold ml-auto">{data.cumples} ({pctCumples}%)</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-slate-200"></div>
+          <span className="text-slate-600">Pendiente/Fallo:</span>
+          <span className="font-bold ml-auto">{data.fallas} ({pctFallas}%)</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 // --- COMPONENTE PRINCIPAL ---
 
 const Index = () => {
@@ -71,20 +106,21 @@ const Index = () => {
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   
-  // Datos Maestros para Selectores
+  // Datos Maestros
   const [pdvOptions, setPdvOptions] = useState<{label: string, value: string}[]>([]);
   const [routineOptions, setRoutineOptions] = useState<{label: string, value: string}[]>([]);
   const [userOptions, setUserOptions] = useState<{label: string, value: string}[]>([]);
 
-  // Estados de Carga y Datos
+  // Estados de Datos
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalTasks: 0, completedTasks: 0, pendingTasks: 0, compliance: 0, criticalAlerts: 0 });
   
-  // Datasets para Gráficos
-  const [trendData, setTrendData] = useState<any[]>([]); // Lineal General
-  const [alertsData, setAlertsData] = useState<any[]>([]); // Barras Alertas
-  const [routineData, setRoutineData] = useState<any[]>([]); // Barras Rutinas
-  const [performanceData, setPerformanceData] = useState<any[]>([]); // Barras Usuarios
+  // Datasets Gráficos
+  const [trendData, setTrendData] = useState<any[]>([]); 
+  const [alertsData, setAlertsData] = useState<any[]>([]);
+  const [routineData, setRoutineData] = useState<any[]>([]);
+  const [statusData, setStatusData] = useState<any[]>([]); // NUEVO: Data para PieChart
+  const [performanceData, setPerformanceData] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   // Inicialización
@@ -94,7 +130,7 @@ const Index = () => {
     setDateTo(today);
   }, []);
 
-  // Cargar Opciones de Filtros
+  // Cargar Opciones
   useEffect(() => {
     const loadOptions = async () => {
       const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
@@ -127,7 +163,6 @@ const Index = () => {
       .gte('fecha_programada', dateFrom)
       .lte('fecha_programada', dateTo);
 
-    // Aplicar Filtros
     if (profile.role === 'administrador') {
       query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
     } else if (selectedUsers.length > 0) {
@@ -139,7 +174,7 @@ const Index = () => {
     const { data: tasks, error } = await query;
     if (error) { console.error(error); setLoading(false); return; }
 
-    // 1. CALCULAR KPIs GLOBALES
+    // 1. KPIs GLOBALES
     const total = tasks.length;
     const completed = tasks.filter(t => t.estado.startsWith('completada')).length;
     const pending = tasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
@@ -153,7 +188,7 @@ const Index = () => {
       criticalAlerts: critical
     });
 
-    // 2. DATA GRÁFICO TENDENCIA (Líneas)
+    // 2. GRÁFICO TENDENCIA (Líneas)
     const groupedByDate = tasks.reduce((acc: any, curr) => {
       const d = curr.fecha_programada;
       if (!acc[d]) acc[d] = { date: d, total: 0, completed: 0, pending: 0 };
@@ -167,7 +202,7 @@ const Index = () => {
       ...i, name: format(parseLocalDate(i.date), 'dd MMM', { locale: es })
     })));
 
-    // 3. DATA GRÁFICO ALERTAS CRÍTICAS (Barras Rojas)
+    // 3. GRÁFICO ALERTAS CRÍTICAS (Barras Rojas)
     const alertsMap = tasks.reduce((acc: any, curr) => {
       if (curr.prioridad_snapshot === 'critica' || curr.audit_status === 'rechazado' || curr.estado === 'incumplida') {
         const d = curr.fecha_programada;
@@ -182,19 +217,43 @@ const Index = () => {
       Alertas: i.count
     })));
 
-    // 4. DATA CUMPLIMIENTO POR RUTINA (Stacked Bar)
+    // 4. GRÁFICO DISTRIBUCIÓN DE ESTADOS (Pie Chart) - NUEVO
+    const statusCounts = {
+      'a_tiempo': 0,
+      'vencida': 0,
+      'pendiente': 0,
+      'incumplida': 0
+    };
+
+    tasks.forEach(t => {
+      if (t.estado === 'completada_a_tiempo') statusCounts.a_tiempo++;
+      else if (t.estado === 'completada_vencida') statusCounts.vencida++;
+      else if (t.estado === 'incumplida') statusCounts.incumplida++;
+      else statusCounts.pendiente++; // incluye 'en_proceso' y 'pendiente'
+    });
+
+    const statusChartData = [
+      { name: 'A Tiempo', value: statusCounts.a_tiempo, color: COLORS.a_tiempo },
+      { name: 'Vencida', value: statusCounts.vencida, color: COLORS.vencida },
+      { name: 'Pendiente', value: statusCounts.pendiente, color: COLORS.pendiente },
+      { name: 'Incumplida', value: statusCounts.incumplida, color: COLORS.incumplida },
+    ].filter(i => i.value > 0); // Solo mostrar los que tienen datos
+
+    setStatusData(statusChartData);
+
+    // 5. CUMPLIMIENTO POR RUTINA (Stacked Bar) - MEJORADO
     const routineMap = tasks.reduce((acc: any, curr) => {
       const name = curr.routine_templates?.nombre || 'Desconocida';
       if (!acc[name]) acc[name] = { name, cumples: 0, fallas: 0 };
       
       if (curr.estado.startsWith('completada')) acc[name].cumples++;
-      else acc[name].fallas++; // Pendiente o Incumplida
+      else acc[name].fallas++;
       return acc;
     }, {});
     
-    setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8)); // Top 8 con más fallas
+    setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8));
 
-    // 5. DATA RENDIMIENTO USUARIO (Bar Chart)
+    // 6. RENDIMIENTO USUARIO (Bar Chart)
     const userMap = tasks.reduce((acc: any, curr) => {
       if (!curr.profiles) return acc;
       const name = `${curr.profiles.nombre} ${curr.profiles.apellido}`;
@@ -207,11 +266,11 @@ const Index = () => {
     const performanceArray = Object.values(userMap)
       .map((u:any) => ({ ...u, percentage: Math.round((u.completed / u.total) * 100) }))
       .sort((a:any, b:any) => b.percentage - a.percentage)
-      .slice(0, 10); // Top 10
+      .slice(0, 10);
       
     setPerformanceData(performanceArray);
 
-    // 6. ACTIVIDAD RECIENTE
+    // 7. ACTIVIDAD RECIENTE
     setRecentActivity([...tasks].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6));
 
     setLoading(false);
@@ -239,15 +298,15 @@ const Index = () => {
             <X className="w-4 h-4 mr-2" /> Limpiar
           </Button>
           <Button size="sm" onClick={fetchDashboardData} className="bg-movacheck-blue text-white hover:bg-blue-700 shadow-md">
-            <Search className="w-4 h-4 mr-2" /> Actualizar Datos
+            <Search className="w-4 h-4 mr-2" /> Actualizar
           </Button>
         </div>
       </div>
 
-      {/* Grid Principal Layout */}
+      {/* Grid Principal */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         
-        {/* COLUMNA 1: FILTROS (Lateral Izquierdo en Desktop) */}
+        {/* COLUMNA IZQUIERDA: FILTROS */}
         <div className="xl:col-span-1 space-y-6">
           <Card className="bg-white dark:bg-card border-slate-200 h-fit sticky top-24">
             <CardHeader className="pb-3 border-b border-slate-100">
@@ -284,15 +343,15 @@ const Index = () => {
           </Card>
         </div>
 
-        {/* COLUMNA 2-4: CONTENIDO PRINCIPAL */}
+        {/* COLUMNA DERECHA: DASHBOARD */}
         <div className="xl:col-span-3 space-y-6">
           
           {/* 1. KPIs */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard 
-              title="Cumplimiento Global" 
+              title="Cumplimiento" 
               value={`${stats.compliance}%`} 
-              description="Tasa de éxito general"
+              description="Efectividad total"
               icon={Activity}
               colorBg={stats.compliance >= 90 ? "bg-emerald-100" : "bg-amber-100"}
               colorText={stats.compliance >= 90 ? "text-emerald-600" : "text-amber-600"}
@@ -319,7 +378,7 @@ const Index = () => {
             <StatCard 
               title="Alertas Críticas" 
               value={stats.criticalAlerts}
-              description="Prioridad Alta / Rechazos"
+              description="Alta prioridad pendientes" 
               icon={AlertOctagon}
               colorBg="bg-rose-100"
               colorText="text-rose-600"
@@ -334,30 +393,32 @@ const Index = () => {
             </CardHeader>
             <CardContent>
               <div className="h-[300px] w-full">
-                {loading ? <Skeleton className="w-full h-full" /> : (
+                {!loading && trendData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={trendData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                       <XAxis dataKey="name" stroke="#94A3B8" fontSize={12} tickLine={false} axisLine={false} dy={10} />
                       <YAxis stroke="#94A3B8" fontSize={12} tickLine={false} axisLine={false} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '12px', border: '1px solid #E2E8F0' }}
-                      />
-                      <Legend verticalAlign="top" height={36} iconType="circle"/>
-                      <Line type="monotone" dataKey="Total" stroke="#2563EB" strokeWidth={2} dot={false} activeDot={{r: 6}} />
-                      <Line type="monotone" dataKey="completed" name="Completadas" stroke="#34D399" strokeWidth={2} dot={false} activeDot={{r: 6}} />
-                      <Line type="monotone" dataKey="pending" name="Pendientes" stroke="#F59E0B" strokeWidth={2} dot={false} activeDot={{r: 6}} />
+                      <Tooltip contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '12px', border: '1px solid #E2E8F0' }} />
+                      <Legend verticalAlign="top" height={36}/>
+                      <Line type="monotone" dataKey="Total" stroke="#2563EB" strokeWidth={2} dot={{r: 4}} />
+                      <Line type="monotone" dataKey="completed" name="Completadas" stroke="#34D399" strokeWidth={2} dot={{r: 4}} />
+                      <Line type="monotone" dataKey="pending" name="Pendientes" stroke="#F59E0B" strokeWidth={2} dot={{r: 4}} />
                     </LineChart>
                   </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground bg-slate-50 rounded-xl border-2 border-dashed">
+                    <p>{loading ? "Calculando..." : "No hay datos para graficar"}</p>
+                  </div>
                 )}
               </div>
             </CardContent>
           </Card>
 
-          {/* 3. GRID SECUNDARIO (Alertas y Cumplimiento) */}
+          {/* 3. GRID SECUNDARIO: Alertas y Distribución */}
           <div className="grid gap-6 md:grid-cols-2">
             
-            {/* Alertas Críticas (Bar Chart Rojo) */}
+            {/* A. Alertas Críticas */}
             <Card className="border-slate-200">
               <CardHeader>
                 <SectionHeader title="Alertas Críticas" description="Incidencias y tareas críticas por día." icon={AlertTriangle} />
@@ -384,21 +445,61 @@ const Index = () => {
               </CardContent>
             </Card>
 
-            {/* Cumplimiento por Rutina (Stacked Bar) */}
+            {/* B. Distribución por Estado (Donut Chart) - NUEVO */}
+            <Card className="border-slate-200">
+              <CardHeader>
+                <SectionHeader title="Estado de Ejecución" description="Desglose por tipo de cumplimiento." icon={PieChartIcon} />
+              </CardHeader>
+              <CardContent>
+                <div className="h-[250px] w-full flex items-center justify-center">
+                  {!loading && statusData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statusData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {statusData.map((entry: any, index: number) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="text-center text-muted-foreground">
+                      <p className="text-sm">Sin datos para mostrar</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 4. GRID TERCIARIO: Rutinas y Ranking */}
+          <div className="grid gap-6 md:grid-cols-2">
+            
+            {/* C. Cumplimiento por Rutina (Stacked Bar + Tooltip Porcentajes) */}
             <Card className="border-slate-200">
               <CardHeader>
                 <SectionHeader title="Cumplimiento por Rutina" description="Top 8 rutinas con mayor índice de fallo." icon={ListChecks} />
               </CardHeader>
               <CardContent>
-                <div className="h-[250px] w-full">
+                <div className="h-[300px] w-full">
                   {!loading && routineData.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={routineData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
                         <XAxis type="number" hide />
                         <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#64748B'}} tickLine={false} axisLine={false} />
-                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px' }}/>
-                        <Bar dataKey="cumples" name="Cumplimiento" stackId="a" fill="#34D399" radius={[0, 4, 4, 0]} barSize={16} />
+                        <Tooltip content={<CustomRoutineTooltip />} cursor={{fill: 'transparent'}} />
+                        <Bar dataKey="cumples" name="Cumplimiento" stackId="a" fill="#34D399" radius={[0, 0, 0, 4]} barSize={16} />
                         <Bar dataKey="fallas" name="Fallas/Pend" stackId="a" fill="#E2E8F0" radius={[0, 4, 4, 0]} barSize={16} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -410,24 +511,20 @@ const Index = () => {
                 </div>
               </CardContent>
             </Card>
-          </div>
 
-          {/* 4. GRID TERCIARIO (Ranking y Actividad) */}
-          <div className="grid gap-6 md:grid-cols-2">
-            
-            {/* Ranking Usuarios */}
+            {/* D. Ranking Usuarios */}
             <Card className="border-slate-200">
               <CardHeader>
                 <SectionHeader title="Top Rendimiento" description="Usuarios con mayor tasa de cumplimiento." icon={Users} />
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                   {performanceData.map((user, idx) => (
                     <div key={user.name} className="flex items-center gap-3">
-                      <div className="font-mono text-xs text-slate-400 w-4">{idx + 1}</div>
+                      <div className="font-mono text-xs text-slate-400 w-4 font-bold">{idx + 1}</div>
                       <div className="flex-1">
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="font-medium text-slate-700">{user.name}</span>
+                          <span className="font-medium text-slate-700 truncate max-w-[150px]">{user.name}</span>
                           <span className="font-bold text-movacheck-blue">{user.percentage}%</span>
                         </div>
                         <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -444,41 +541,40 @@ const Index = () => {
               </CardContent>
             </Card>
 
-            {/* Actividad Reciente */}
-            <Card className="border-slate-200">
-              <CardHeader>
-                <SectionHeader title="Actividad en Vivo" description="Últimos eventos registrados en el sistema." icon={Activity} />
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-0">
-                  {recentActivity.map((task, idx) => (
-                    <div key={task.id} className="flex gap-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors px-2 rounded-lg">
-                      <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
-                        task.estado.startsWith('completada') ? 'bg-emerald-500' : 'bg-amber-500'
-                      }`} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">
-                          {task.routine_templates?.nombre}
-                        </p>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                          <span className="font-medium">{task.pdv?.nombre}</span>
-                          <span>•</span>
-                          <span>{format(new Date(task.completado_at || task.created_at), 'HH:mm', { locale: es })}</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {task.prioridad_snapshot === 'critica' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">CRÍTICA</span>
-                        )}
+          </div>
+
+          {/* 5. Actividad Reciente */}
+          <Card className="border-slate-200">
+            <CardHeader>
+              <SectionHeader title="Actividad en Vivo" description="Últimos eventos registrados en el sistema." icon={Activity} />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-0">
+                {recentActivity.map((task, idx) => (
+                  <div key={task.id} className="flex gap-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors px-2 rounded-lg">
+                    <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${
+                      task.estado.startsWith('completada') ? 'bg-emerald-500' : 'bg-amber-500'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {task.routine_templates?.nombre}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                        <span className="font-medium">{task.pdv?.nombre}</span>
+                        <span>•</span>
+                        <span>{format(new Date(task.completado_at || task.created_at), 'HH:mm', { locale: es })}</span>
                       </div>
                     </div>
-                  ))}
-                  {recentActivity.length === 0 && <div className="text-center py-8 text-sm text-muted-foreground">Sin actividad reciente.</div>}
-                </div>
-              </CardContent>
-            </Card>
-
-          </div>
+                    <div className="text-right">
+                      {task.prioridad_snapshot === 'critica' && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">CRÍTICA</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
         </div>
       </div>
