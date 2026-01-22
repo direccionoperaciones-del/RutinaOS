@@ -6,7 +6,7 @@ import { Activity, CheckCircle2, AlertTriangle, Clock, TrendingUp, BarChart3, Fi
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -168,14 +168,21 @@ const Index = () => {
       .slice(0, 10);
     setRecentActivity(activity);
 
+    // Preparar datos para el gráfico de líneas
     const groupedData = tasks.reduce((acc: any, curr) => {
       const date = curr.fecha_programada;
       if (!acc[date]) {
-        acc[date] = { date, total: 0, completed: 0, failed: 0 };
+        acc[date] = { date, total: 0, completed: 0, pending: 0 };
       }
       acc[date].total++;
-      if (curr.estado.startsWith('completada')) acc[date].completed++;
-      if (curr.estado === 'incumplida') acc[date].failed++;
+      
+      if (curr.estado.startsWith('completada')) {
+        acc[date].completed++;
+      } else if (curr.estado === 'pendiente' || curr.estado === 'en_proceso') {
+        acc[date].pending++;
+      }
+      // Opcional: Podríamos sumar 'incumplida' también si se desea
+      
       return acc;
     }, {});
 
@@ -185,7 +192,7 @@ const Index = () => {
         name: format(parseLocalDate(item.date), 'dd MMM', { locale: es }),
         Total: item.total,
         Completadas: item.completed,
-        Incumplidas: item.failed
+        Pendientes: item.pending
       }));
 
     setChartData(chartArray);
@@ -246,7 +253,6 @@ const Index = () => {
           value={`${stats.compliance}%`} 
           description="Efectividad total"
           icon={Activity}
-          // Verde = Éxito/Checks
           colorBg={stats.compliance >= 90 ? "bg-emerald-100" : stats.compliance >= 70 ? "bg-amber-100" : "bg-rose-100"}
           colorText={stats.compliance >= 90 ? "text-emerald-700" : stats.compliance >= 70 ? "text-amber-700" : "text-rose-700"}
           loading={loading}
@@ -256,7 +262,6 @@ const Index = () => {
           value={stats.totalTasks}
           description="Generadas en periodo" 
           icon={BarChart3}
-          // Azul = Informativo / Principal
           colorBg="bg-blue-100"
           colorText="text-blue-700"
           loading={loading}
@@ -286,7 +291,7 @@ const Index = () => {
         
         {/* Filtros */}
         <div className="xl:col-span-1 space-y-6">
-          <Card className="bg-white dark:bg-card border-slate-200">
+          <Card className="bg-white dark:bg-card border-slate-200 h-full">
             <CardHeader className="pb-3 border-b border-slate-100">
               <CardTitle className="text-base flex items-center gap-2 text-movacheck-blue">
                 <Filter className="w-4 h-4" /> Filtros Activos
@@ -342,13 +347,13 @@ const Index = () => {
         {/* Gráfico y Actividad */}
         <div className="xl:col-span-2 space-y-6">
           
-          {/* Chart */}
+          {/* Chart Lineal */}
           <Card className="border-slate-200">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-lg text-movacheck-navy">Tendencia de Ejecución</CardTitle>
-                  <CardDescription>Comportamiento diario de tareas.</CardDescription>
+                  <CardDescription>Comportamiento diario de tareas (Total vs Completadas vs Pendientes).</CardDescription>
                 </div>
                 <div className="p-2 bg-blue-50 rounded-lg">
                   <TrendingUp className="w-5 h-5 text-movacheck-blue" />
@@ -359,7 +364,7 @@ const Index = () => {
               <div className="h-[300px] w-full">
                 {!loading && chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <LineChart data={chartData} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
                       <XAxis 
                         dataKey="name" 
@@ -377,16 +382,44 @@ const Index = () => {
                       />
                       <Tooltip 
                         contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                        cursor={{fill: '#F1F5F9'}}
+                        cursor={{ stroke: '#94A3B8', strokeWidth: 1, strokeDasharray: '3 3' }}
                       />
-                      {/* Azul para total, Verde para Completadas (Éxito), Rojo Fallo */}
-                      <Bar dataKey="Completadas" stackId="a" fill="#34D399" radius={[0, 0, 4, 4]} barSize={32} name="Exitosas" />
-                      <Bar dataKey="Incumplidas" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} barSize={32} name="Fallidas" />
-                    </BarChart>
+                      <Legend verticalAlign="top" height={36}/>
+                      
+                      {/* Línea Total - Azul Principal */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="Total" 
+                        stroke="#2563EB" 
+                        strokeWidth={2} 
+                        dot={{r: 4, fill: '#2563EB', strokeWidth: 0}} 
+                        activeDot={{r: 6}} 
+                      />
+                      
+                      {/* Línea Completadas - Verde Éxito */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="Completadas" 
+                        stroke="#34D399" 
+                        strokeWidth={2} 
+                        dot={{r: 4, fill: '#34D399', strokeWidth: 0}} 
+                        activeDot={{r: 6}} 
+                      />
+                      
+                      {/* Línea Pendientes - Naranja Alerta */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="Pendientes" 
+                        stroke="#F59E0B" 
+                        strokeWidth={2} 
+                        dot={{r: 4, fill: '#F59E0B', strokeWidth: 0}} 
+                        activeDot={{r: 6}} 
+                      />
+                    </LineChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full flex items-center justify-center text-muted-foreground bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-                    <p>{loading ? "Calculando..." : "No hay datos para graficar"}</p>
+                    <p>{loading ? "Calculando..." : "No hay datos para graficar en este periodo"}</p>
                   </div>
                 )}
               </div>
