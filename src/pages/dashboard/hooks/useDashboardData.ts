@@ -157,7 +157,9 @@ export const useDashboardData = () => {
       else acc[name].fallas++;
       return acc;
     }, {});
-    setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8));
+    
+    // Fix: Explicitly cast to ChartDataPoint[] to resolve type error
+    setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8) as ChartDataPoint[]);
 
     // 6. Performance
     const userMap = tasks.reduce((acc: any, curr) => {
