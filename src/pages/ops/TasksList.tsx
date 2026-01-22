@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
   MessageSquareText, Box, FileText,
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
-  Trophy, PartyPopper
+  Trophy, PartyPopper, Coffee, Info
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -156,7 +157,7 @@ const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction }: { items: 
 };
 
 export default function TasksList() {
-  const { profile } = useCurrentUser();
+  const { user, profile } = useCurrentUser();
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
 
@@ -164,12 +165,36 @@ export default function TasksList() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   
+  // Estado para la novedad activa
+  const [activeAbsence, setActiveAbsence] = useState<any>(null);
+  
   // Efecto único para calcular la fecha al montar el componente en el cliente
   useEffect(() => {
     const today = getLocalDate(); // Esto ahora retorna 21/01 seguro si estamos en Colombia
     setDateFrom(today);
     setDateTo(today);
   }, []);
+  
+  // Efecto para buscar novedades vigentes del usuario
+  useEffect(() => {
+    const checkAbsences = async () => {
+      if (!user) return;
+      
+      const today = getLocalDate();
+      
+      const { data } = await supabase
+        .from('user_absences')
+        .select('*, absence_types(nombre)')
+        .eq('user_id', user.id)
+        .lte('fecha_desde', today)
+        .gte('fecha_hasta', today)
+        .maybeSingle();
+      
+      setActiveAbsence(data);
+    };
+    
+    checkAbsences();
+  }, [user]);
   
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
@@ -205,7 +230,8 @@ export default function TasksList() {
   const showCongratulation = 
     totalFiltered > 0 && 
     pendingTasks.length === 0 && 
-    dateTo <= todayStr;
+    dateTo <= todayStr &&
+    !activeAbsence; // No felicitar si está ausente (ya que no tendrá tareas)
 
   const clearFilters = () => {
     const today = getLocalDate();
@@ -260,6 +286,28 @@ export default function TasksList() {
           </p>
         </div>
       </div>
+
+      {/* --- BANNER DE NOVEDAD ACTIVA --- */}
+      {activeAbsence && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+            <Coffee className="w-6 h-6" />
+          </div>
+          <div>
+            <h4 className="font-bold text-blue-900 text-lg">
+              Hoy tienes una novedad registrada: {activeAbsence.absence_types?.nombre}
+            </h4>
+            <p className="text-blue-800">
+              No tienes actividades asignadas para el día de hoy. Disfruta tu tiempo.
+            </p>
+            {activeAbsence.politica === 'reasignar' && (
+              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">
+                <Info className="w-3 h-3"/> Tus tareas han sido reasignadas temporalmente.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* --- FILTROS --- */}
       <Card className="bg-muted/20 border-primary/10">
@@ -380,7 +428,7 @@ export default function TasksList() {
             items={pendingTasks} 
             loading={isLoading} 
             onRetry={refetch} 
-            emptyMessage={showCongratulation ? "¡Todo listo! No queda nada pendiente." : "No tienes tareas pendientes."} 
+            emptyMessage={activeAbsence ? "No tienes tareas pendientes debido a tu novedad." : (showCongratulation ? "¡Todo listo! No queda nada pendiente." : "No tienes tareas pendientes.")} 
             onAction={handleStartTask} 
           />
         </TabsContent>

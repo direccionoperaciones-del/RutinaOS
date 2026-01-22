@@ -103,25 +103,34 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       if (error) throw error;
 
       // 2. Si es RECHAZO -> Enviar Mensaje Directo al usuario
-      // CORRECCIÓN: Usamos task.profiles.id para garantizar que tenemos el ID correcto del usuario
-      const targetUserId = task.profiles?.id || task.completado_por;
+      // Lógica Robusta: Intentamos obtener el ID del usuario de tres fuentes posibles
+      const targetUserId = task.profiles?.id || task.completado_por || task.responsable_id;
 
-      if (status === 'reject' && targetUserId) {
-        const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
+      if (status === 'reject') {
+        if (!targetUserId) {
+           console.error("CRITICAL: No target user found for rejection message", task);
+           toast({ 
+             variant: "destructive", 
+             title: "Error de notificación", 
+             description: "La tarea se rechazó, pero no se pudo notificar al usuario (ID no encontrado)." 
+           });
+        } else {
+          const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
 
-        const { error: msgError } = await supabase.rpc('send_broadcast_message', {
-          p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
-          p_cuerpo: messageBody,
-          p_tipo: 'mensaje',
-          p_prioridad: 'alta',
-          p_requiere_confirmacion: true,
-          p_recipient_type: 'user',
-          p_recipient_id: targetUserId // ID explícito del perfil
-        });
+          const { error: msgError } = await supabase.rpc('send_broadcast_message', {
+            p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
+            p_cuerpo: messageBody,
+            p_tipo: 'mensaje',
+            p_prioridad: 'alta',
+            p_requiere_confirmacion: true,
+            p_recipient_type: 'user',
+            p_recipient_id: String(targetUserId) // Force string conversion para asegurar compatibilidad
+          });
 
-        if (msgError) {
-          console.error("Error enviando mensaje:", msgError);
-          toast({ variant: "destructive", title: "Advertencia", description: "Se rechazó la tarea pero falló el envío del mensaje." });
+          if (msgError) {
+            console.error("Error sending message RPC:", msgError);
+            toast({ variant: "destructive", title: "Advertencia", description: "Se rechazó la tarea pero falló el envío del mensaje." });
+          }
         }
       }
 
