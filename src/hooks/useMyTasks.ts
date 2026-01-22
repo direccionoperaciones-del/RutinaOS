@@ -21,7 +21,8 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
             gps_obligatorio, fotos_obligatorias, min_fotos,
             comentario_obligatorio, requiere_inventario,
             categorias_ids, archivo_obligatorio,
-            enviar_email, responder_email
+            enviar_email, responder_email,
+            vencimiento_dia_mes, corte_1_limite, corte_2_limite
           ),
           pdv (id, nombre, ciudad, radio_gps, latitud, longitud),
           profiles:completado_por (id, nombre, apellido)
@@ -30,23 +31,10 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
       // Lógica de Filtro:
       // 1. Tareas programadas en el rango de fechas
       // 2. O tareas pendientes antiguas (Backlog)
-      const dateFilter = `fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo}`;
-      const statusFilter = `estado.in.(pendiente,en_proceso)`;
       
       // Combinamos: (Rango Fechas) OR (Pendientes)
-      // Nota: Supabase postgrest filter syntax para OR complejo es limitado en cliente JS simple.
-      // Simplificación eficiente: Traer pendientes SIEMPRE + Historial del rango.
-      
-      // Opción A: Usar filtro OR crudo
-      // query = query.or(`and(fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo}),estado.in.(pendiente,en_proceso)`);
-      
-      // Opción B (Más segura): Traer por fecha O estado pendiente
       // Para que el usuario vea lo que tiene que hacer HOY (pendiente) + lo que hizo HOY.
       query = query.or(`fecha_programada.eq.${dateTo},estado.in.(pendiente,en_proceso)`);
-      
-      // Nota sobre Filtro de Fecha: 
-      // Si el usuario selecciona un rango histórico (ej: mes pasado), no querría ver las pendientes de hoy.
-      // Pero para la vista operativa "Mis Tareas", ver el backlog es lo deseado.
       
       // --- RESTRICCIÓN DE SEGURIDAD PARA ADMINISTRADOR ---
       if (profile?.role === 'administrador') {
