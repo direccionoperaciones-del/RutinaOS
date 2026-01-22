@@ -112,8 +112,8 @@ export default function AbsencesPage() {
 
                 <div className="flex items-center gap-2 text-xs bg-muted/50 p-2 rounded mb-3">
                   <Calendar className="w-3 h-3 text-muted-foreground" />
-                  <span>
-                    {format(parseLocalDate(abs.fecha_desde), "dd MMM")} - {format(parseLocalDate(abs.fecha_hasta), "dd MMM yyyy")}
+                  <span className="capitalize">
+                    {format(parseLocalDate(abs.fecha_desde), "dd MMM", { locale: es })} - {format(parseLocalDate(abs.fecha_hasta), "dd MMM yyyy", { locale: es })}
                   </span>
                 </div>
 

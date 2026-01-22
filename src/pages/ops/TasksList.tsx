@@ -91,7 +91,7 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
         <div className="flex justify-between items-center bg-muted/30 p-1.5 rounded-md mb-2">
           <div className="flex items-center gap-1.5 text-xs font-medium" title="Fecha límite de ejecución">
             <Clock className="w-3 h-3 text-muted-foreground" />
-            <span>{deadlineStr}</span>
+            <span className="capitalize">{deadlineStr}</span>
           </div>
           {getStatusBadge(task)}
         </div>

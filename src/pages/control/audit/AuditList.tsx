@@ -246,7 +246,7 @@ export default function AuditList() {
                 </div>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Clock className="w-3 h-3" />
-                  <span>Ejecutado: {task.completado_at ? format(new Date(task.completado_at), "dd MMM HH:mm") : '-'}</span>
+                  <span className="capitalize">Ejecutado: {task.completado_at ? format(new Date(task.completado_at), "dd MMM HH:mm", { locale: es }) : '-'}</span>
                 </div>
               </div>
 
