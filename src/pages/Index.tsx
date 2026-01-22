@@ -13,16 +13,15 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { getLocalDate, parseLocalDate } from "@/lib/utils";
 
-// Componente Tarjeta KPI Rediseñado
+// Tarjeta KPI con mejor contraste
 const StatCard = ({ title, value, description, icon: Icon, colorBg, colorText, loading }: any) => (
-  <Card className="overflow-hidden border-none shadow-soft hover:shadow-md transition-shadow">
+  <Card className="overflow-hidden border-slate-200 shadow-sm hover:shadow-md transition-all">
     <CardContent className="p-6">
       <div className="flex items-center justify-between">
-        <div className={`p-3 rounded-full ${colorBg || "bg-slate-100"}`}>
-          <Icon className={`h-6 w-6 ${colorText || "text-slate-600"}`} />
+        <div className={`p-3 rounded-full ${colorBg || "bg-blue-50"}`}>
+          <Icon className={`h-6 w-6 ${colorText || "text-movacheck-blue"}`} />
         </div>
-        {/* Placeholder para porcentaje de cambio si existiera */}
-        <div className="flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
+        <div className="flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
           <ArrowUpRight className="h-3 w-3" />
           <span>Activo</span>
         </div>
@@ -31,9 +30,9 @@ const StatCard = ({ title, value, description, icon: Icon, colorBg, colorText, l
         {loading ? (
           <Skeleton className="h-8 w-24 mb-1" />
         ) : (
-          <h2 className="text-3xl font-bold text-movacheck-navy dark:text-white">{value}</h2>
+          <h2 className="text-3xl font-bold text-movacheck-navy dark:text-white tracking-tight">{value}</h2>
         )}
-        <p className="text-sm text-muted-foreground font-medium mt-1">{title}</p>
+        <p className="text-sm text-slate-500 font-medium mt-1">{title}</p>
         <p className="text-xs text-slate-400 mt-2">{description}</p>
       </div>
     </CardContent>
@@ -43,7 +42,7 @@ const StatCard = ({ title, value, description, icon: Icon, colorBg, colorText, l
 const Index = () => {
   const { profile, user, loading: loadingUser } = useCurrentUser();
 
-  // Inicializar estados con la fecha local calculada
+  // Estados de Fechas
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   
@@ -74,20 +73,6 @@ const Index = () => {
   });
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [chartData, setChartData] = useState<any[]>([]);
-
-  const priorityOptions = [
-    { label: "Baja", value: "baja" },
-    { label: "Media", value: "media" },
-    { label: "Alta", value: "alta" },
-    { label: "Crítica", value: "critica" },
-  ];
-
-  const statusOptions = [
-    { label: "Pendiente/Proceso", value: "pendiente" },
-    { label: "Completada a Tiempo", value: "completada_a_tiempo" },
-    { label: "Completada Vencida", value: "completada_vencida" },
-    { label: "Incumplida", value: "incumplida" },
-  ];
 
   useEffect(() => {
     const loadFilterOptions = async () => {
@@ -244,11 +229,11 @@ const Index = () => {
         </div>
         <div className="flex gap-2">
           {hasActiveFilters && (
-            <Button variant="outline" size="sm" onClick={clearFilters} className="text-destructive hover:text-destructive">
+            <Button variant="outline" size="sm" onClick={clearFilters} className="text-red-600 border-red-200 hover:bg-red-50">
               <X className="w-4 h-4 mr-2" /> Limpiar
             </Button>
           )}
-          <Button size="sm" onClick={fetchDashboardData} className="bg-movacheck-primary text-movacheck-navy hover:bg-movacheck-hover">
+          <Button size="sm" onClick={fetchDashboardData} className="bg-movacheck-blue text-white hover:bg-blue-700 shadow-md">
             <Search className="w-4 h-4 mr-2" /> Actualizar
           </Button>
         </div>
@@ -261,8 +246,9 @@ const Index = () => {
           value={`${stats.compliance}%`} 
           description="Efectividad total"
           icon={Activity}
+          // Verde = Éxito/Checks
           colorBg={stats.compliance >= 90 ? "bg-emerald-100" : stats.compliance >= 70 ? "bg-amber-100" : "bg-rose-100"}
-          colorText={stats.compliance >= 90 ? "text-emerald-600" : stats.compliance >= 70 ? "text-amber-600" : "text-rose-600"}
+          colorText={stats.compliance >= 90 ? "text-emerald-700" : stats.compliance >= 70 ? "text-amber-700" : "text-rose-700"}
           loading={loading}
         />
         <StatCard 
@@ -270,8 +256,9 @@ const Index = () => {
           value={stats.totalTasks}
           description="Generadas en periodo" 
           icon={BarChart3}
-          colorBg="bg-indigo-100"
-          colorText="text-indigo-600"
+          // Azul = Informativo / Principal
+          colorBg="bg-blue-100"
+          colorText="text-blue-700"
           loading={loading}
         />
         <StatCard 
@@ -279,8 +266,8 @@ const Index = () => {
           value={stats.pendingTasks}
           description="En cola de ejecución" 
           icon={Clock}
-          colorBg="bg-blue-100"
-          colorText="text-blue-600"
+          colorBg="bg-indigo-100"
+          colorText="text-indigo-700"
           loading={loading}
         />
         <StatCard 
@@ -289,7 +276,7 @@ const Index = () => {
           description="Alta prioridad pendientes" 
           icon={AlertTriangle}
           colorBg="bg-rose-100"
-          colorText="text-rose-600"
+          colorText="text-rose-700"
           loading={loading}
         />
       </div>
@@ -297,28 +284,28 @@ const Index = () => {
       {/* Main Grid: Filters + Charts */}
       <div className="grid gap-6 grid-cols-1 xl:grid-cols-3">
         
-        {/* Filtros (Columna Izquierda o Arriba en mobile) */}
+        {/* Filtros */}
         <div className="xl:col-span-1 space-y-6">
-          <Card className="bg-white dark:bg-card">
-            <CardHeader className="pb-3 border-b">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Filter className="w-4 h-4 text-movacheck-primary" /> Filtros Activos
+          <Card className="bg-white dark:bg-card border-slate-200">
+            <CardHeader className="pb-3 border-b border-slate-100">
+              <CardTitle className="text-base flex items-center gap-2 text-movacheck-blue">
+                <Filter className="w-4 h-4" /> Filtros Activos
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase">Desde</Label>
-                  <Input type="date" className="h-9 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                  <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
+                  <Input type="date" className="h-9 text-sm bg-slate-50 border-slate-200" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase">Hasta</Label>
-                  <Input type="date" className="h-9 text-sm" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                  <Label className="text-xs font-bold text-slate-500 uppercase">Hasta</Label>
+                  <Input type="date" className="h-9 text-sm bg-slate-50 border-slate-200" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Punto de Venta</Label>
+                <Label className="text-xs font-bold text-slate-500 uppercase">Punto de Venta</Label>
                 <MultiSelect 
                   options={pdvOptions} 
                   selected={selectedPdvs} 
@@ -328,7 +315,7 @@ const Index = () => {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Rutinas</Label>
+                <Label className="text-xs font-bold text-slate-500 uppercase">Rutinas</Label>
                 <MultiSelect 
                   options={routineOptions} 
                   selected={selectedRoutines} 
@@ -339,7 +326,7 @@ const Index = () => {
 
               {profile?.role !== 'administrador' && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-muted-foreground uppercase">Responsable</Label>
+                  <Label className="text-xs font-bold text-slate-500 uppercase">Responsable</Label>
                   <MultiSelect 
                     options={userOptions} 
                     selected={selectedUsers} 
@@ -352,19 +339,19 @@ const Index = () => {
           </Card>
         </div>
 
-        {/* Gráfico y Actividad (2/3 ancho) */}
+        {/* Gráfico y Actividad */}
         <div className="xl:col-span-2 space-y-6">
           
           {/* Chart */}
-          <Card>
+          <Card className="border-slate-200">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-lg">Tendencia de Ejecución</CardTitle>
+                  <CardTitle className="text-lg text-movacheck-navy">Tendencia de Ejecución</CardTitle>
                   <CardDescription>Comportamiento diario de tareas.</CardDescription>
                 </div>
-                <div className="p-2 bg-movacheck-primary/10 rounded-lg">
-                  <TrendingUp className="w-5 h-5 text-movacheck-primary" />
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  <TrendingUp className="w-5 h-5 text-movacheck-blue" />
                 </div>
               </div>
             </CardHeader>
@@ -389,15 +376,16 @@ const Index = () => {
                         axisLine={false} 
                       />
                       <Tooltip 
-                        contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                        cursor={{fill: 'var(--muted)'}}
+                        contentStyle={{ backgroundColor: 'var(--card)', borderRadius: '8px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+                        cursor={{fill: '#F1F5F9'}}
                       />
-                      <Bar dataKey="Completadas" stackId="a" fill="#34D399" radius={[0, 0, 4, 4]} barSize={32} />
-                      <Bar dataKey="Incumplidas" stackId="a" fill="#EF4444" radius={[0, 0, 0, 0]} barSize={32} />
+                      {/* Azul para total, Verde para Completadas (Éxito), Rojo Fallo */}
+                      <Bar dataKey="Completadas" stackId="a" fill="#34D399" radius={[0, 0, 4, 4]} barSize={32} name="Exitosas" />
+                      <Bar dataKey="Incumplidas" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} barSize={32} name="Fallidas" />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground bg-muted/10 rounded-2xl border-2 border-dashed border-muted">
+                  <div className="h-full flex items-center justify-center text-muted-foreground bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
                     <p>{loading ? "Calculando..." : "No hay datos para graficar"}</p>
                   </div>
                 )}
@@ -406,9 +394,9 @@ const Index = () => {
           </Card>
 
           {/* Recent Activity List */}
-          <Card>
+          <Card className="border-slate-200">
             <CardHeader>
-              <CardTitle>Actividad Reciente</CardTitle>
+              <CardTitle className="text-movacheck-navy">Actividad Reciente</CardTitle>
               <CardDescription>Últimas 10 tareas procesadas.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -424,7 +412,7 @@ const Index = () => {
                   </div>
                 ) : (
                   recentActivity.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-800">
+                    <div key={task.id} className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-100 hover:border-blue-200 hover:shadow-sm transition-all group">
                       <div className="flex items-center gap-4">
                         <div className={`p-2 rounded-full shrink-0 ${
                           task.estado.startsWith('completada') ? 'bg-emerald-100 text-emerald-600' : 
@@ -434,7 +422,7 @@ const Index = () => {
                            task.estado === 'incumplida' ? <X className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-movacheck-blue transition-colors">
                             {task.routine_templates?.nombre}
                           </p>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">

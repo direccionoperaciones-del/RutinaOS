@@ -28,14 +28,18 @@ export default {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         
-        // Movacheck Brand Colors
+        // Movacheck Brand Colors Updated
         movacheck: {
-          primary: "#34D399", // Mint
-          hover: "#10B981",
-          navy: "#1E293B",    // Dark Navy
-          sidebar: "#2D3748", // Sidebar Light Mode
-          sidebarDark: "#0F172A", // Sidebar Dark Mode
-          accent: "#3B82F6",  // Blue
+          mint: "#34D399",      // Primary from Logo - Success/Checks ONLY
+          mintHover: "#10B981",
+          
+          blue: "#2563EB",      // Secondary from Logo - MAIN ACTION
+          blueHover: "#1D4ED8",
+          blueLight: "#3B82F6",
+          
+          navy: "#1E293B",      // Sidebar / Dark BG
+          sidebar: "#1E293B",
+          
           success: "#22C55E",
           warning: "#F59E0B",
           error: "#EF4444",
@@ -71,13 +75,15 @@ export default {
         },
       },
       borderRadius: {
-        lg: "16px", // Card radius spec
-        md: "12px",
-        sm: "8px",
+        lg: "12px", // Standardizing radius
+        md: "8px",
+        sm: "4px",
       },
       boxShadow: {
-        'soft': '0 1px 3px rgba(0,0,0,0.05)',
+        'soft': '0 1px 3px rgba(0,0,0,0.1)',
         'hover': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+        'card': '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+        'card-hover': '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
       },
       keyframes: {
         "accordion-down": {

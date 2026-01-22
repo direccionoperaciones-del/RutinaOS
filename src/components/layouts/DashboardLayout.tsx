@@ -36,7 +36,7 @@ import { Input } from "@/components/ui/input";
 // Sidebar Group Component
 const SidebarGroup = ({ title, children }: any) => (
   <div className="mb-6 px-4">
-    <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+    <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-slate-500">
       {title}
     </h3>
     <div className="space-y-1">
@@ -45,23 +45,23 @@ const SidebarGroup = ({ title, children }: any) => (
   </div>
 );
 
-// Sidebar Item Component
+// Sidebar Item Component - Active state blue
 const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <button
     className={cn(
       "group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
       active 
-        ? "bg-movacheck-primary/10 text-movacheck-primary border-l-4 border-movacheck-primary" 
-        : "text-slate-300 hover:bg-white/5 hover:text-white border-l-4 border-transparent"
+        ? "bg-blue-600/10 text-blue-400 border-l-4 border-blue-500 shadow-sm" // Azul activo
+        : "text-slate-400 hover:bg-white/5 hover:text-white border-l-4 border-transparent"
     )}
     onClick={onClick}
   >
     <div className="flex items-center gap-3">
-      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-movacheck-primary" : "text-slate-400 group-hover:text-white")} />
+      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-blue-400" : "text-slate-500 group-hover:text-white")} />
       <span>{label}</span>
     </div>
     {badgeCount > 0 && (
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-movacheck-primary text-[10px] font-bold text-movacheck-navy">
+      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">
         {badgeCount > 99 ? '99+' : badgeCount}
       </span>
     )}
@@ -165,17 +165,17 @@ const DashboardLayout = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-full border-4 border-movacheck-primary border-t-transparent animate-spin" />
-          <p className="text-sm font-medium text-muted-foreground animate-pulse">Cargando Movacheck...</p>
+          <div className="h-12 w-12 rounded-full border-4 border-movacheck-blue border-t-transparent animate-spin" />
+          <p className="text-sm font-medium text-slate-500 animate-pulse">Cargando Movacheck...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-slate-100">
       
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
@@ -188,18 +188,18 @@ const DashboardLayout = () => {
       {/* Sidebar - Dark Aesthetic (Fixed) */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[240px] flex-col bg-movacheck-sidebar dark:bg-movacheck-sidebarDark text-white transition-transform duration-300 lg:translate-x-0 shadow-xl",
+          "fixed inset-y-0 left-0 z-50 flex w-[240px] flex-col bg-movacheck-navy text-white transition-transform duration-300 lg:translate-x-0 shadow-xl border-r border-white/5",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Sidebar Header / Logo */}
-        <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            {/* Logo Placeholder - Should be replaced by img tag */}
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-movacheck-primary text-movacheck-navy font-bold text-xl">
+        <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10 bg-movacheck-navy/50">
+          <div className="flex items-center gap-3">
+            {/* Logo Placeholder */}
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-movacheck-blue text-white font-bold text-xl shadow-lg shadow-blue-900/50">
               M
             </div>
-            <span className="text-lg font-bold tracking-tight">Movacheck</span>
+            <span className="text-lg font-bold tracking-tight text-white">Movacheck</span>
           </div>
         </div>
 
@@ -231,15 +231,15 @@ const DashboardLayout = () => {
         </div>
 
         {/* Sidebar User Profile (Bottom) */}
-        <div className="border-t border-white/10 p-4">
+        <div className="border-t border-white/10 p-4 bg-black/10">
           <div className="flex items-center gap-3 rounded-lg bg-white/5 p-3 hover:bg-white/10 transition-colors cursor-pointer group" onClick={handleLogout}>
-            <Avatar className="h-9 w-9 border-2 border-movacheck-primary">
-              <AvatarFallback className="bg-movacheck-navy text-white font-bold">
+            <Avatar className="h-9 w-9 border-2 border-movacheck-blue">
+              <AvatarFallback className="bg-slate-800 text-white font-bold">
                 {userProfile?.nombre?.[0]}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium text-white group-hover:text-movacheck-primary transition-colors">
+              <p className="truncate text-sm font-medium text-white group-hover:text-movacheck-blue transition-colors">
                 {userProfile?.nombre}
               </p>
               <p className="truncate text-xs text-slate-400 capitalize">
@@ -255,21 +255,21 @@ const DashboardLayout = () => {
       <div className="flex flex-1 flex-col lg:pl-[240px] transition-all duration-300">
         
         {/* Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-card/80 backdrop-blur-md px-6 shadow-sm transition-all">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white/80 backdrop-blur-md px-6 shadow-sm transition-all border-slate-200">
           <div className="flex items-center gap-4">
             <button 
-              className="lg:hidden p-2 -ml-2 hover:bg-muted rounded-full" 
+              className="lg:hidden p-2 -ml-2 hover:bg-slate-100 rounded-full" 
               onClick={() => setIsMobileMenuOpen(true)}
             >
-              <Menu className="h-6 w-6" />
+              <Menu className="h-6 w-6 text-slate-600" />
             </button>
             
             {/* Search Bar (Hidden on small mobile) */}
             <div className="hidden md:flex items-center gap-2 relative">
-              <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 h-4 w-4 text-slate-400" />
               <Input 
                 placeholder="Buscar..." 
-                className="h-9 w-64 rounded-full bg-muted/50 border-transparent pl-9 focus-visible:bg-background focus-visible:border-movacheck-primary transition-all"
+                className="h-9 w-64 rounded-full bg-slate-100 border-transparent pl-9 focus-visible:bg-white focus-visible:border-movacheck-blue transition-all placeholder:text-slate-400"
               />
             </div>
           </div>
@@ -278,24 +278,24 @@ const DashboardLayout = () => {
             <ThemeToggle />
             
             <div 
-              className="relative cursor-pointer p-2 hover:bg-muted rounded-full transition-colors" 
+              className="relative cursor-pointer p-2 hover:bg-slate-100 rounded-full transition-colors" 
               onClick={() => navigate('/messages')}
             >
-              <Bell className="h-5 w-5 text-muted-foreground" />
+              <Bell className="h-5 w-5 text-slate-600" />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-movacheck-error ring-2 ring-background" />
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-white" />
               )}
             </div>
 
-            <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
+            <div className="h-8 w-px bg-slate-200 mx-1 hidden sm:block" />
 
             <div className="flex items-center gap-3">
               <div className="hidden sm:block text-right">
-                <p className="text-sm font-medium leading-none">Hola, {userProfile?.nombre}</p>
-                <p className="text-xs text-muted-foreground mt-1">{userProfile?.tenants?.nombre}</p>
+                <p className="text-sm font-medium leading-none text-slate-700">Hola, {userProfile?.nombre}</p>
+                <p className="text-xs text-slate-500 mt-1">{userProfile?.tenants?.nombre}</p>
               </div>
-              <Avatar className="h-8 w-8 ring-2 ring-offset-2 ring-movacheck-primary/20 cursor-pointer" onClick={() => navigate('/settings')}>
-                <AvatarFallback className="bg-gradient-to-br from-movacheck-primary to-blue-500 text-white font-bold text-xs">
+              <Avatar className="h-8 w-8 ring-2 ring-offset-2 ring-blue-100 cursor-pointer" onClick={() => navigate('/settings')}>
+                <AvatarFallback className="bg-gradient-to-br from-movacheck-blue to-indigo-600 text-white font-bold text-xs">
                   {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
                 </AvatarFallback>
               </Avatar>
@@ -304,7 +304,7 @@ const DashboardLayout = () => {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto bg-muted/30">
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto bg-slate-50/50">
           <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
             <Outlet />
           </div>

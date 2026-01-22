@@ -8,15 +8,16 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-movacheck-primary text-movacheck-navy hover:bg-movacheck-hover shadow-sm",
+        default: "bg-movacheck-blue text-white hover:bg-movacheck-blueHover shadow-sm border border-transparent",
+        success: "bg-movacheck-mint text-white hover:bg-movacheck-mintHover shadow-sm",
         destructive:
-          "bg-movacheck-error text-destructive-foreground hover:bg-movacheck-error/90",
+          "bg-red-600 text-white hover:bg-red-700 shadow-sm",
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+          "border border-input bg-white hover:bg-slate-50 hover:text-movacheck-blue text-slate-700",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-white border border-movacheck-blue text-movacheck-blue hover:bg-blue-50",
+        ghost: "hover:bg-slate-100 hover:text-movacheck-blue",
+        link: "text-movacheck-blue underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2",
