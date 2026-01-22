@@ -8,7 +8,8 @@ import { CalendarOff, UserCog, Edit2, Trash2, ShieldAlert, Plus, RefreshCw } fro
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { AbsenceModal } from "../personnel/AbsenceModal"; // Reutilizamos el modal
+import { AbsenceModal } from "../personnel/AbsenceModal";
+import { parseLocalDate } from "@/lib/utils"; // Importamos la función que corrige la zona horaria
 
 export default function AbsencesPage() {
   const { toast } = useToast();
@@ -20,8 +21,6 @@ export default function AbsencesPage() {
 
   const fetchAbsences = async () => {
     setLoading(true);
-    // CORRECCIÓN: Eliminamos el filtro .gte('fecha_hasta', today) para ver TODO el historial.
-    // Esto asegura que si registraste algo para ayer o hoy, aparezca siempre.
     const { data: absData, error: absError } = await supabase
       .from('user_absences')
       .select(`
@@ -30,7 +29,7 @@ export default function AbsencesPage() {
         profiles:user_id (nombre, apellido, email),
         receptor:receptor_id (nombre, apellido)
       `)
-      .order('created_at', { ascending: false }); // Ordenar por fecha de creación (lo más nuevo primero)
+      .order('created_at', { ascending: false });
     
     if (absError) {
        console.error("Error fetching absences:", absError);
@@ -120,7 +119,10 @@ export default function AbsencesPage() {
                     <TableCell>
                       <div className="flex items-center gap-2 text-sm">
                         <CalendarOff className="w-4 h-4 text-muted-foreground" />
-                        <span>{format(new Date(abs.fecha_desde), "dd/MM/yyyy")} - {format(new Date(abs.fecha_hasta), "dd/MM/yyyy")}</span>
+                        {/* AQUÍ ESTÁ EL CAMBIO CLAVE: Usamos parseLocalDate en lugar de new Date() */}
+                        <span>
+                          {format(parseLocalDate(abs.fecha_desde), "dd/MM/yyyy")} - {format(parseLocalDate(abs.fecha_hasta), "dd/MM/yyyy")}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
