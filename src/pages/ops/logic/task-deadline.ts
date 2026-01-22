@@ -15,12 +15,18 @@ export function calculateTaskDeadline(task: any): Date {
   const timeStr = task.hora_limite_snapshot || '23:59:00';
   const rutina = task.routine_templates;
 
+  // Función auxiliar para parsear HH:MM:SS
+  const setTime = (dateTarget: Date, timeString: string) => {
+    const [hours, minutes, seconds] = timeString.split(':').map(Number);
+    // Usamos ?? en lugar de || para permitir que 0 sea un valor válido
+    dateTarget.setHours(hours ?? 23, minutes ?? 59, seconds ?? 0);
+    return dateTarget;
+  };
+
   // Si no hay datos de rutina, fallback a la fecha programada simple
   if (!rutina) {
      const deadline = new Date(baseDate);
-     const [hours, minutes, seconds] = timeStr.split(':').map(Number);
-     deadline.setHours(hours || 23, minutes || 59, seconds || 0);
-     return deadline;
+     return setTime(deadline, timeStr);
   }
 
   let targetDay = baseDate.getDate();
@@ -52,8 +58,5 @@ export function calculateTaskDeadline(task: any): Date {
 
   // Construir fecha final combinada
   const deadline = new Date(year, month, targetDay);
-  const [hours, minutes, seconds] = timeStr.split(':').map(Number);
-  deadline.setHours(hours || 23, minutes || 59, seconds || 0);
-
-  return deadline;
+  return setTime(deadline, timeStr);
 }
