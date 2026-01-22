@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText, Box } from "lucide-react";
+import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -170,7 +170,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col p-0 gap-0">
         
         {/* Header Fijo */}
-        <DialogHeader className="p-6 pb-4 border-b bg-muted/10">
+        <DialogHeader className="p-6 pb-4 border-b bg-muted/10 shrink-0">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               {/* Badge de Tiempo */}
@@ -215,7 +215,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
         </DialogHeader>
 
         {/* Scrollable Content */}
-        <ScrollArea className="flex-1 max-h-[60vh]">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="p-6">
             <Tabs defaultValue="details" className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
@@ -392,7 +392,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
         </ScrollArea>
 
         {/* Footer de Acción Fijo */}
-        <div className="p-6 border-t bg-muted/10 mt-auto">
+        <div className="p-6 border-t bg-muted/10 mt-auto shrink-0">
           <div className="space-y-3">
             <div className="space-y-1">
               <Label htmlFor="audit-notes">Notas de Auditoría</Label>
