@@ -22,7 +22,6 @@ import {
   Bell,
   Users,
   CalendarOff,
-  Search,
   Check
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -30,7 +29,6 @@ import { cn } from "@/lib/utils";
 import { useNotifications } from "@/hooks/use-notifications";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
 
 // Sidebar Group Component
 const SidebarGroup = ({ title, children }: any) => (
@@ -169,8 +167,12 @@ const DashboardLayout = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-movacheck-navy">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 rounded-xl bg-movacheck-blue flex items-center justify-center shadow-lg shadow-blue-500/20">
-             <Check className="h-7 w-7 text-white stroke-[3]" />
+          <div className="h-20 w-20 rounded-full overflow-hidden shadow-lg shadow-blue-500/20">
+             <img 
+               src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
+               alt="Movacheck" 
+               className="h-full w-full object-cover" 
+             />
           </div>
           <p className="text-sm font-medium text-slate-400 animate-pulse">Cargando sistema...</p>
         </div>
@@ -196,11 +198,15 @@ const DashboardLayout = () => {
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Logo Area */}
+        {/* Logo Area (Sidebar) */}
         <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/5 bg-movacheck-navy">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-movacheck-blue text-white shadow-lg shadow-blue-500/30">
-              <Check className="h-5 w-5 stroke-[3]" />
+            <div className="h-8 w-8 overflow-hidden rounded-lg">
+              <img 
+                src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
+                alt="Movacheck" 
+                className="h-full w-full object-cover" 
+              />
             </div>
             <span className="text-lg font-bold tracking-tight text-white">Movacheck</span>
           </div>
@@ -267,13 +273,14 @@ const DashboardLayout = () => {
               <Menu className="h-6 w-6" />
             </button>
             
-            {/* Search (Desktop) */}
-            <div className="hidden md:flex items-center gap-2 relative">
-              <Search className="absolute left-3 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Buscar en la plataforma..." 
-                className="h-9 w-72 rounded-full bg-accent/50 border-transparent pl-9 focus-visible:bg-card focus-visible:border-movacheck-blue transition-all"
-              />
+            {/* Mobile/Tablet Brand (Visible when sidebar is hidden) */}
+            <div className="lg:hidden flex items-center gap-2">
+                <img 
+                  src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
+                  alt="Movacheck" 
+                  className="h-8 w-8 rounded-full object-cover" 
+                />
+                <span className="font-bold text-lg tracking-tight">Movacheck</span>
             </div>
           </div>
 
