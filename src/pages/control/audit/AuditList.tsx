@@ -271,7 +271,8 @@ export default function AuditList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Fecha</TableHead>
+                  <TableHead>Programada</TableHead>
+                  <TableHead>Ejecutada</TableHead>
                   <TableHead>Rutina / Requisitos</TableHead>
                   <TableHead>PDV</TableHead>
                   <TableHead>Ejecución</TableHead>
@@ -282,7 +283,7 @@ export default function AuditList() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       <div className="flex justify-center items-center gap-2">
                         <Clock className="w-4 h-4 animate-spin text-primary" /> Cargando...
                       </div>
@@ -290,7 +291,7 @@ export default function AuditList() {
                   </TableRow>
                 ) : filteredTasks.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                       <div className="flex flex-col items-center justify-center">
                         <Search className="w-8 h-8 mb-2 opacity-20" />
                         <p>No se encontraron tareas con los filtros seleccionados.</p>
@@ -302,9 +303,12 @@ export default function AuditList() {
                     const r = task.routine_templates || {};
                     return (
                       <TableRow key={task.id}>
+                        <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
+                          {task.fecha_programada ? format(new Date(task.fecha_programada + 'T12:00:00'), "dd MMM", { locale: es }) : '-'}
+                        </TableCell>
                         <TableCell className="text-xs whitespace-nowrap">
                           <div className="flex flex-col">
-                            <span className="font-medium">{task.completado_at ? format(new Date(task.completado_at), "dd MMM") : '-'}</span>
+                            <span className="font-medium">{task.completado_at ? format(new Date(task.completado_at), "dd MMM", { locale: es }) : '-'}</span>
                             <span className="text-muted-foreground">{task.completado_at ? format(new Date(task.completado_at), "HH:mm") : '-'}</span>
                           </div>
                         </TableCell>
