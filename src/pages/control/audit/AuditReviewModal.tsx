@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -265,7 +266,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
                 {/* 4. Inventario - FULLY EXPANDED TABLE */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg bg-card shadow-sm flex flex-col">
+                  <div className="border rounded-lg bg-card shadow-sm flex flex-col overflow-hidden">
                     <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center shrink-0">
                       <h4 className="font-semibold text-sm flex items-center gap-2">
                         <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
@@ -280,39 +281,39 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      // NO overflow-hidden or fixed height here
+                      // NO overflow-hidden or fixed height here. w-full is enough.
                       <div className="w-full">
-                        <table className="w-full text-sm">
-                          <thead className="bg-muted/50 border-b">
-                            <tr>
-                              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Producto</th>
-                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Físico</th>
-                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Sistema</th>
-                              <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px]">Diferencia</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y">
+                        <Table>
+                          <TableHeader className="bg-muted/50">
+                            <TableRow>
+                              <TableHead className="text-left font-medium text-muted-foreground">Producto</TableHead>
+                              <TableHead className="text-center font-medium text-muted-foreground w-[100px]">Físico</TableHead>
+                              <TableHead className="text-center font-medium text-muted-foreground w-[100px]">Sistema</TableHead>
+                              <TableHead className="text-right font-medium text-muted-foreground w-[100px]">Diferencia</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
                             {inventoryRows.map((row) => (
-                              <tr key={row.id} className="hover:bg-muted/20 transition-colors">
-                                <td className="px-4 py-3">
+                              <TableRow key={row.id} className="hover:bg-muted/20 transition-colors">
+                                <TableCell>
                                   <div className="font-medium text-slate-900">{row.inventory_products?.nombre}</div>
                                   <div className="text-[10px] text-muted-foreground flex gap-2 mt-0.5">
                                     <span className="bg-muted px-1.5 py-0.5 rounded">SKU: {row.inventory_products?.codigo_sku || '-'}</span>
                                     <span className="bg-muted px-1.5 py-0.5 rounded">Unidad: {row.inventory_products?.unidad || '-'}</span>
                                   </div>
-                                </td>
-                                <td className="text-center px-2 py-3">
-                                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block min-w-[30px]">
                                     {row.fisico}
                                   </span>
-                                </td>
-                                <td className="text-center px-2 py-3">
-                                  <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded inline-block min-w-[30px]">
                                     {row.esperado}
                                   </span>
-                                </td>
-                                <td className="text-right px-4 py-3">
-                                  <span className={`font-bold px-2 py-1 rounded ${
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <span className={`font-bold px-2 py-1 rounded inline-block min-w-[30px] text-center ${
                                     row.diferencia === 0 
                                       ? 'text-green-700 bg-green-50' 
                                       : row.diferencia > 0 
@@ -321,11 +322,11 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                                   }`}>
                                     {row.diferencia > 0 ? '+' : ''}{row.diferencia}
                                   </span>
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
                             ))}
-                          </tbody>
-                        </table>
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
