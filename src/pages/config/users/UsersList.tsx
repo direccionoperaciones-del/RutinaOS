@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, UserCog, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { EditUserModal } from "../personnel/EditUserModal"; // Reutilizamos el modal existente
+import { EditUserModal } from "../personnel/EditUserModal";
 
 export default function UsersList() {
   const { toast } = useToast();
@@ -94,6 +94,7 @@ export default function UsersList() {
             {filteredUsers.map((user) => (
               <Card key={user.id} className={`p-4 shadow-sm flex items-center gap-4 ${!user.activo ? 'opacity-70 bg-muted/30' : ''}`}>
                 <Avatar className="h-10 w-10">
+                  <AvatarImage src={user.avatar_url} />
                   <AvatarFallback className={!user.activo ? "bg-gray-200" : ""}>
                     {user.nombre?.[0]}{user.apellido?.[0]}
                   </AvatarFallback>
@@ -138,6 +139,7 @@ export default function UsersList() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar>
+                          <AvatarImage src={user.avatar_url} />
                           <AvatarFallback className={!user.activo ? "bg-gray-200" : ""}>
                             {user.nombre?.[0]}{user.apellido?.[0]}
                           </AvatarFallback>

@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function SettingsPage() {
@@ -23,6 +24,8 @@ export default function SettingsPage() {
   });
   
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Cargar datos cuando el perfil esté listo
   useEffect(() => {
@@ -31,6 +34,7 @@ export default function SettingsPage() {
         nombre: profile.nombre || "",
         apellido: profile.apellido || ""
       });
+      setAvatarUrl(profile.avatar_url);
     }
   }, [profile]);
 
@@ -48,10 +52,56 @@ export default function SettingsPage() {
       if (error) throw error;
 
       toast({ title: "Perfil actualizado", description: "Tus datos personales han sido guardados." });
+      // Forzar recarga de página para actualizar el contexto global si es necesario
+      setTimeout(() => window.location.reload(), 1000);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('Debes seleccionar una imagen.');
+      }
+
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${profile.id}/${Math.random()}.${fileExt}`;
+
+      // 1. Subir imagen
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Obtener URL pública
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // 3. Actualizar perfil
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', profile.id);
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+      toast({ title: "Foto actualizada", description: "Tu nueva foto de perfil se ha guardado." });
+      
+      // Recargar página para ver cambios en sidebar
+      setTimeout(() => window.location.reload(), 800);
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al subir imagen", description: error.message });
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -104,7 +154,41 @@ export default function SettingsPage() {
               <CardTitle>Información Personal</CardTitle>
               <CardDescription>Estos datos aparecerán en los reportes y registros.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              
+              {/* Avatar Section */}
+              <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
+                <div className="relative group">
+                  <Avatar className="w-24 h-24 border-2 border-muted">
+                    <AvatarImage src={avatarUrl || ""} objectFit="cover" />
+                    <AvatarFallback className="text-2xl bg-slate-100">
+                      {profile?.nombre?.[0]}{profile?.apellido?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  <label 
+                    htmlFor="avatar-upload" 
+                    className="absolute bottom-0 right-0 p-1.5 bg-primary text-white rounded-full cursor-pointer hover:bg-primary/90 transition-colors shadow-sm"
+                    title="Cambiar foto"
+                  >
+                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                  </label>
+                  <input 
+                    id="avatar-upload" 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleAvatarUpload}
+                    disabled={uploading}
+                  />
+                </div>
+                <div className="flex-1 space-y-1 text-center sm:text-left">
+                  <h3 className="font-medium">Foto de Perfil</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Sube una imagen para identificarte en la plataforma. Formatos: JPG, PNG.
+                  </p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Nombre</Label>

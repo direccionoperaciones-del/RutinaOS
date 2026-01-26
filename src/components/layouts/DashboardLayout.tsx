@@ -27,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/hooks/use-notifications";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
 // Sidebar Group Component
@@ -243,6 +243,7 @@ const DashboardLayout = () => {
         <div className="border-t border-white/5 p-4 bg-black/20">
           <div className="flex items-center gap-3 rounded-lg bg-white/5 p-3 hover:bg-white/10 transition-colors cursor-pointer group" onClick={handleLogout}>
             <Avatar className="h-9 w-9 border border-white/10">
+              <AvatarImage src={userProfile?.avatar_url} />
               <AvatarFallback className="bg-slate-800 text-white font-bold text-xs">
                 {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
               </AvatarFallback>
@@ -301,12 +302,13 @@ const DashboardLayout = () => {
 
             <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
 
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/settings')}>
+            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/settings')}>
               <div className="hidden sm:block text-right">
                 <p className="text-sm font-medium leading-none text-foreground">{userProfile?.nombre}</p>
                 <p className="text-xs text-muted-foreground mt-1">{userProfile?.tenants?.nombre}</p>
               </div>
               <Avatar className="h-8 w-8 ring-2 ring-transparent group-hover:ring-movacheck-blue transition-all">
+                <AvatarImage src={userProfile?.avatar_url} />
                 <AvatarFallback className="bg-gradient-to-br from-movacheck-blue to-indigo-600 text-white font-bold text-xs">
                   {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
                 </AvatarFallback>
