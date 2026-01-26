@@ -26,14 +26,17 @@ export default function MessageList() {
   const [loading, setLoading] = useState(true);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   
+  // Estado para controlar qué acordeón está abierto y evitar que se cierre al recargar
+  const [openedItem, setOpenedItem] = useState<string | undefined>(undefined);
+  
   const [readDetailsOpen, setReadDetailsOpen] = useState(false);
   const [selectedSentMessage, setSelectedSentMessage] = useState<any>(null);
   const [readReceiptsDetail, setReadReceiptsDetail] = useState<any[]>([]);
 
-  // Función de carga de datos
-  const fetchMessages = async () => {
+  // Función de carga de datos (con opción de carga silenciosa)
+  const fetchMessages = async (isBackground = false) => {
     if (!user) return;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
     
     try {
       // 1. RECIBIDOS (Mensajes Directos / Comunicados)
@@ -146,12 +149,12 @@ export default function MessageList() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMessages();
+    fetchMessages(false); // Carga inicial con spinner
   }, [user, profile]);
 
   // SUSCRIPCIÓN EN TIEMPO REAL
@@ -160,8 +163,9 @@ export default function MessageList() {
 
     const channel = supabase
       .channel('inbox-unified-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
+      // Usamos isBackground=true para evitar parpadeos
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` }, () => fetchMessages(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchMessages(true))
       .subscribe();
 
     return () => {
@@ -169,15 +173,18 @@ export default function MessageList() {
     };
   }, [user]);
 
-  const handleOpenMessage = async (msg: any) => {
-    // Si ya está leído, no hacemos update, pero expandimos
-    if (msg.leido_at) return;
+  const handleOpenMessage = async (val: string) => {
+    setOpenedItem(val); // Actualizamos estado del acordeón
+    if (!val) return; // Si está cerrando, no hacemos nada más
+
+    const msg = inboxMessages.find(m => m.unique_id === val);
+    if (!msg || msg.leido_at) return; // Si ya está leído, no hacemos update
 
     const now = new Date().toISOString();
     
     // 1. Optimistic Update UI (Quitar badge de 'Nuevo' localmente)
     setInboxMessages(prev => prev.map(m => 
-      m.unique_id === msg.unique_id ? { ...m, leido_at: now } : m
+      m.unique_id === val ? { ...m, leido_at: now } : m
     ));
 
     try {
@@ -278,14 +285,20 @@ export default function MessageList() {
               <p>No tienes mensajes nuevos.</p>
             </div>
           ) : (
-            <Accordion type="single" collapsible className="space-y-2">
+            <Accordion 
+              type="single" 
+              collapsible 
+              className="space-y-2"
+              value={openedItem}
+              onValueChange={handleOpenMessage}
+            >
               {inboxMessages.map((msg) => (
                 <AccordionItem 
                   key={msg.unique_id} 
                   value={msg.unique_id} 
                   className={`border rounded-lg px-4 transition-colors ${!msg.leido_at ? 'bg-blue-50/60 border-blue-200' : 'bg-card'}`}
                 >
-                  <AccordionTrigger className="hover:no-underline py-3" onClick={() => handleOpenMessage(msg)}>
+                  <AccordionTrigger className="hover:no-underline py-3">
                     <div className="flex items-center gap-4 w-full text-left">
                       <div className="shrink-0">{getIcon(msg.tipo)}</div>
                       <div className="flex-1 overflow-hidden">
@@ -428,7 +441,7 @@ export default function MessageList() {
       <NewMessageModal 
         open={isNewModalOpen} 
         onOpenChange={setIsNewModalOpen} 
-        onSuccess={fetchMessages}
+        onSuccess={() => fetchMessages(false)} 
       />
     </div>
   );
