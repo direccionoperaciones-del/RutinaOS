@@ -115,10 +115,11 @@ export default function CalendarPage() {
     pending: statusDates.pending
   };
   
+  // Colores ajustados para modo oscuro
   const modifiersClassNames = {
-    failed: "bg-red-100 text-red-700 font-bold hover:bg-red-200 rounded-md",
-    completed: "bg-green-100 text-green-700 font-bold hover:bg-green-200 rounded-md",
-    pending: "bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 rounded-md"
+    failed: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-200 font-bold hover:bg-red-200 dark:hover:bg-red-900/70 rounded-md",
+    completed: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200 font-bold hover:bg-green-200 dark:hover:bg-green-900/70 rounded-md",
+    pending: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md"
   };
 
   return (
@@ -152,15 +153,15 @@ export default function CalendarPage() {
             <CardContent className="p-4 pt-6">
               <div className="space-y-3 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-green-100 border border-green-200" />
+                  <div className="w-4 h-4 rounded bg-green-100 border border-green-200 dark:bg-green-900/50 dark:border-green-800" />
                   <span>Completado a tiempo</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-slate-100 border border-slate-200" />
+                  <div className="w-4 h-4 rounded bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700" />
                   <span>Pendiente (En tiempo)</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-red-100 border border-red-200" />
+                  <div className="w-4 h-4 rounded bg-red-100 border border-red-200 dark:bg-red-900/50 dark:border-red-800" />
                   <span>Vencido / Incumplido</span>
                 </div>
               </div>
@@ -208,19 +209,27 @@ export default function CalendarPage() {
 
                     const isPendingOnTime = task.estado === 'pendiente' && now <= deadline;
 
-                    // Estilos dinámicos
-                    let containerClass = "bg-card border-border";
-                    let icon = <div className={`w-5 h-5 rounded-full border-2 border-gray-300`} />;
+                    // Estilos dinámicos adaptados para dark mode
+                    let containerClass = "";
+                    let icon = null;
+                    let titleClass = "";
+                    let timeClass = "";
                     
                     if (isSuccess) {
-                      containerClass = "bg-green-50/40 border-green-200";
-                      icon = <CheckCircle2 className="w-5 h-5 text-green-600" />;
+                      containerClass = "bg-green-50/40 border-green-200 dark:bg-green-900/20 dark:border-green-800";
+                      icon = <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />;
+                      titleClass = "text-slate-800 dark:text-slate-100";
+                      timeClass = "text-green-700 dark:text-green-400";
                     } else if (isOverdue) {
-                      containerClass = "bg-red-50/40 border-red-200";
-                      icon = <AlertCircle className="w-5 h-5 text-red-500" />;
+                      containerClass = "bg-red-50/40 border-red-200 dark:bg-red-900/20 dark:border-red-800";
+                      icon = <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400" />;
+                      titleClass = "text-red-700 dark:text-red-200";
+                      timeClass = "text-red-600 dark:text-red-400 font-bold";
                     } else if (isPendingOnTime) {
-                      containerClass = "bg-white border-gray-200";
-                      icon = <div className="w-5 h-5 rounded-full border-2 border-gray-300" />;
+                      containerClass = "bg-white border-gray-200 dark:bg-slate-900 dark:border-slate-700";
+                      icon = <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-slate-600" />;
+                      titleClass = "text-slate-800 dark:text-slate-100";
+                      timeClass = "text-muted-foreground";
                     }
                     
                     return (
@@ -234,18 +243,18 @@ export default function CalendarPage() {
                         
                         <div className="flex-1">
                           <div className="flex justify-between items-start">
-                            <h4 className={`font-semibold text-sm ${isOverdue && !isSuccess ? 'text-red-700' : ''}`}>
+                            <h4 className={`font-semibold text-sm ${titleClass}`}>
                               {task.routine_templates?.nombre}
                             </h4>
                             <div className="flex flex-col items-end">
-                              <span className={`text-xs font-mono flex items-center gap-1 ${isOverdue ? 'text-red-600 font-bold' : 'text-muted-foreground'}`}>
+                              <span className={`text-xs font-mono flex items-center gap-1 ${timeClass}`}>
                                 <Clock className="w-3 h-3" />
                                 {task.hora_limite_snapshot?.slice(0,5)}
                               </span>
                               
                               {/* Texto de Estado explícito */}
                               {isOverdue && task.estado === 'pendiente' && (
-                                <span className="text-[10px] text-red-600 font-bold uppercase mt-0.5">Vencida</span>
+                                <span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase mt-0.5">Vencida</span>
                               )}
                             </div>
                           </div>
@@ -256,7 +265,7 @@ export default function CalendarPage() {
                           </div>
 
                           {isSuccess && (
-                            <div className="mt-2 text-[10px] text-green-700 bg-green-100/50 w-fit px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <div className="mt-2 text-[10px] text-green-700 bg-green-100/50 dark:bg-green-900/40 dark:text-green-300 w-fit px-2 py-0.5 rounded-full flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3"/>
                               Completado por: {task.profiles?.nombre} {task.profiles?.apellido}
                             </div>
@@ -264,7 +273,7 @@ export default function CalendarPage() {
                         </div>
                         
                         <div>
-                          <Badge variant="outline" className="capitalize text-[10px] bg-white">
+                          <Badge variant="outline" className="capitalize text-[10px] bg-white dark:bg-slate-800 dark:border-slate-600">
                             {task.routine_templates?.prioridad}
                           </Badge>
                         </div>
