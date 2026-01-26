@@ -72,22 +72,60 @@ export default function MessageList() {
 
       if (notifError) console.error("Error notifications:", notifError);
 
-      const formattedNotifications = notifications?.map((n: any) => ({
-        unique_id: `notif_${n.id}`,
-        receipt_id: n.id, // Usamos ID de notificación como receipt_id para la lógica de lectura
-        source: 'notification',
-        tipo: n.type, 
-        asunto: n.title,
-        cuerpo: n.title.includes('Rechazada') && !n.title.includes('Motivo') // Fallback para notificaciones antiguas
-          ? "Tu tarea requiere correcciones. Revisa el módulo de Mis Tareas."
-          : "Notificación del sistema.", 
-        prioridad: n.type === 'routine_rejected' ? 'alta' : 'normal',
-        requiere_confirmacion: false,
-        created_at: n.created_at,
-        leido_at: n.leido ? n.created_at : null,
-        timestamp: new Date(n.created_at).getTime(),
-        entity_id: n.entity_id
-      })) || [];
+      // --- ENRIQUECIMIENTO DE DATOS ---
+      // Obtenemos los IDs de las tareas referenciadas en las notificaciones
+      const taskIds = notifications
+        ?.filter(n => n.type === 'routine_rejected' || n.type === 'routine_approved')
+        .map(n => n.entity_id) || [];
+      
+      // Consultamos los detalles de esas tareas (PDV, Rutina, Fecha)
+      let tasksMap = new Map();
+      if (taskIds.length > 0) {
+        const { data: tasksInfo } = await supabase
+          .from('task_instances')
+          .select(`
+            id, 
+            fecha_programada, 
+            pdv (nombre, ciudad), 
+            routine_templates (nombre)
+          `)
+          .in('id', taskIds);
+          
+        tasksInfo?.forEach(t => tasksMap.set(t.id, t));
+      }
+
+      const formattedNotifications = notifications?.map((n: any) => {
+        const task = tasksMap.get(n.entity_id);
+        let cuerpo = "Notificación del sistema.";
+        let asunto = n.title;
+
+        // Construimos un mensaje detallado si encontramos la tarea asociada
+        if (task) {
+          if (n.type === 'routine_rejected') {
+            cuerpo = `⚠️ **TAREA RECHAZADA**\n\n📍 **PDV:** ${task.pdv?.nombre} (${task.pdv?.ciudad})\n📋 **Rutina:** ${task.routine_templates?.nombre}\n📅 **Fecha:** ${task.fecha_programada}\n\nPor favor ve a "Mis Tareas" y revisa la nota del auditor para corregirla.`;
+          } else if (n.type === 'routine_approved') {
+            cuerpo = `✅ **TAREA APROBADA**\n\n📍 **PDV:** ${task.pdv?.nombre}\n📋 **Rutina:** ${task.routine_templates?.nombre}\n📅 **Fecha:** ${task.fecha_programada}`;
+          }
+        } else if (n.type === 'routine_rejected') {
+          // Fallback si no se encuentra la tarea (ej. fue borrada)
+          cuerpo = "Tu tarea ha sido rechazada. Revisa el módulo de Mis Tareas para más detalles.";
+        }
+
+        return {
+          unique_id: `notif_${n.id}`,
+          receipt_id: n.id,
+          source: 'notification',
+          tipo: n.type,
+          asunto: asunto,
+          cuerpo: cuerpo,
+          prioridad: n.type === 'routine_rejected' ? 'alta' : 'normal',
+          requiere_confirmacion: false,
+          created_at: n.created_at,
+          leido_at: n.leido ? n.created_at : null,
+          timestamp: new Date(n.created_at).getTime(),
+          entity_id: n.entity_id
+        };
+      }) || [];
       
       // 3. UNIFICAR Y ORDENAR
       const combinedInbox = [...formattedMessages, ...formattedNotifications];
@@ -157,7 +195,6 @@ export default function MessageList() {
       }
       
       // 3. ACTUALIZAR CONTADOR GLOBAL (Campanita)
-      // Invalidamos la query para que el hook useNotifications haga refetch
       await queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
       
     } catch (err) {
