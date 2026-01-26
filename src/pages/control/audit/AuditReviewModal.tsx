@@ -279,9 +279,9 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      <div className="text-sm">
+                      <div className="text-sm max-h-[350px] overflow-y-auto">
                         <Table>
-                          <TableHeader className="bg-muted/20">
+                          <TableHeader className="bg-muted/20 sticky top-0 z-10 shadow-sm">
                             <TableRow>
                               <TableHead>Producto</TableHead>
                               <TableHead className="text-center w-[100px]">Físico</TableHead>
