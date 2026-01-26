@@ -152,6 +152,12 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
     return data.publicUrl;
   };
 
+  // --- DEBUGGING LOGS ---
+  if (config.requiere_inventario) {
+    console.log('🔍 INVENTORY ITEMS:', inventoryRows);
+    console.log('🔍 LENGTH:', inventoryRows?.length);
+  }
+
   if (!task) return null;
 
   return (
@@ -264,9 +270,9 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 4. Inventario - FULLY EXPANDED TABLE */}
+                {/* 4. Inventario - FIX: REMOVED overflow-hidden FROM PARENT */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg bg-card shadow-sm flex flex-col overflow-hidden">
+                  <div className="border rounded-lg bg-card shadow-sm flex flex-col">
                     <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center shrink-0">
                       <h4 className="font-semibold text-sm flex items-center gap-2">
                         <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
@@ -281,39 +287,39 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      // NO overflow-hidden or fixed height here. w-full is enough.
+                      // NO overflow-hidden or fixed height here
                       <div className="w-full">
                         <Table>
                           <TableHeader className="bg-muted/50">
                             <TableRow>
-                              <TableHead className="text-left font-medium text-muted-foreground">Producto</TableHead>
-                              <TableHead className="text-center font-medium text-muted-foreground w-[100px]">Físico</TableHead>
-                              <TableHead className="text-center font-medium text-muted-foreground w-[100px]">Sistema</TableHead>
-                              <TableHead className="text-right font-medium text-muted-foreground w-[100px]">Diferencia</TableHead>
+                              <TableHead className="text-left px-4 py-3 font-medium text-muted-foreground">Producto</TableHead>
+                              <TableHead className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Físico</TableHead>
+                              <TableHead className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Sistema</TableHead>
+                              <TableHead className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px]">Diferencia</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {inventoryRows.map((row) => (
                               <TableRow key={row.id} className="hover:bg-muted/20 transition-colors">
-                                <TableCell>
+                                <TableCell className="px-4 py-3">
                                   <div className="font-medium text-slate-900">{row.inventory_products?.nombre}</div>
                                   <div className="text-[10px] text-muted-foreground flex gap-2 mt-0.5">
                                     <span className="bg-muted px-1.5 py-0.5 rounded">SKU: {row.inventory_products?.codigo_sku || '-'}</span>
                                     <span className="bg-muted px-1.5 py-0.5 rounded">Unidad: {row.inventory_products?.unidad || '-'}</span>
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-center">
-                                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block min-w-[30px]">
+                                <TableCell className="text-center px-2 py-3">
+                                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
                                     {row.fisico}
                                   </span>
                                 </TableCell>
-                                <TableCell className="text-center">
-                                  <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded inline-block min-w-[30px]">
+                                <TableCell className="text-center px-2 py-3">
+                                  <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded">
                                     {row.esperado}
                                   </span>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <span className={`font-bold px-2 py-1 rounded inline-block min-w-[30px] text-center ${
+                                <TableCell className="text-right px-4 py-3">
+                                  <span className={`font-bold px-2 py-1 rounded ${
                                     row.diferencia === 0 
                                       ? 'text-green-700 bg-green-50' 
                                       : row.diferencia > 0 
