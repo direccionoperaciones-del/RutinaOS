@@ -30,7 +30,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
   const [evidenceFiles, setEvidenceFiles] = useState<any[]>([]);
   const [inventoryRows, setInventoryRows] = useState<any[]>([]);
 
-  // Configuración de la rutina (alias para facilitar lectura)
+  // Configuración de la rutina
   const config = task?.routine_templates || {};
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
   const fetchTaskDetails = async () => {
     setIsLoadingDetails(true);
     try {
-      // 1. Cargar Evidencias (Fotos y Archivos)
+      // 1. Cargar Evidencias
       const { data: files } = await supabase
         .from('evidence_files')
         .select('*')
@@ -51,7 +51,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       
       if (files) setEvidenceFiles(files);
 
-      // 2. Cargar Inventario (Si aplica)
+      // 2. Cargar Inventario
       if (config.requiere_inventario) {
         const { data: inv, error: invError } = await supabase
           .from('inventory_submission_rows')
@@ -62,6 +62,9 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
           console.error("Error loading inventory:", invError);
         } else if (inv) {
           setInventoryRows(inv);
+          // DIAGNOSTICO: Verificar datos cargados
+          console.log("🔍 INVENTORY ITEMS LOADED:", inv);
+          console.log("🔍 LENGTH:", inv.length);
         }
       }
 
@@ -87,7 +90,6 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
 
-      // 1. Actualizar estado de la tarea
       const updateData = {
         audit_status: status === 'approve' ? 'aprobado' : 'rechazado',
         audit_at: new Date().toISOString(),
@@ -102,25 +104,21 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
       if (error) throw error;
 
-      // 2. Si es RECHAZO -> Enviar Mensaje Directo al usuario
+      // Notificación al usuario si es rechazo
       const targetUserId = task.profiles?.id || task.completado_por || task.responsable_id;
 
-      if (status === 'reject') {
-        if (!targetUserId) {
-           console.error("CRITICAL: No target user found for rejection message", task);
-        } else {
-          const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
+      if (status === 'reject' && targetUserId) {
+        const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
 
-          await supabase.rpc('send_broadcast_message', {
-            p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
-            p_cuerpo: messageBody,
-            p_tipo: 'mensaje',
-            p_prioridad: 'alta',
-            p_requiere_confirmacion: true,
-            p_recipient_type: 'user',
-            p_recipient_id: String(targetUserId)
-          });
-        }
+        await supabase.rpc('send_broadcast_message', {
+          p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
+          p_cuerpo: messageBody,
+          p_tipo: 'mensaje',
+          p_prioridad: 'alta',
+          p_requiere_confirmacion: true,
+          p_recipient_type: 'user',
+          p_recipient_id: String(targetUserId)
+        });
       }
 
       toast({ 
@@ -156,299 +154,301 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col p-0 gap-0">
+      <DialogContent className="sm:max-w-[800px] h-[90vh] p-0 overflow-hidden flex flex-col gap-0 border-none sm:border shadow-xl bg-background">
         
-        {/* Header Fijo */}
-        <DialogHeader className="p-6 pb-4 border-b bg-muted/10 shrink-0">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              {/* Badge de Tiempo */}
-              {task.estado === 'completada_a_tiempo' ? (
-                <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200 gap-1 pl-1">
-                  <CheckCircle2 className="w-3 h-3" /> A Tiempo
-                </Badge>
-              ) : task.estado === 'completada_vencida' ? (
-                <Badge className="bg-red-100 text-red-800 hover:bg-red-100 border-red-200 gap-1 pl-1">
-                  <Clock className="w-3 h-3" /> Vencida
-                </Badge>
-              ) : (
-                <Badge variant="secondary">Completada</Badge>
-              )}
+        {/* CONTENEDOR PRINCIPAL FLEX COLUMN */}
+        <div className="flex h-full flex-col">
 
-              <Badge variant="outline" className="capitalize border-primary/20 text-primary">
-                {config.prioridad}
-              </Badge>
-              
-              {/* Badge de Auditoría */}
-              {task.audit_status && task.audit_status !== 'pendiente' && (
-                <Badge className={getStatusColor(task.audit_status)}>
-                  {task.audit_status.toUpperCase()}
+          {/* 1. HEADER (FIJO) */}
+          <DialogHeader className="p-6 pb-4 border-b bg-muted/10 shrink-0 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-wrap">
+                {task.estado === 'completada_a_tiempo' ? (
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200 gap-1 pl-1">
+                    <CheckCircle2 className="w-3 h-3" /> A Tiempo
+                  </Badge>
+                ) : task.estado === 'completada_vencida' ? (
+                  <Badge className="bg-red-100 text-red-800 hover:bg-red-100 border-red-200 gap-1 pl-1">
+                    <Clock className="w-3 h-3" /> Vencida
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">Completada</Badge>
+                )}
+
+                <Badge variant="outline" className="capitalize border-primary/20 text-primary">
+                  {config.prioridad}
                 </Badge>
-              )}
-            </div>
-            <span className="text-xs text-muted-foreground font-mono">
-              ID: {task.id.slice(0,8)}
-            </span>
-          </div>
-          <DialogTitle className="text-xl flex items-center gap-2">
-            {config.nombre}
-          </DialogTitle>
-          <div className="text-sm text-muted-foreground flex items-center gap-4 mt-1">
-            <span className="flex items-center gap-1">
-              <User className="w-3 h-3" /> {task.profiles?.nombre} {task.profiles?.apellido}
-            </span>
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> {task.pdv?.nombre}
-            </span>
-          </div>
-        </DialogHeader>
-
-        {/* Scrollable Content - MAIN SCROLL */}
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="p-6">
-            <Tabs defaultValue="details" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="details">Detalles de Ejecución</TabsTrigger>
-                <TabsTrigger value="evidence">
-                  Evidencia y Adjuntos 
-                  {evidenceFiles.length > 0 && <Badge className="ml-2 h-5 px-1.5" variant="secondary">{evidenceFiles.length}</Badge>}
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="details" className="space-y-6">
                 
-                {/* 1. Información General */}
-                <div className="grid grid-cols-2 gap-4 text-sm border p-4 rounded-lg bg-card">
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground text-xs uppercase">Fecha Programada</Label>
-                    <p className="font-medium">{format(new Date(task.fecha_programada), "PPP", { locale: es })}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground text-xs uppercase">Fecha Ejecución</Label>
-                    <p className="font-medium">
-                      {task.completado_at 
-                        ? format(new Date(task.completado_at), "PPP p", { locale: es }) 
-                        : <span className="text-orange-600">No completada</span>}
-                    </p>
-                  </div>
-                </div>
+                {task.audit_status && task.audit_status !== 'pendiente' && (
+                  <Badge className={getStatusColor(task.audit_status)}>
+                    {task.audit_status.toUpperCase()}
+                  </Badge>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground font-mono hidden sm:inline-block">
+                ID: {task.id.slice(0,8)}
+              </span>
+            </div>
+            
+            <div>
+              <DialogTitle className="text-xl flex items-center gap-2">
+                {config.nombre}
+              </DialogTitle>
+              <div className="text-sm text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+                <span className="flex items-center gap-1">
+                  <User className="w-3 h-3" /> {task.profiles?.nombre} {task.profiles?.apellido}
+                </span>
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3 h-3" /> {task.pdv?.nombre}
+                </span>
+              </div>
+            </div>
+          </DialogHeader>
 
-                {/* 2. Notas/Comentarios del Usuario */}
-                {task.comentario && (
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase text-muted-foreground flex items-center gap-2">
-                      <MessageSquareText className="w-3 h-3" /> Notas del Ejecutor
-                    </Label>
-                    <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-md text-sm text-blue-900">
-                      "{task.comentario}"
+          {/* 2. BODY (SCROLLEABLE) */}
+          <ScrollArea className="flex-1 min-h-0 w-full">
+            <div className="p-6">
+              <Tabs defaultValue="details" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 mb-6">
+                  <TabsTrigger value="details">Detalles de Ejecución</TabsTrigger>
+                  <TabsTrigger value="evidence">
+                    Evidencia y Adjuntos 
+                    {evidenceFiles.length > 0 && <Badge className="ml-2 h-5 px-1.5" variant="secondary">{evidenceFiles.length}</Badge>}
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="details" className="space-y-6 mt-0">
+                  
+                  {/* Info General */}
+                  <div className="grid grid-cols-2 gap-4 text-sm border p-4 rounded-lg bg-card">
+                    <div className="space-y-1">
+                      <Label className="text-muted-foreground text-xs uppercase">Fecha Programada</Label>
+                      <p className="font-medium">{format(new Date(task.fecha_programada), "PPP", { locale: es })}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-muted-foreground text-xs uppercase">Fecha Ejecución</Label>
+                      <p className="font-medium">
+                        {task.completado_at 
+                          ? format(new Date(task.completado_at), "PPP p", { locale: es }) 
+                          : <span className="text-orange-600">No completada</span>}
+                      </p>
                     </div>
                   </div>
-                )}
 
-                {/* 3. GPS */}
-                {config.gps_obligatorio && (
-                  <div className={`p-4 rounded-lg border flex items-start gap-3 ${task.gps_en_rango ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                    {task.gps_en_rango ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <h4 className={`font-semibold text-sm ${task.gps_en_rango ? 'text-green-800' : 'text-red-800'}`}>
-                        {task.gps_en_rango ? "Ubicación Validada Correctamente" : "Alerta: Ubicación Fuera de Rango"}
-                      </h4>
-                      <div className="text-xs mt-1 opacity-90">
-                        <p>Coordenadas: {task.gps_latitud?.toFixed(5) || 'N/A'}, {task.gps_longitud?.toFixed(5) || 'N/A'}</p>
+                  {/* Notas */}
+                  {task.comentario && (
+                    <div className="space-y-2">
+                      <Label className="text-xs uppercase text-muted-foreground flex items-center gap-2">
+                        <MessageSquareText className="w-3 h-3" /> Notas del Ejecutor
+                      </Label>
+                      <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-md text-sm text-blue-900">
+                        "{task.comentario}"
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* 4. Inventario - REDISEÑO CON SCROLL */}
-                {config.requiere_inventario && (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Package className="h-5 w-5 text-orange-600" />
-                        <h3 className="font-semibold text-sm">Registro de Inventario</h3>
+                  {/* GPS */}
+                  {config.gps_obligatorio && (
+                    <div className={`p-4 rounded-lg border flex items-start gap-3 ${task.gps_en_rango ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                      {task.gps_en_rango ? (
+                        <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <h4 className={`font-semibold text-sm ${task.gps_en_rango ? 'text-green-800' : 'text-red-800'}`}>
+                          {task.gps_en_rango ? "Ubicación Validada Correctamente" : "Alerta: Ubicación Fuera de Rango"}
+                        </h4>
+                        <div className="text-xs mt-1 opacity-90">
+                          <p>Coordenadas: {task.gps_latitud?.toFixed(5) || 'N/A'}, {task.gps_longitud?.toFixed(5) || 'N/A'}</p>
+                        </div>
                       </div>
-                      <Badge variant="secondary">{inventoryRows.length} Productos</Badge>
                     </div>
+                  )}
 
-                    {isLoadingDetails ? (
-                      <div className="p-8 text-center border rounded-lg"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground"/></div>
-                    ) : (
-                      <div className="border rounded-lg overflow-hidden bg-card">
-                        <ScrollArea className="h-[300px] w-full">
+                  {/* REGISTRO DE INVENTARIO (TABLA COMPLETA) */}
+                  {config.requiere_inventario && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Package className="h-5 w-5 text-orange-600" />
+                          <h3 className="font-semibold text-sm">Registro de Inventario</h3>
+                        </div>
+                        <Badge variant="secondary">{inventoryRows.length} Productos</Badge>
+                      </div>
+
+                      {isLoadingDetails ? (
+                        <div className="p-8 text-center border rounded-lg"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground"/></div>
+                      ) : (
+                        <div className="border rounded-lg bg-card shadow-sm overflow-hidden">
                           <Table>
-                            <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                            <TableHeader className="bg-muted/50">
                               <TableRow>
-                                <TableHead className="w-[40%]">Producto</TableHead>
+                                <TableHead className="w-[40%] pl-4">Producto</TableHead>
                                 <TableHead className="text-center w-[20%]">Físico</TableHead>
                                 <TableHead className="text-center w-[20%]">Sistema</TableHead>
-                                <TableHead className="text-center w-[20%]">Diferencia</TableHead>
+                                <TableHead className="text-center w-[20%] pr-4">Diferencia</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {inventoryRows && inventoryRows.length > 0 ? (
-                                inventoryRows.map((item, index) => (
-                                  <TableRow key={item.id || index}>
-                                    <TableCell>
+                                inventoryRows.map((row, idx) => (
+                                  <TableRow key={row.id || idx} className="hover:bg-muted/20 transition-colors">
+                                    <TableCell className="pl-4">
                                       <div>
-                                        <p className="font-medium text-sm">{item.inventory_products?.nombre}</p>
-                                        <p className="text-[10px] text-muted-foreground">
-                                          SKU: {item.inventory_products?.codigo_sku || '-'} | UND: {item.inventory_products?.unidad || '-'}
+                                        <p className="font-medium text-sm text-slate-900">{row.inventory_products?.nombre}</p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                                          SKU: {row.inventory_products?.codigo_sku || '-'} | UND: {row.inventory_products?.unidad || '-'}
                                         </p>
                                       </div>
                                     </TableCell>
                                     <TableCell className="text-center">
-                                      <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded text-xs">
-                                        {item.fisico}
+                                      <span className="font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded text-xs inline-block min-w-[32px]">
+                                        {row.fisico}
                                       </span>
                                     </TableCell>
-                                    <TableCell className="text-center text-muted-foreground text-sm">
-                                      {item.esperado}
-                                    </TableCell>
                                     <TableCell className="text-center">
-                                      <Badge 
-                                        variant="outline" 
-                                        className={`font-bold ${
-                                          item.diferencia === 0 
-                                            ? "bg-green-50 text-green-700 border-green-200" 
-                                            : item.diferencia > 0 
-                                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                                              : "bg-red-50 text-red-700 border-red-200"
-                                        }`}
-                                      >
-                                        {item.diferencia > 0 ? '+' : ''}{item.diferencia}
-                                      </Badge>
+                                      <span className="text-slate-600 bg-slate-100 px-2.5 py-1 rounded text-xs inline-block min-w-[32px]">
+                                        {row.esperado}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="text-center pr-4">
+                                      <span className={`font-bold px-2.5 py-1 rounded text-xs inline-block min-w-[32px] ${
+                                        row.diferencia === 0 
+                                          ? 'text-green-700 bg-green-50' 
+                                          : row.diferencia > 0 
+                                            ? 'text-blue-700 bg-blue-50' 
+                                            : 'text-red-700 bg-red-50'
+                                      }`}>
+                                        {row.diferencia > 0 ? '+' : ''}{row.diferencia}
+                                      </span>
                                     </TableCell>
                                   </TableRow>
                                 ))
                               ) : (
                                 <TableRow>
                                   <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                                    No hay productos registrados
+                                    No hay datos de inventario registrados.
                                   </TableCell>
                                 </TableRow>
                               )}
                             </TableBody>
                           </Table>
-                        </ScrollArea>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 5. Correos Enviados/Respondidos */}
-                {(config.enviar_email || config.responder_email) && (
-                  <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-100">
-                    <h4 className="font-semibold text-sm flex items-center gap-2 mb-2 text-blue-900">
-                      <Mail className="w-4 h-4" /> Gestión de Correos
-                    </h4>
-                    <div className="grid gap-2">
-                      {config.enviar_email && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado envío de correo
-                        </div>
-                      )}
-                      {config.responder_email && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado respuesta de correo
                         </div>
                       )}
                     </div>
-                  </div>
-                )}
-              </TabsContent>
+                  )}
 
-              <TabsContent value="evidence" className="space-y-6">
-                {isLoadingDetails ? (
-                  <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground"/></div>
-                ) : evidenceFiles.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg bg-muted/10">
-                    <Camera className="w-10 h-10 text-muted-foreground mb-2 opacity-50" />
-                    <p className="text-sm text-muted-foreground">No se adjuntaron evidencias.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {evidenceFiles.map((file) => (
-                      file.tipo === 'foto' ? (
-                        <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-black/5 cursor-pointer">
-                          <img 
-                            src={getPublicUrl(file.storage_path)} 
-                            alt="Evidencia" 
-                            className="object-cover w-full h-full hover:scale-105 transition-transform"
-                            onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}
-                          />
-                        </div>
-                      ) : (
-                        <div key={file.id} className="col-span-full flex items-center p-3 border rounded-lg bg-blue-50/50 hover:bg-blue-50 transition-colors cursor-pointer"
-                             onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}>
-                          <FileText className="w-8 h-8 text-blue-500 mr-3" />
-                          <div className="overflow-hidden">
-                            <p className="text-sm font-medium truncate">{file.filename}</p>
-                            <p className="text-xs text-muted-foreground flex items-center">
-                              Clic para descargar <ChevronRight className="w-3 h-3 ml-1"/>
-                            </p>
+                  {/* Correos */}
+                  {(config.enviar_email || config.responder_email) && (
+                    <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-100">
+                      <h4 className="font-semibold text-sm flex items-center gap-2 mb-2 text-blue-900">
+                        <Mail className="w-4 h-4" /> Gestión de Correos
+                      </h4>
+                      <div className="grid gap-2">
+                        {config.enviar_email && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado envío de correo
                           </div>
-                        </div>
-                      )
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-        </ScrollArea>
+                        )}
+                        {config.responder_email && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado respuesta de correo
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
 
-        {/* Footer de Acción Fijo */}
-        <div className="p-6 border-t bg-muted/10 mt-auto shrink-0">
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="audit-notes">Notas de Auditoría</Label>
-              <Textarea 
-                id="audit-notes"
-                placeholder="Escribe tus observaciones (Obligatorio para rechazar)..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                disabled={!!task.audit_status && task.audit_status !== 'pendiente'}
-                className="bg-background resize-none h-20"
-              />
+                <TabsContent value="evidence" className="space-y-6 mt-0">
+                  {isLoadingDetails ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground"/></div>
+                  ) : evidenceFiles.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg bg-muted/10">
+                      <Camera className="w-10 h-10 text-muted-foreground mb-2 opacity-50" />
+                      <p className="text-sm text-muted-foreground">No se adjuntaron evidencias.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {evidenceFiles.map((file) => (
+                        file.tipo === 'foto' ? (
+                          <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-black/5 cursor-pointer">
+                            <img 
+                              src={getPublicUrl(file.storage_path)} 
+                              alt="Evidencia" 
+                              className="object-cover w-full h-full hover:scale-105 transition-transform"
+                              onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}
+                            />
+                          </div>
+                        ) : (
+                          <div key={file.id} className="col-span-full flex items-center p-3 border rounded-lg bg-blue-50/50 hover:bg-blue-50 transition-colors cursor-pointer"
+                               onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}>
+                            <FileText className="w-8 h-8 text-blue-500 mr-3" />
+                            <div className="overflow-hidden">
+                              <p className="text-sm font-medium truncate">{file.filename}</p>
+                              <p className="text-xs text-muted-foreground flex items-center">
+                                Clic para descargar <ChevronRight className="w-3 h-3 ml-1"/>
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </div>
+          </ScrollArea>
 
-            {(!task.audit_status || task.audit_status === 'pendiente') ? (
-              <div className="flex gap-3 pt-2">
-                <Button 
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white" 
-                  onClick={() => handleAudit('approve')}
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
-                  Aprobar
-                </Button>
-                <Button 
-                  className="flex-1" 
-                  variant="destructive"
-                  onClick={() => handleAudit('reject')}
-                  disabled={isLoading}
-                >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
-                  Rechazar
-                </Button>
+          {/* 3. FOOTER (FIJO) */}
+          <div className="p-6 border-t bg-muted/10 mt-auto shrink-0">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="audit-notes">Notas de Auditoría</Label>
+                <Textarea 
+                  id="audit-notes"
+                  placeholder="Escribe tus observaciones (Obligatorio para rechazar)..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={!!task.audit_status && task.audit_status !== 'pendiente'}
+                  className="bg-background resize-none h-20"
+                />
               </div>
-            ) : (
-              <div className={`text-center text-sm py-2 px-4 rounded border font-medium ${
-                task.audit_status === 'aprobado' 
-                  ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                  : 'bg-red-50 text-red-700 border-red-200'
-              }`}>
-                Auditoría cerrada: {task.audit_status.toUpperCase()}
-              </div>
-            )}
+
+              {(!task.audit_status || task.audit_status === 'pendiente') ? (
+                <div className="flex gap-3 pt-2">
+                  <Button 
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white" 
+                    onClick={() => handleAudit('approve')}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
+                    Aprobar
+                  </Button>
+                  <Button 
+                    className="flex-1" 
+                    variant="destructive"
+                    onClick={() => handleAudit('reject')}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4 mr-2" />}
+                    Rechazar
+                  </Button>
+                </div>
+              ) : (
+                <div className={`text-center text-sm py-2 px-4 rounded border font-medium ${
+                  task.audit_status === 'aprobado' 
+                    ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                    : 'bg-red-50 text-red-700 border-red-200'
+                }`}>
+                  Auditoría cerrada: {task.audit_status.toUpperCase()}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
 
+        </div>
       </DialogContent>
     </Dialog>
   );
