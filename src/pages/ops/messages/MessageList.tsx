@@ -76,15 +76,15 @@ export default function MessageList() {
         unique_id: `notif_${n.id}`,
         receipt_id: n.id, // Usamos ID de notificación como receipt_id para la lógica de lectura
         source: 'notification',
-        tipo: n.type, // 'routine_rejected', 'routine_approved'
+        tipo: n.type, 
         asunto: n.title,
-        cuerpo: n.type === 'routine_rejected' 
-          ? "Tu rutina ha sido rechazada por auditoría. Por favor revisa los detalles y realiza las correcciones necesarias." 
-          : "Notificación automática del sistema.",
+        cuerpo: n.title.includes('Rechazada') && !n.title.includes('Motivo') // Fallback para notificaciones antiguas
+          ? "Tu tarea requiere correcciones. Revisa el módulo de Mis Tareas."
+          : "Notificación del sistema.", 
         prioridad: n.type === 'routine_rejected' ? 'alta' : 'normal',
         requiere_confirmacion: false,
         created_at: n.created_at,
-        leido_at: n.leido ? n.created_at : null, // Mapeamos boolean leido a fecha para compatibilidad UI
+        leido_at: n.leido ? n.created_at : null,
         timestamp: new Date(n.created_at).getTime(),
         entity_id: n.entity_id
       })) || [];
@@ -122,8 +122,8 @@ export default function MessageList() {
 
     const channel = supabase
       .channel('inbox-unified-realtime')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
       .subscribe();
 
     return () => {
@@ -132,31 +132,37 @@ export default function MessageList() {
   }, [user]);
 
   const handleOpenMessage = async (msg: any) => {
-    // Si ya está leído, no hacer nada en BD
+    // Si ya está leído, no hacemos update, pero expandimos
     if (msg.leido_at) return;
 
     const now = new Date().toISOString();
     
-    // Optimistic Update UI
+    // 1. Optimistic Update UI (Quitar badge de 'Nuevo' localmente)
     setInboxMessages(prev => prev.map(m => 
       m.unique_id === msg.unique_id ? { ...m, leido_at: now } : m
     ));
 
-    // Update DB según la fuente
-    if (msg.source === 'message') {
-      await supabase
-        .from('message_receipts')
-        .update({ leido_at: now })
-        .eq('id', msg.receipt_id);
-    } else {
-      await supabase
-        .from('notifications')
-        .update({ leido: true })
-        .eq('id', msg.receipt_id);
+    try {
+      // 2. Update DB según la fuente
+      if (msg.source === 'message') {
+        await supabase
+          .from('message_receipts')
+          .update({ leido_at: now })
+          .eq('id', msg.receipt_id);
+      } else {
+        await supabase
+          .from('notifications')
+          .update({ leido: true })
+          .eq('id', msg.receipt_id);
+      }
+      
+      // 3. ACTUALIZAR CONTADOR GLOBAL (Campanita)
+      // Invalidamos la query para que el hook useNotifications haga refetch
+      await queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+      
+    } catch (err) {
+      console.error("Error marking as read", err);
     }
-    
-    // Invalidar contador global
-    queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
   };
 
   const handleConfirm = async (receiptId: string) => {
@@ -171,6 +177,7 @@ export default function MessageList() {
       .eq('id', receiptId);
       
     toast({ title: "Confirmado", description: "Recepción confirmada exitosamente." });
+    queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
   };
 
   const viewReadDetails = async (msg: any) => {

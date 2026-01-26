@@ -11,62 +11,52 @@ export function useNotifications() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // 1. Query principal (Estado base)
+  // 1. Query principal (Estado base unificado)
   const { data: unreadCount = 0, refetch } = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
     queryFn: async () => {
       if (!user) return 0;
-      const { count, error } = await supabase
+      
+      // Contar notificaciones de sistema no leídas
+      const { count: sysCount, error: sysError } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('leido', false);
       
-      if (error) return 0;
-      return count || 0;
+      // Contar mensajes directos no leídos
+      const { count: msgCount, error: msgError } = await supabase
+        .from('message_receipts')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .is('leido_at', null);
+
+      if (sysError || msgError) return 0;
+      
+      return (sysCount || 0) + (msgCount || 0);
     },
     enabled: !!user,
+    refetchInterval: 30000, // Polling de seguridad cada 30s
   });
 
-  // 2. Suscripción Realtime Inteligente
+  // 2. Suscripción Realtime Unificada
   useEffect(() => {
     if (!user) return;
 
     const channel = supabase
-      .channel('realtime-notifications-global')
+      .channel('realtime-global-badges')
       .on(
         'postgres_changes',
-        {
-          event: '*', // Escuchar todo (INSERT, UPDATE, DELETE)
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          // --- Lógica Optimista ---
-          
-          // Caso 1: Nuevo mensaje (Incrementar)
-          if (payload.eventType === 'INSERT') {
-            const newNotif = payload.new as any;
-            
-            // Actualizar caché inmediatamente
-            queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: number = 0) => old + 1);
-            
-            // Mostrar alerta visual
-            toast({
-              title: "Nuevo Mensaje",
-              description: newNotif.title || "Has recibido una notificación",
-            });
-          } 
-          
-          // Caso 2: Mensaje leído/borrado (Decrementar o Recalcular)
-          else if (
-            (payload.eventType === 'UPDATE' && payload.new.leido === true) || 
-            payload.eventType === 'DELETE'
-          ) {
-            // Invalida para asegurar el número exacto real desde BD
-            queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-          }
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
         }
       )
       .subscribe();
@@ -74,7 +64,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, queryClient, toast]);
+  }, [user, queryClient]);
 
   return { unreadCount, refreshNotifications: refetch };
 }
