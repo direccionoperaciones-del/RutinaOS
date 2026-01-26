@@ -31,6 +31,11 @@ export default function ReportsPage() {
         if (val === null || val === undefined) {
           val = "";
         } else if (typeof val === 'string') {
+          // Prevent CSV Formula Injection
+          // Prepend a single quote if the value starts with =, +, -, or @
+          if (val.length > 0 && ['=', '+', '-', '@'].includes(val[0])) {
+            val = "'" + val;
+          }
           val = `"${val.replace(/"/g, '""')}"`; // Escapar comillas
         }
         return val;
