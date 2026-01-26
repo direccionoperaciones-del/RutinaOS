@@ -262,7 +262,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button className="w-full" variant="outline" onClick={generateAuditReport} disabled={loading}>
+            <Button className="w-full" onClick={generateAuditReport} disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Download className="w-4 h-4 mr-2"/>}
               Descargar CSV
             </Button>
@@ -281,7 +281,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button className="w-full" variant="outline" onClick={generateInventoryReport} disabled={loading}>
+            <Button className="w-full" onClick={generateInventoryReport} disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Download className="w-4 h-4 mr-2"/>}
               Descargar CSV
             </Button>
