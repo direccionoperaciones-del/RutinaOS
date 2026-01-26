@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -232,7 +233,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 </div>
 
-                {/* 2. Notas/Comentarios del Usuario (MOVIDO AQUI) */}
+                {/* 2. Notas/Comentarios del Usuario */}
                 {task.comentario && (
                   <div className="space-y-2">
                     <Label className="text-xs uppercase text-muted-foreground flex items-center gap-2">
@@ -263,15 +264,16 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 4. Inventario - DISEÑO MEJORADO */}
+                {/* 4. Inventario - DISEÑO MEJORADO CON SCROLL */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
-                    <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center">
+                  <div className="border rounded-lg bg-card shadow-sm overflow-hidden flex flex-col">
+                    <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center shrink-0">
                       <h4 className="font-semibold text-sm flex items-center gap-2">
                         <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
                       </h4>
                       <Badge variant="outline" className="text-xs">{inventoryRows.length} Productos</Badge>
                     </div>
+                    
                     {isLoadingDetails ? (
                       <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground"/></div>
                     ) : inventoryRows.length === 0 ? (
@@ -279,54 +281,52 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      // Contenedor con scroll explícito y altura controlada
-                      <div className="relative overflow-hidden w-full">
-                        <div className="max-h-[400px] overflow-y-auto w-full">
-                          <table className="w-full text-sm">
-                            <thead className="bg-muted/50 sticky top-0 z-10 border-b">
-                              <tr>
-                                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Producto</th>
-                                <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Físico</th>
-                                <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Sistema</th>
-                                <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px]">Diferencia</th>
+                      // Contenedor scrolleable limitado a 300px
+                      <div className="overflow-y-auto max-h-[300px] relative w-full">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50/95 backdrop-blur sticky top-0 z-20 border-b shadow-sm">
+                            <tr>
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground bg-gray-50/95">Producto</th>
+                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px] bg-gray-50/95">Físico</th>
+                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px] bg-gray-50/95">Sistema</th>
+                              <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px] bg-gray-50/95">Diferencia</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {inventoryRows.map((row) => (
+                              <tr key={row.id} className="hover:bg-muted/20 transition-colors">
+                                <td className="px-4 py-3">
+                                  <div className="font-medium text-slate-900">{row.inventory_products?.nombre}</div>
+                                  <div className="text-[10px] text-muted-foreground flex gap-2 mt-0.5">
+                                    <span className="bg-muted px-1.5 py-0.5 rounded">SKU: {row.inventory_products?.codigo_sku || '-'}</span>
+                                    <span className="bg-muted px-1.5 py-0.5 rounded">Unidad: {row.inventory_products?.unidad || '-'}</span>
+                                  </div>
+                                </td>
+                                <td className="text-center px-2 py-3">
+                                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                                    {row.fisico}
+                                  </span>
+                                </td>
+                                <td className="text-center px-2 py-3">
+                                  <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                                    {row.esperado}
+                                  </span>
+                                </td>
+                                <td className="text-right px-4 py-3">
+                                  <span className={`font-bold px-2 py-1 rounded ${
+                                    row.diferencia === 0 
+                                      ? 'text-green-700 bg-green-50' 
+                                      : row.diferencia > 0 
+                                        ? 'text-blue-700 bg-blue-50' 
+                                        : 'text-red-700 bg-red-50'
+                                  }`}>
+                                    {row.diferencia > 0 ? '+' : ''}{row.diferencia}
+                                  </span>
+                                </td>
                               </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                              {inventoryRows.map((row) => (
-                                <tr key={row.id} className="hover:bg-muted/20 transition-colors">
-                                  <td className="px-4 py-3">
-                                    <div className="font-medium text-slate-900">{row.inventory_products?.nombre}</div>
-                                    <div className="text-[10px] text-muted-foreground flex gap-2 mt-0.5">
-                                      <span className="bg-muted px-1.5 py-0.5 rounded">SKU: {row.inventory_products?.codigo_sku || '-'}</span>
-                                      <span className="bg-muted px-1.5 py-0.5 rounded">Unidad: {row.inventory_products?.unidad || '-'}</span>
-                                    </div>
-                                  </td>
-                                  <td className="text-center px-2 py-3">
-                                    <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                                      {row.fisico}
-                                    </span>
-                                  </td>
-                                  <td className="text-center px-2 py-3">
-                                    <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                                      {row.esperado}
-                                    </span>
-                                  </td>
-                                  <td className="text-right px-4 py-3">
-                                    <span className={`font-bold px-2 py-1 rounded ${
-                                      row.diferencia === 0 
-                                        ? 'text-green-700 bg-green-50' 
-                                        : row.diferencia > 0 
-                                          ? 'text-blue-700 bg-blue-50' 
-                                          : 'text-red-700 bg-red-50'
-                                    }`}>
-                                      {row.diferencia > 0 ? '+' : ''}{row.diferencia}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
