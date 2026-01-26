@@ -17,11 +17,32 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // 1. Obtener Auditor (Usuario Actual)
-    const authHeader = req.headers.get('Authorization')!
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders })
+    }
+    
     const { data: { user: auditor }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
 
     if (authError || !auditor) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+    }
+
+    // 1.1 Verificar Rol y Tenant (Autorización)
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role, tenant_id')
+      .eq('id', auditor.id)
+      .single()
+
+    if (profileError || !profile) {
+      return new Response(JSON.stringify({ error: 'Profile not found' }), { status: 403, headers: corsHeaders })
+    }
+
+    const allowedRoles = ['director', 'lider', 'auditor']
+    if (!allowedRoles.includes(profile.role)) {
+      console.error(`User ${auditor.id} with role ${profile.role} attempted to audit task without permission.`)
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403, headers: corsHeaders })
     }
 
     // 2. Parsear Body
@@ -40,6 +61,12 @@ serve(async (req) => {
 
     if (taskError || !task) {
       return new Response(JSON.stringify({ error: 'Tarea no encontrada' }), { status: 404, headers: corsHeaders })
+    }
+
+    // 3.1 Verificar aislamiento de Tenant
+    if (task.tenant_id !== profile.tenant_id) {
+      console.error(`User ${auditor.id} (Tenant: ${profile.tenant_id}) attempted to audit task ${taskId} (Tenant: ${task.tenant_id})`)
+      return new Response(JSON.stringify({ error: 'Forbidden: Tenant mismatch' }), { status: 403, headers: corsHeaders })
     }
 
     // 4. Actualizar Tarea
