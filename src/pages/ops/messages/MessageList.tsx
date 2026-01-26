@@ -296,14 +296,14 @@ export default function MessageList() {
                 <AccordionItem 
                   key={msg.unique_id} 
                   value={msg.unique_id} 
-                  className={`border rounded-lg px-4 transition-colors ${!msg.leido_at ? 'bg-blue-50/60 border-blue-200' : 'bg-card'}`}
+                  className={`border rounded-lg px-4 transition-colors ${!msg.leido_at ? 'bg-blue-50/60 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : 'bg-card'}`}
                 >
                   <AccordionTrigger className="hover:no-underline py-3">
                     <div className="flex items-center gap-4 w-full text-left">
                       <div className="shrink-0">{getIcon(msg.tipo)}</div>
                       <div className="flex-1 overflow-hidden">
                         <div className="flex items-center gap-2">
-                          <h4 className={`text-sm font-medium truncate ${!msg.leido_at ? 'text-blue-900 font-bold' : 'text-foreground'}`}>
+                          <h4 className={`text-sm font-medium truncate ${!msg.leido_at ? 'text-blue-900 dark:text-blue-100 font-bold' : 'text-foreground'}`}>
                             {msg.asunto}
                           </h4>
                           {msg.prioridad === 'alta' && <Badge variant="destructive" className="text-[10px] h-5">Alta</Badge>}
@@ -320,14 +320,14 @@ export default function MessageList() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="pt-2 pb-4">
-                    <div className="prose prose-sm max-w-none text-gray-800 whitespace-pre-line mb-4 pl-9">
+                    <div className="prose prose-sm max-w-none text-gray-800 dark:text-slate-200 whitespace-pre-line mb-4 pl-9">
                       {msg.cuerpo}
                     </div>
                     {/* Botones de acción según tipo */}
                     <div className="flex justify-end pl-9 gap-2">
                       {msg.requiere_confirmacion && msg.source === 'message' && (
                         msg.confirmado_at ? (
-                          <div className="flex items-center text-xs text-green-700 font-medium bg-green-50 px-3 py-1.5 rounded border border-green-200">
+                          <div className="flex items-center text-xs text-green-700 dark:text-green-400 font-medium bg-green-50 dark:bg-green-900/30 px-3 py-1.5 rounded border border-green-200 dark:border-green-800">
                             <CheckCheck className="w-3 h-3 mr-2" />
                             Confirmado el {format(new Date(msg.confirmado_at), "dd/MM/yyyy HH:mm")}
                           </div>
@@ -386,7 +386,7 @@ export default function MessageList() {
                       <CheckCheck className="w-3 h-3 text-blue-500" />
                       <span>Leído: <strong>{read}/{total}</strong> ({percent}%)</span>
                     </div>
-                    <div className="w-24 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="w-24 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                       <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${percent}%` }} />
                     </div>
                   </CardFooter>
@@ -422,7 +422,7 @@ export default function MessageList() {
                     </TableCell>
                     <TableCell className="text-right">
                       {r.leido_at ? (
-                        <div className="flex flex-col items-end text-green-600 text-xs">
+                        <div className="flex flex-col items-end text-green-600 dark:text-green-400 text-xs">
                           <span className="flex items-center gap-1 font-medium"><CheckCheck className="w-3 h-3"/> Visto</span>
                           <span>{format(new Date(r.leido_at), "dd/MM HH:mm")}</span>
                         </div>
