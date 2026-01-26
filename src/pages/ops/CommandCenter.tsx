@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,15 +6,67 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, getLocalDate } from "@/lib/utils";
 
 export default function CommandCenter() {
   const { toast } = useToast();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
+  
+  // Estados para métricas
+  const [metrics, setMetrics] = useState({
+    incidencias: 0,
+    totalHoy: 0,
+    completadasHoy: 0,
+    porcentaje: 0
+  });
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+
+  const fetchMetrics = async () => {
+    setLoadingMetrics(true);
+    try {
+      const todayStr = getLocalDate(); // Fecha YYYY-MM-DD local Colombia
+      
+      const { data, error } = await supabase
+        .from('task_instances')
+        .select('estado, audit_status, prioridad_snapshot')
+        .eq('fecha_programada', todayStr);
+
+      if (error) throw error;
+
+      if (data) {
+        const total = data.length;
+        const completadas = data.filter(t => t.estado.startsWith('completada')).length;
+        
+        // Incidencias: Tareas vencidas, incumplidas o rechazadas por auditoría
+        const incidencias = data.filter(t => 
+          t.estado === 'incumplida' || 
+          t.estado === 'completada_vencida' || 
+          t.audit_status === 'rechazado' ||
+          (t.prioridad_snapshot === 'critica' && t.estado === 'pendiente') // Críticas pendientes cuentan como alerta
+        ).length;
+
+        setMetrics({
+          incidencias,
+          totalHoy: total,
+          completadasHoy: completadas,
+          porcentaje: total > 0 ? Math.round((completadas / total) * 100) : 0
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching metrics:", error);
+    } finally {
+      setLoadingMetrics(false);
+    }
+  };
+
+  // Cargar métricas al entrar
+  useEffect(() => {
+    fetchMetrics();
+  }, []);
 
   const runTaskEngine = async () => {
     if (!date) return;
@@ -22,8 +74,6 @@ export default function CommandCenter() {
     setLastResult(null);
 
     try {
-      // Importante: Enviar fecha como string YYYY-MM-DD simple para evitar que la Edge Function (UTC)
-      // interprete una hora local (ej: 21 Enero 23:00 UTC-5) como el día siguiente (22 Enero 04:00 UTC).
       const simpleDate = format(date, "yyyy-MM-dd");
 
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
@@ -37,6 +87,11 @@ export default function CommandCenter() {
         title: "Motor ejecutado",
         description: data.message,
       });
+      
+      // Recargar métricas después de ejecutar el motor
+      if (simpleDate === getLocalDate()) {
+        fetchMetrics();
+      }
 
     } catch (error: any) {
       console.error(error);
@@ -53,8 +108,16 @@ export default function CommandCenter() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold tracking-tight">Centro de Mando</h2>
-        <p className="text-muted-foreground">Supervisión operativa y herramientas de administración.</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Centro de Mando</h2>
+            <p className="text-muted-foreground">Supervisión operativa y herramientas de administración.</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchMetrics} disabled={loadingMetrics}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${loadingMetrics ? 'animate-spin' : ''}`} />
+            Actualizar Datos
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -119,32 +182,48 @@ export default function CommandCenter() {
           </CardContent>
         </Card>
 
-        {/* Placeholder Stats */}
-        <Card>
+        {/* Real Stats: Incidencias */}
+        <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-orange-500" />
-              Incidencias
+              <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
+              Incidencias Hoy
             </CardTitle>
-            <CardDescription>Resumen de problemas reportados hoy.</CardDescription>
+            <CardDescription>Rechazos, vencimientos y tareas críticas.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">Sin incidencias activas</p>
+            <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600" : ""}`}>
+              {metrics.incidencias}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {metrics.incidencias === 0 ? "Sin problemas detectados" : "Requieren atención inmediata"}
+            </p>
           </CardContent>
         </Card>
 
+        {/* Real Stats: Cumplimiento */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-green-500" />
-              Cumplimiento
+              Cumplimiento Hoy
             </CardTitle>
-            <CardDescription>Porcentaje de tareas completadas hoy.</CardDescription>
+            <CardDescription>Avance de la operación diaria.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0%</div>
-            <p className="text-xs text-muted-foreground">0/0 tareas finalizadas</p>
+            <div className="flex items-baseline gap-2">
+              <div className="text-4xl font-bold">{metrics.porcentaje}%</div>
+              <span className="text-sm text-muted-foreground">completado</span>
+            </div>
+            <div className="w-full bg-secondary h-2 rounded-full mt-2 overflow-hidden">
+              <div 
+                className="bg-green-500 h-full transition-all duration-500" 
+                style={{ width: `${metrics.porcentaje}%` }} 
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              {metrics.completadasHoy} de {metrics.totalHoy} tareas finalizadas
+            </p>
           </CardContent>
         </Card>
       </div>
