@@ -1,5 +1,4 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { getLocalDate, parseLocalDate } from "@/lib/utils";
@@ -17,39 +16,40 @@ const COLORS = {
 export const useDashboardData = () => {
   const { profile, user } = useCurrentUser();
 
-  // --- FILTROS ---
-  const [dateFrom, setDateFrom] = useState(getLocalDate());
-  const [dateTo, setDateTo] = useState(getLocalDate());
+  // Filters
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
-  // --- OPCIONES DE FILTRO ---
+  // Options
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ pdvs: [], routines: [], users: [] });
 
-  // 1. Cargar Opciones (PDVs, Rutinas, Usuarios)
-  useQuery({
-    queryKey: ['dashboard-options', user?.id],
-    enabled: !!user && !!profile,
-    queryFn: async () => {
-      // 1. PDVs
-      let pdvData: any[] = [];
-      if (profile?.role === 'administrador') {
-        const { data: assignments } = await supabase
-          .from('pdv_assignments')
-          .select('pdv (id, nombre)')
-          .eq('user_id', user?.id)
-          .eq('vigente', true);
-        pdvData = assignments?.map((a: any) => a.pdv).filter(Boolean) || [];
-      } else {
-        const { data } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
-        pdvData = data || [];
-      }
+  // Data States
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<DashboardStats>({ totalTasks: 0, completedTasks: 0, pendingTasks: 0, compliance: 0, criticalAlerts: 0 });
+  
+  const [trendData, setTrendData] = useState<ChartDataPoint[]>([]);
+  const [alertsData, setAlertsData] = useState<ChartDataPoint[]>([]);
+  const [statusData, setStatusData] = useState<StatusDataPoint[]>([]);
+  const [routineData, setRoutineData] = useState<ChartDataPoint[]>([]);
+  const [performanceData, setPerformanceData] = useState<UserPerformance[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
-      // 2. Rutinas
-      const { data: routines } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+  // Init Date
+  useEffect(() => {
+    const today = getLocalDate();
+    setDateFrom(today);
+    setDateTo(today);
+  }, []);
+
+  // Load Filter Options
+  useEffect(() => {
+    const loadOptions = async () => {
+      const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
+      const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
       
-      // 3. Usuarios (Solo si no es admin)
       let userData: any[] = [];
       if (profile?.role !== 'administrador') {
         const { data } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
@@ -57,115 +57,71 @@ export const useDashboardData = () => {
       }
 
       setFilterOptions({
-        pdvs: pdvData.map(p => ({ label: p.nombre, value: p.id })),
-        routines: routines?.map(r => ({ label: r.nombre, value: r.id })) || [],
+        pdvs: pdvData?.map(p => ({ label: p.nombre, value: p.id })) || [],
+        routines: routData?.map(r => ({ label: r.nombre, value: r.id })) || [],
         users: userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []
       });
-      return true;
+    };
+    if (profile) loadOptions();
+  }, [profile]);
+
+  // Fetch Data
+  const fetchData = async () => {
+    if (!profile || !user || !dateFrom || !dateTo) return;
+    setLoading(true);
+
+    let query = supabase
+      .from('task_instances')
+      .select(`
+        id, estado, prioridad_snapshot, completado_at, created_at, fecha_programada, audit_status,
+        routine_templates (nombre),
+        pdv (nombre),
+        profiles:completado_por (nombre, apellido)
+      `)
+      .gte('fecha_programada', dateFrom)
+      .lte('fecha_programada', dateTo);
+
+    if (profile.role === 'administrador') {
+      query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+    } else if (selectedUsers.length > 0) {
+      query = query.in('completado_por', selectedUsers);
     }
-  });
+    if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+    if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
 
-  // 2. QUERY PRINCIPAL (DASHBOARD DATA)
-  const { data: tasks = [], isLoading: loading, refetch, isRefetching } = useQuery({
-    // La queryKey incluye TODOS los filtros para auto-refetch al cambiar
-    queryKey: ['dashboard-data', profile?.tenant_id, dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers],
-    enabled: !!profile && !!user && !!dateFrom && !!dateTo,
-    queryFn: async () => {
-      console.log("[Dashboard] queryFn ejecutado", { 
-        filters: { dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers },
-        role: profile?.role, 
-        tenantId: profile?.tenant_id,
-        userId: user?.id 
-      });
+    const { data: tasks, error } = await query;
+    if (error) { console.error(error); setLoading(false); return; }
 
-      let query = supabase
-        .from('task_instances')
-        .select(`
-          id, estado, prioridad_snapshot, completado_at, created_at, fecha_programada, audit_status, responsable_id, completado_por,
-          routine_templates (nombre),
-          pdv (nombre),
-          profiles:completado_por (nombre, apellido)
-        `)
-        .eq('tenant_id', profile?.tenant_id) // Filtro Tenant Obligatorio
-        .gte('fecha_programada', dateFrom)
-        .lte('fecha_programada', dateTo);
+    processData(tasks);
+    setLoading(false);
+  };
 
-      // --- LOGICA DE ROL ---
-      if (profile?.role === 'administrador') {
-        // ADMIN: Ver tareas de sus PDVs asignados
-        const { data: assignments } = await supabase
-          .from('pdv_assignments')
-          .select('pdv_id')
-          .eq('user_id', user?.id)
-          .eq('vigente', true);
-        
-        const myPdvIds = assignments?.map((a: any) => a.pdv_id) || [];
-        console.log("[Dashboard] Admin assigned PDVs:", myPdvIds);
-
-        if (myPdvIds.length > 0) {
-          // Si seleccionó filtros de PDV, interceptarlos con los asignados por seguridad
-          const targetIds = selectedPdvs.length > 0 
-            ? selectedPdvs.filter(id => myPdvIds.includes(id))
-            : myPdvIds;
-          
-          if (targetIds.length > 0) {
-            query = query.in('pdv_id', targetIds);
-          } else {
-            // Seleccionó un PDV que no es suyo -> 0 resultados
-            query = query.in('pdv_id', ['00000000-0000-0000-0000-000000000000']);
-          }
-        } else {
-          // Si no tiene asignaciones, ver solo lo completado por él (histórico)
-          query = query.eq('completado_por', user?.id);
-        }
-      } else {
-        // DIRECTOR / LIDER / AUDITOR
-        if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
-        if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
-      }
-
-      // Filtros comunes
-      if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
-
-      const { data, error } = await query;
-      
-      if (error) {
-        console.error("[Dashboard] Error Supabase:", error);
-        throw error;
-      }
-
-      console.log("[Dashboard] raw result:", data?.length, "records");
-      return data || [];
-    }
-  });
-
-  // 3. Procesamiento de Datos (Memoizado)
-  const processedData = useMemo(() => {
-    // Stats Base
+  const processData = (tasks: any[]) => {
+    // 1. Stats
     const total = tasks.length;
-    const completed = tasks.filter((t: any) => t.estado.startsWith('completada')).length;
-    const pending = tasks.filter((t: any) => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
+    const completed = tasks.filter(t => t.estado.startsWith('completada')).length;
+    const pending = tasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length;
     const compliance = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const critical = tasks.filter((t: any) => t.prioridad_snapshot === 'critica' || t.audit_status === 'rechazado').length;
+    const critical = tasks.filter(t => t.prioridad_snapshot === 'critica' || t.audit_status === 'rechazado').length;
     
-    const stats: DashboardStats = { totalTasks: total, completedTasks: completed, pendingTasks: pending, compliance, criticalAlerts: critical };
+    setStats({ totalTasks: total, completedTasks: completed, pendingTasks: pending, compliance, criticalAlerts: critical });
 
-    // Trends
-    const groupedByDate = tasks.reduce((acc: any, curr: any) => {
+    // 2. Trends
+    const groupedByDate = tasks.reduce((acc: any, curr) => {
       const d = curr.fecha_programada;
-      if (!acc[d]) acc[d] = { date: d, Total: 0, completed: 0, pending: 0 };
-      acc[d].Total++;
+      if (!acc[d]) acc[d] = { date: d, total: 0, completed: 0, pending: 0 };
+      acc[d].total++;
       if (curr.estado.startsWith('completada')) acc[d].completed++;
       if (curr.estado === 'pendiente') acc[d].pending++;
       return acc;
     }, {});
     
-    const trendData = Object.values(groupedByDate).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
+    setTrendData(Object.values(groupedByDate).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
       ...i, name: format(parseLocalDate(i.date), 'dd MMM', { locale: es })
-    }));
+    })));
 
-    // Alerts
-    const alertsMap = tasks.reduce((acc: any, curr: any) => {
+    // 3. Alerts
+    const alertsMap = tasks.reduce((acc: any, curr) => {
       if (curr.prioridad_snapshot === 'critica' || curr.audit_status === 'rechazado' || curr.estado === 'incumplida') {
         const d = curr.fecha_programada;
         if (!acc[d]) acc[d] = { date: d, count: 0 };
@@ -173,38 +129,40 @@ export const useDashboardData = () => {
       }
       return acc;
     }, {});
-    const alertsData = Object.values(alertsMap).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
+    setAlertsData(Object.values(alertsMap).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
       name: format(parseLocalDate(i.date), 'dd MMM', { locale: es }),
       Alertas: i.count
-    }));
+    })));
 
-    // Status
+    // 4. Status (Pie)
     const statusCounts = { 'a_tiempo': 0, 'vencida': 0, 'pendiente': 0, 'incumplida': 0 };
-    tasks.forEach((t: any) => {
+    tasks.forEach(t => {
       if (t.estado === 'completada_a_tiempo') statusCounts.a_tiempo++;
       else if (t.estado === 'completada_vencida') statusCounts.vencida++;
       else if (t.estado === 'incumplida') statusCounts.incumplida++;
       else statusCounts.pendiente++;
     });
-    const statusData = [
+    setStatusData([
       { name: 'A Tiempo', value: statusCounts.a_tiempo, color: COLORS.a_tiempo },
       { name: 'Vencida', value: statusCounts.vencida, color: COLORS.vencida },
       { name: 'Pendiente', value: statusCounts.pendiente, color: COLORS.pendiente },
       { name: 'Incumplida', value: statusCounts.incumplida, color: COLORS.incumplida },
-    ].filter(i => i.value > 0);
+    ].filter(i => i.value > 0));
 
-    // Routines
-    const routineMap = tasks.reduce((acc: any, curr: any) => {
+    // 5. Routines
+    const routineMap = tasks.reduce((acc: any, curr) => {
       const name = curr.routine_templates?.nombre || 'Desconocida';
       if (!acc[name]) acc[name] = { name, cumples: 0, fallas: 0 };
       if (curr.estado.startsWith('completada')) acc[name].cumples++;
       else acc[name].fallas++;
       return acc;
     }, {});
-    const routineData = Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8) as ChartDataPoint[];
+    
+    // Fix: Explicitly cast to ChartDataPoint[] to resolve type error
+    setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8) as ChartDataPoint[]);
 
-    // Performance
-    const userMap = tasks.reduce((acc: any, curr: any) => {
+    // 6. Performance
+    const userMap = tasks.reduce((acc: any, curr) => {
       if (!curr.profiles) return acc;
       const name = `${curr.profiles.nombre} ${curr.profiles.apellido}`;
       if (!acc[name]) acc[name] = { name, total: 0, completed: 0 };
@@ -212,18 +170,16 @@ export const useDashboardData = () => {
       if (curr.estado.startsWith('completada')) acc[name].completed++;
       return acc;
     }, {});
-    const performanceData = Object.values(userMap)
+    setPerformanceData(Object.values(userMap)
       .map((u:any) => ({ ...u, percentage: Math.round((u.completed / u.total) * 100) }))
       .sort((a:any, b:any) => b.percentage - a.percentage)
-      .slice(0, 10);
+      .slice(0, 10));
 
-    // Recent
-    const recentActivity = [...tasks].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6);
+    // 7. Recent
+    setRecentActivity([...tasks].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6));
+  };
 
-    console.log("[Dashboard] computed stats:", stats);
-
-    return { stats, trendData, alertsData, statusData, routineData, performanceData, recentActivity };
-  }, [tasks]);
+  useEffect(() => { fetchData(); }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, profile]);
 
   const clearFilters = () => {
     const today = getLocalDate();
@@ -231,14 +187,15 @@ export const useDashboardData = () => {
     setSelectedPdvs([]); setSelectedRoutines([]); setSelectedUsers([]);
   };
 
-  const handleManualRefresh = () => {
-    console.log("[Dashboard] click Actualizar");
-    refetch();
-  };
-
   return {
-    loading: loading || isRefetching,
-    ...processedData,
+    loading,
+    stats,
+    trendData,
+    alertsData,
+    statusData,
+    routineData,
+    performanceData,
+    recentActivity,
     filters: {
       dateFrom, setDateFrom,
       dateTo, setDateTo,
@@ -246,7 +203,7 @@ export const useDashboardData = () => {
       selectedRoutines, setSelectedRoutines,
       selectedUsers, setSelectedUsers,
       clearFilters,
-      fetchData: handleManualRefresh
+      fetchData
     },
     options: filterOptions,
     profile
