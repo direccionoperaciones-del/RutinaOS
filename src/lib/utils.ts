@@ -6,31 +6,48 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Obtiene la fecha actual OFICIAL DE COLOMBIA (GMT-5)
- * Implementación manual radical: Resta 5 horas al tiempo UTC directamente.
- * Esto ignora cualquier configuración del navegador/servidor y garantiza la fecha colombiana.
+ * Obtiene la fecha y hora actual exacta en Colombia (GMT-5).
+ * Independiente de la zona horaria del navegador del usuario.
  */
-export function getLocalDate(date: Date = new Date()): string {
-  // Obtener timestamp UTC
-  const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
-  
-  // Restar 5 horas exactas (3600000 ms * 5) para llegar a Colombia
-  const bogotaTime = new Date(utc - (3600000 * 5));
-  
-  // Formatear manualmente YYYY-MM-DD para evitar conversiones implícitas
-  const year = bogotaTime.getFullYear();
-  const month = (bogotaTime.getMonth() + 1).toString().padStart(2, '0');
-  const day = bogotaTime.getDate().toString().padStart(2, '0');
-  
+export function getColombiaDate(): Date {
+  // Crear fecha basada en string ISO específico para Bogotá
+  const now = new Date();
+  const bogotaString = now.toLocaleString("en-US", { timeZone: "America/Bogota" });
+  return new Date(bogotaString);
+}
+
+/**
+ * Retorna la fecha actual de Colombia en formato YYYY-MM-DD
+ */
+export function getLocalDate(): string {
+  const date = getColombiaDate();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 /**
- * Parsea una fecha YYYY-MM-DD y la interpreta como una fecha local a las 00:00:00
- * Fundamental para que los filtros de fecha funcionen con precisión.
+ * Convierte un string YYYY-MM-DD (fecha BD) a un objeto Date
+ * que representa las 00:00:00 de ese día EN COLOMBIA.
  */
 export function parseLocalDate(dateStr: string): Date {
-  if (!dateStr) return new Date();
+  if (!dateStr) return getColombiaDate();
+  
+  // Dividimos manualmente para evitar interpretaciones UTC del navegador
   const [year, month, day] = dateStr.split('-').map(Number);
+  
+  // Creamos la fecha. OJO: new Date(y,m,d) crea la fecha en hora LOCAL del navegador.
+  // Esto está bien para componentes de calendario visuales, pero para lógica de vencimiento
+  // necesitamos asegurar que comparamos "peras con peras".
   return new Date(year, month - 1, day);
+}
+
+/**
+ * Verifica si una fecha ha pasado respecto a AHORA (Hora Colombia).
+ * Útil para validaciones de vencimiento.
+ */
+export function isOverdueInColombia(deadline: Date): boolean {
+  const nowColombia = getColombiaDate();
+  return nowColombia > deadline;
 }

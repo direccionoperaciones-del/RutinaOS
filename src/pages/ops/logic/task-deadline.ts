@@ -1,63 +1,48 @@
 import { parseLocalDate } from "@/lib/utils";
 
 /**
- * Calcula la fecha y hora límite real de una tarea basándose en su frecuencia y configuración.
- * 
- * - Diaria/Semanal/FechasEsp: Usa fecha_programada + hora_limite
- * - Mensual: Usa mes de fecha_programada + dia_vencimiento
- * - Quincenal: Usa corte 1 o corte 2 según fecha_programada
+ * Calcula la fecha y hora límite real de una tarea.
+ * Retorna un objeto Date nativo que representa ese momento.
  */
 export function calculateTaskDeadline(task: any): Date {
   if (!task || !task.fecha_programada) return new Date();
 
-  // Parsear fecha base usando el parser local para evitar el desfase UTC
+  // 1. Obtenemos la fecha base (00:00:00 del día programado)
   const baseDate = parseLocalDate(task.fecha_programada);
   
   const timeStr = task.hora_limite_snapshot || '23:59:00';
   const rutina = task.routine_templates;
 
-  // Función auxiliar para parsear HH:MM:SS
-  const setTime = (dateTarget: Date, timeString: string) => {
-    const [hours, minutes, seconds] = timeString.split(':').map(Number);
-    // Usamos ?? en lugar de || para permitir que 0 sea un valor válido
-    dateTarget.setHours(hours ?? 23, minutes ?? 59, seconds ?? 0);
-    return dateTarget;
-  };
-
-  // Si no hay datos de rutina, fallback a la fecha programada simple
-  if (!rutina) {
-     const deadline = new Date(baseDate);
-     return setTime(deadline, timeStr);
-  }
-
+  let year = baseDate.getFullYear();
+  let month = baseDate.getMonth();
   let targetDay = baseDate.getDate();
-  const year = baseDate.getFullYear();
-  const month = baseDate.getMonth(); 
 
-  // LÓGICA MENSUAL
-  if (rutina.frecuencia === 'mensual') {
-     targetDay = rutina.vencimiento_dia_mes || 31;
-     
-     // Ajustar si el mes tiene menos días (ej: 31 en Febrero -> 28/29)
-     const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
-     if (targetDay > lastDayOfMonth) targetDay = lastDayOfMonth;
-  }
-  
-  // LÓGICA QUINCENAL
-  else if (rutina.frecuencia === 'quincenal') {
-     // El generador fija fecha_programada al 01 o al 16.
-     // Si es primera quincena (dia <= 15)
-     if (baseDate.getDate() <= 15) {
-        targetDay = rutina.corte_1_limite || 15;
-     } else {
-        // Segunda quincena
-        targetDay = rutina.corte_2_limite || 30;
-        const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
-        if (targetDay > lastDayOfMonth) targetDay = lastDayOfMonth;
-     }
+  // Lógica de fechas especiales (Mensual/Quincenal)
+  if (rutina) {
+    if (rutina.frecuencia === 'mensual') {
+       targetDay = rutina.vencimiento_dia_mes || 31;
+       // Ajuste fin de mes
+       const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+       if (targetDay > lastDayOfMonth) targetDay = lastDayOfMonth;
+    }
+    else if (rutina.frecuencia === 'quincenal') {
+       // Si la fecha programada es <= 15, es primer corte
+       if (baseDate.getDate() <= 15) {
+          targetDay = rutina.corte_1_limite || 15;
+       } else {
+          targetDay = rutina.corte_2_limite || 30;
+          const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+          if (targetDay > lastDayOfMonth) targetDay = lastDayOfMonth;
+       }
+    }
   }
 
-  // Construir fecha final combinada
+  // 2. Construir la fecha límite
   const deadline = new Date(year, month, targetDay);
-  return setTime(deadline, timeStr);
+  
+  // 3. Establecer la hora
+  const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+  deadline.setHours(hours ?? 23, minutes ?? 59, seconds ?? 0, 0);
+
+  return deadline;
 }

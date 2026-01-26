@@ -17,16 +17,38 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // 1. Obtener parámetros
+    // 1. OBTENER FECHA OBJETIVO (FUERZADA A COLOMBIA GMT-5)
     const { date } = await req.json().catch(() => ({ date: null }))
-    const targetDate = date ? new Date(date) : new Date()
+    
+    let targetDate: Date;
+    
+    if (date) {
+      // Si viene manual (YYYY-MM-DD), asumimos que esa es la fecha Colombia deseada
+      // Le agregamos T05:00:00Z para que al restar 5 sea el día correcto, 
+      // o simplemente la tratamos como string.
+      // Mejor: Parseamos el string y trabajamos con sus componentes.
+      const [y, m, d] = date.split('-').map(Number);
+      targetDate = new Date(Date.UTC(y, m - 1, d, 5, 0, 0)); // 5 AM UTC = Media noche Col? No, simplifiquemos.
+    } else {
+      // Automático: Obtener hora actual UTC
+      const now = new Date();
+      // Restar 5 horas (5 * 60 * 60 * 1000 ms) para obtener "hora colombia" representada en un objeto Date
+      const colombiaOffset = -5;
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      targetDate = new Date(utc + (3600000 * colombiaOffset));
+    }
+
+    // Extraer componentes de la fecha COLOMBIA
     const dayOfWeek = targetDate.getDay() // 0 = Domingo
     const dayOfMonth = targetDate.getDate()
+    const year = targetDate.getFullYear();
+    const monthStr = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(targetDate.getDate()).padStart(2, '0');
     
-    // Formato YYYY-MM-DD
-    const dateStr = targetDate.toISOString().split('T')[0]
+    // Fecha String Oficial para la BD (YYYY-MM-DD)
+    const dateStr = date || `${year}-${monthStr}-${dayStr}`;
 
-    console.log(`Generando tareas para: ${dateStr} (Dia mes: ${dayOfMonth})`)
+    console.log(`🇨🇴 Generando tareas para Fecha Colombia: ${dateStr} (Dia semana: ${dayOfWeek}, Dia mes: ${dayOfMonth})`)
 
     // 2. Obtener asignaciones activas con configuración completa de rutina
     const { data: assignments, error: assignError } = await supabase
@@ -80,38 +102,25 @@ serve(async (req) => {
           break
 
         case 'mensual':
-           // LOGICA MEJORADA:
-           // Generar si hoy es <= al día de vencimiento.
-           // Ej: Vence el 25. Si hoy es 1, 10 o 21, intentamos generar.
-           // La BD bloqueará duplicados gracias al constraint UNIQUE(assignment_id, fecha_programada).
-           // PERO, para evitar duplicados diarios (tarea dia 21, tarea dia 22...), 
-           // fijamos la "fecha_programada" al día 1 del mes para tareas mensuales.
-           // Así, si ejecutas el script el día 21, intentará crear la tarea con fecha 01. Si ya existe, no hace nada.
-           
            const limitDay = rutina.vencimiento_dia_mes || 31;
+           // Generar si hoy (en Colombia) es <= al día de vencimiento
            if (dayOfMonth <= limitDay) {
              shouldGenerate = true;
-             // Fijamos fecha al día 1 del mes actual para mantener unicidad mensual
-             const year = targetDate.getFullYear();
-             const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
-             calculatedDate = `${year}-${month}-01`;
+             // Fijamos fecha al 01 para unicidad
+             calculatedDate = `${year}-${monthStr}-01`;
            }
            break
            
         case 'quincenal':
-           // Corte 1 (Días 1-15)
+           // Corte 1
            if (dayOfMonth <= (rutina.corte_1_limite || 15)) {
              shouldGenerate = true;
-             const year = targetDate.getFullYear();
-             const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
-             calculatedDate = `${year}-${month}-01`; // Fijar al inicio quincena 1
+             calculatedDate = `${year}-${monthStr}-01`;
            }
-           // Corte 2 (Días 16-Fin)
-           else if (dayOfMonth >= 16 && dayOfMonth <= 31) {
+           // Corte 2
+           else if (dayOfMonth >= 16) {
              shouldGenerate = true;
-             const year = targetDate.getFullYear();
-             const month = (targetDate.getMonth() + 1).toString().padStart(2, '0');
-             calculatedDate = `${year}-${month}-16`; // Fijar al inicio quincena 2
+             calculatedDate = `${year}-${monthStr}-16`;
            }
            break
 
@@ -128,7 +137,7 @@ serve(async (req) => {
           assignment_id: assignment.id,
           rutina_id: assignment.rutina_id,
           pdv_id: assignment.pdv_id,
-          fecha_programada: calculatedDate, // Usar fecha calculada (ej: 1ro del mes)
+          fecha_programada: calculatedDate,
           estado: 'pendiente',
           prioridad_snapshot: rutina.prioridad,
           hora_inicio_snapshot: rutina.hora_inicio,
@@ -142,7 +151,7 @@ serve(async (req) => {
       const { error: insertError } = await supabase
         .from('task_instances')
         .upsert(tasksToCreate, { 
-          onConflict: 'assignment_id,fecha_programada', // Clave compuesta vital
+          onConflict: 'assignment_id,fecha_programada',
           ignoreDuplicates: true 
         })
       
@@ -152,7 +161,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Proceso finalizado. ${tasksToCreate.length} intenciones de tarea procesadas.` 
+        message: `Proceso finalizado. ${tasksToCreate.length} tareas procesadas para ${dateStr} (GMT-5).` 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
