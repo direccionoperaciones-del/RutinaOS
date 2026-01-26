@@ -13,7 +13,7 @@ import {
   MessageSquareText, Box, FileText,
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
-  Trophy, PartyPopper, Coffee, Info
+  Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -70,10 +70,24 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
           <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${styles.badge}`}>
             {task.prioridad_snapshot}
           </Badge>
-          <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-medium bg-muted px-1.5 py-0 rounded-full">
-            {getFrequencyIcon(r.frecuencia)}
-            {r.frecuencia}
-          </div>
+          
+          {/* BADGE DE AUDITORÍA (NUEVO) */}
+          {task.audit_status === 'aprobado' && (
+            <Badge className="bg-green-500 text-white border-green-600 gap-1 px-1.5 text-[10px]">
+              <ShieldCheck className="w-3 h-3" /> Aprobada
+            </Badge>
+          )}
+          {task.audit_status === 'rechazado' && (
+            <Badge className="bg-red-500 text-white border-red-600 gap-1 px-1.5 text-[10px]">
+              <ShieldAlert className="w-3 h-3" /> Rechazada
+            </Badge>
+          )}
+          {(!task.audit_status || task.audit_status === 'pendiente') && (
+             <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-medium bg-muted px-1.5 py-0 rounded-full">
+               {getFrequencyIcon(r.frecuencia)}
+               {r.frecuencia}
+             </div>
+          )}
         </div>
         
         <div>
@@ -116,12 +130,16 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
       <CardFooter className="p-2 bg-muted/10">
         <Button 
           className="w-full h-8 text-xs shadow-sm hover:shadow transition-all" 
-          variant={isDone ? "secondary" : "default"}
+          variant={isDone ? (task.audit_status === 'rechazado' ? "destructive" : "secondary") : "default"}
           size="sm"
           onClick={() => onAction(task)}
         >
           {isDone ? (
-            <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
+            task.audit_status === 'rechazado' ? (
+              <><RefreshCw className="w-3 h-3 mr-1.5" /> Corregir Tarea</>
+            ) : (
+              <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
+            )
           ) : (
             <><ArrowRight className="w-3 h-3 ml-1.5" /> Ejecutar</>
           )}
@@ -133,25 +151,19 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
 
 const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction }: { items: any[], loading: boolean, onRetry: () => void, emptyMessage: string, onAction: (t: any) => void }) => {
   if (loading) return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
-  
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
         <CheckCircle2 className="w-12 h-12 mb-3 text-muted-foreground/50" />
         <h3 className="text-lg font-medium">Sin tareas</h3>
         <p className="text-muted-foreground text-sm mb-4">{emptyMessage}</p>
-        <Button variant="link" onClick={onRetry} className="mt-2">
-          <RefreshCw className="w-4 h-4 mr-2" /> Recargar Datos
-        </Button>
+        <Button variant="link" onClick={onRetry} className="mt-2"><RefreshCw className="w-4 h-4 mr-2" /> Recargar Datos</Button>
       </div>
     );
   }
-
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-      {items.map((task) => (
-        <TaskCard key={task.id} task={task} onAction={onAction} />
-      ))}
+      {items.map((task) => <TaskCard key={task.id} task={task} onAction={onAction} />)}
     </div>
   );
 };
@@ -160,30 +172,16 @@ export default function TasksList() {
   const { user, profile } = useCurrentUser();
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
-
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-  
   const [activeAbsence, setActiveAbsence] = useState<any>(null);
   
-  // 1. Inicializar fecha
-  useEffect(() => {
-    const today = getLocalDate(); 
-    setDateFrom(today);
-    setDateTo(today);
-  }, []);
+  useEffect(() => { const today = getLocalDate(); setDateFrom(today); setDateTo(today); }, []);
   
-  // 2. Buscar novedades que coincidan con el rango seleccionado
   useEffect(() => {
     const checkAbsences = async () => {
       if (!user || !dateFrom || !dateTo) return;
-      const { data } = await supabase
-        .from('user_absences')
-        .select('*, absence_types(nombre)')
-        .eq('user_id', user.id)
-        .lte('fecha_desde', dateTo) 
-        .gte('fecha_hasta', dateFrom)
-        .maybeSingle(); 
+      const { data } = await supabase.from('user_absences').select('*, absence_types(nombre)').eq('user_id', user.id).lte('fecha_desde', dateTo).gte('fecha_hasta', dateFrom).maybeSingle(); 
       setActiveAbsence(data);
     };
     checkAbsences();
@@ -195,10 +193,7 @@ export default function TasksList() {
 
   const { data: tasks = [], isLoading, error, refetch } = useMyTasks(dateFrom, dateTo);
 
-  const handleStartTask = (task: any) => {
-    setSelectedTask(task);
-    setIsExecutionOpen(true);
-  };
+  const handleStartTask = (task: any) => { setSelectedTask(task); setIsExecutionOpen(true); };
 
   const filteredTasks = tasks.filter(t => {
     if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
@@ -214,227 +209,84 @@ export default function TasksList() {
   const totalFiltered = filteredTasks.length;
   const totalDone = completedTasks.length;
   const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
-
   const todayStr = getLocalDate();
-  const showCongratulation = 
-    totalFiltered > 0 && 
-    pendingTasks.length === 0 && 
-    dateTo <= todayStr &&
-    !activeAbsence; 
+  const showCongratulation = totalFiltered > 0 && pendingTasks.length === 0 && dateTo <= todayStr && !activeAbsence; 
 
-  const clearFilters = () => {
-    const today = getLocalDate();
-    setDateFrom(today);
-    setDateTo(today);
-    setSelectedPdvs([]);
-    setSelectedRoutines([]);
-    setSelectedUsers([]);
-  };
-
+  const clearFilters = () => { const today = getLocalDate(); setDateFrom(today); setDateTo(today); setSelectedPdvs([]); setSelectedRoutines([]); setSelectedUsers([]); };
   const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
 
-  const pdvOptions = useMemo(() => {
-    const map = new Map();
-    tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); });
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
-  }, [tasks]);
-
-  const routineOptions = useMemo(() => {
-    const map = new Map();
-    tasks.forEach(t => { if (t.routine_templates) map.set(t.routine_templates.id, t.routine_templates.nombre); });
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
-  }, [tasks]);
-
-  const userOptions = useMemo(() => {
-    const map = new Map();
-    tasks.forEach(t => { 
-      if (t.profiles) {
-        map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`);
-      }
-    });
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label));
-  }, [tasks]);
-
-  const displayDate = useMemo(() => {
-    if (!dateFrom || !dateTo) return "Cargando...";
-    if (dateFrom === dateTo) {
-      return format(parseLocalDate(dateFrom), "EEEE, d 'de' MMMM", { locale: es });
-    }
-    return "Rango seleccionado";
-  }, [dateFrom, dateTo]);
+  const pdvOptions = useMemo(() => { const map = new Map(); tasks.forEach(t => { if (t.pdv) map.set(t.pdv.id, t.pdv.nombre); }); return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label)); }, [tasks]);
+  const routineOptions = useMemo(() => { const map = new Map(); tasks.forEach(t => { if (t.routine_templates) map.set(t.routine_templates.id, t.routine_templates.nombre); }); return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label)); }, [tasks]);
+  const userOptions = useMemo(() => { const map = new Map(); tasks.forEach(t => { if (t.profiles) map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`); }); return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label)); }, [tasks]);
+  const displayDate = useMemo(() => { if (!dateFrom || !dateTo) return "Cargando..."; if (dateFrom === dateTo) { return format(parseLocalDate(dateFrom), "EEEE, d 'de' MMMM", { locale: es }); } return "Rango seleccionado"; }, [dateFrom, dateTo]);
 
   return (
-    <div className="space-y-6 pb-24"> {/* Padding bottom extra para evitar footer del navegador móvil */}
+    <div className="space-y-6 pb-24">
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-bold tracking-tight">Mis Tareas</h2>
-        <div className="flex justify-between items-center">
-          <p className="text-muted-foreground capitalize text-lg font-medium">
-            {displayDate}
-          </p>
-        </div>
+        <div className="flex justify-between items-center"><p className="text-muted-foreground capitalize text-lg font-medium">{displayDate}</p></div>
       </div>
 
-      {/* --- BANNER DE NOVEDAD ACTIVA --- */}
       {activeAbsence && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
-          <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0">
-            <Coffee className="w-6 h-6" />
-          </div>
+          <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0"><Coffee className="w-6 h-6" /></div>
           <div>
-            <h4 className="font-bold text-blue-900 text-lg">
-              Tienes una novedad: {activeAbsence.absence_types?.nombre}
-            </h4>
-            <p className="text-blue-800 text-sm">
-              Hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}
-            </p>
-            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
-              <Info className="w-3 h-3"/> {activeAbsence.politica === 'reasignar' ? 'Tareas reasignadas.' : 'Tareas omitidas.'}
-            </p>
+            <h4 className="font-bold text-blue-900 text-lg">Tienes una novedad: {activeAbsence.absence_types?.nombre}</h4>
+            <p className="text-blue-800 text-sm">Hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}</p>
+            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium"><Info className="w-3 h-3"/> {activeAbsence.politica === 'reasignar' ? 'Tareas reasignadas.' : 'Tareas omitidas.'}</p>
           </div>
         </div>
       )}
 
-      {/* --- FILTROS MEJORADOS PARA MÓVIL --- */}
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm font-medium text-primary">
-              <Filter className="w-4 h-4" /> Filtros
-            </div>
-            <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar">
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </Button>
+            <div className="flex items-center gap-2 text-sm font-medium text-primary"><Filter className="w-4 h-4" /> Filtros</div>
+            <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></Button>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          {/* Grid responsiva: 1 col en móvil, más en tablet/desktop */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Desde</Label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Hasta</Label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
-                <Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Puntos de Venta</Label>
-              <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Rutinas</Label>
-              <MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" />
-            </div>
-
-            {profile?.role !== 'administrador' && (
-              <div className="space-y-1">
-                <Label className="text-xs">Usuarios</Label>
-                <MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" />
-              </div>
-            )}
+            <div className="space-y-1"><Label className="text-xs">Desde</Label><div className="relative"><CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" /><Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></div></div>
+            <div className="space-y-1"><Label className="text-xs">Hasta</Label><div className="relative"><CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" /><Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></div></div>
+            <div className="space-y-1"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
+            <div className="space-y-1"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>
+            {profile?.role !== 'administrador' && (<div className="space-y-1"><Label className="text-xs">Usuarios</Label><MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" /></div>)}
           </div>
-          {hasActiveFilters && (
-            <div className="mt-3 flex justify-end">
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs h-7 text-destructive hover:bg-destructive/10">
-                <X className="w-3 h-3 mr-1" /> Restablecer
-              </Button>
-            </div>
-          )}
+          {hasActiveFilters && (<div className="mt-3 flex justify-end"><Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs h-7 text-destructive hover:bg-destructive/10"><X className="w-3 h-3 mr-1" /> Restablecer</Button></div>)}
         </CardContent>
       </Card>
 
-      {/* --- PROGRESO --- */}
       <div className="bg-card border rounded-lg p-3 shadow-sm">
-        <div className="flex justify-between text-xs font-medium mb-1">
-          <span>Progreso</span>
-          <span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>{progressPercentage}%</span>
-        </div>
-        <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
-          <div 
-            className={`h-full transition-all duration-500 ${progressPercentage < 50 ? 'bg-orange-500' : 'bg-green-500'}`}
-            style={{ width: `${progressPercentage}%` }}
-          />
-        </div>
+        <div className="flex justify-between text-xs font-medium mb-1"><span>Progreso</span><span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>{progressPercentage}%</span></div>
+        <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${progressPercentage < 50 ? 'bg-orange-500' : 'bg-green-500'}`} style={{ width: `${progressPercentage}%` }} /></div>
       </div>
 
-      {/* --- MENSAJE DE FELICITACIÓN --- */}
       {showCongratulation && !isLoading && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden">
-          <div className="absolute top-0 right-0 opacity-10">
-            <PartyPopper className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-green-600" />
-          </div>
+          <div className="absolute top-0 right-0 opacity-10"><PartyPopper className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-green-600" /></div>
           <div className="flex flex-col items-center gap-2 relative z-10">
-            <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce">
-              <Trophy className="h-6 w-6 text-green-600" />
-            </div>
+            <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce"><Trophy className="h-6 w-6 text-green-600" /></div>
             <h3 className="text-xl font-bold text-green-800 tracking-tight">¡FELICITACIONES!</h3>
             <p className="text-green-700 font-medium">La operación del día está completa.</p>
           </div>
         </div>
       )}
 
-      {/* Manejo de Errores */}
-      {error && (
-        <div className="p-4 rounded border border-red-200 bg-red-50 text-red-700 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5" />
-          <span>Error cargando tareas.</span>
-        </div>
-      )}
+      {error && <div className="p-4 rounded border border-red-200 bg-red-50 text-red-700 flex items-center gap-2"><AlertCircle className="w-5 h-5" /><span>Error cargando tareas.</span></div>}
 
-      {/* Pestañas */}
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="all">Todas ({allTasks.length})</TabsTrigger>
           <TabsTrigger value="pending">Pendientes ({pendingTasks.length})</TabsTrigger>
           <TabsTrigger value="completed">Realizadas ({completedTasks.length})</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="all" className="mt-0">
-          <TaskGrid 
-            items={allTasks} 
-            loading={isLoading} 
-            onRetry={refetch} 
-            emptyMessage="No hay tareas programadas." 
-            onAction={handleStartTask} 
-          />
-        </TabsContent>
-
-        <TabsContent value="pending" className="mt-0">
-          <TaskGrid 
-            items={pendingTasks} 
-            loading={isLoading} 
-            onRetry={refetch} 
-            emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} 
-            onAction={handleStartTask} 
-          />
-        </TabsContent>
-
-        <TabsContent value="completed" className="mt-0">
-          <TaskGrid 
-            items={completedTasks} 
-            loading={isLoading} 
-            onRetry={refetch} 
-            emptyMessage="Aún no hay tareas completadas." 
-            onAction={handleStartTask} 
-          />
-        </TabsContent>
+        <TabsContent value="all" className="mt-0"><TaskGrid items={allTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} /></TabsContent>
+        <TabsContent value="pending" className="mt-0"><TaskGrid items={pendingTasks} loading={isLoading} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} /></TabsContent>
+        <TabsContent value="completed" className="mt-0"><TaskGrid items={completedTasks} loading={isLoading} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} /></TabsContent>
       </Tabs>
 
-      <TaskExecutionModal 
-        task={selectedTask}
-        open={isExecutionOpen}
-        onOpenChange={setIsExecutionOpen}
-        onSuccess={() => refetch()}
-      />
+      <TaskExecutionModal task={selectedTask} open={isExecutionOpen} onOpenChange={setIsExecutionOpen} onSuccess={() => refetch()} />
     </div>
   );
 }
