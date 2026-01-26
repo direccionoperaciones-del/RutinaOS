@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PieChart as PieChartIcon } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -10,6 +11,9 @@ interface StatusChartProps {
 }
 
 export const StatusChart = ({ data, loading }: StatusChartProps) => {
+  // Calculamos el total para los porcentajes
+  const total = useMemo(() => data.reduce((acc, curr) => acc + curr.value, 0), [data]);
+
   return (
     <Card className="border-slate-200">
       <CardHeader>
@@ -33,8 +37,28 @@ export const StatusChart = ({ data, loading }: StatusChartProps) => {
                     <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                  formatter={(value: number) => {
+                    const percent = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                    return [`${value} (${percent}%)`]; // Muestra: 8 (45.5%)
+                  }}
+                />
+                <Legend 
+                  verticalAlign="middle" 
+                  align="right" 
+                  layout="vertical" 
+                  iconType="circle"
+                  formatter={(value, entry: any) => {
+                    const { payload } = entry;
+                    const percent = total > 0 ? ((payload.value / total) * 100).toFixed(0) : 0;
+                    return (
+                      <span className="text-slate-600 dark:text-slate-300 ml-1 font-medium text-sm">
+                        {value} <span className="text-xs text-muted-foreground font-normal">({percent}%)</span>
+                      </span>
+                    );
+                  }}
+                />
               </PieChart>
             </ResponsiveContainer>
           ) : (
