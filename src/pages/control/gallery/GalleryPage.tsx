@@ -54,7 +54,7 @@ export default function GalleryPage() {
     setLoading(true);
     try {
       // Usamos !inner para forzar el filtrado en la tabla relacionada si se aplica un filtro
-      // Si no hay filtros, usamos left join normal para no perder datos si algo falta (aunque en este modelo task_id es FK not null)
+      // Si no hay filtros, usamos left join normal para no perder datos si algo falta
       
       let query = supabase
         .from('evidence_files')
@@ -74,9 +74,18 @@ export default function GalleryPage() {
         .eq('tipo', 'foto')
         .order('created_at', { ascending: false });
 
-      // Aplicar filtros
-      if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
-      if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
+      // Aplicar filtros con ajuste de zona horaria local -> UTC
+      if (dateFrom) {
+        // Creamos fecha local inicio del día (00:00:00) y la pasamos a ISO (UTC)
+        const fromD = new Date(`${dateFrom}T00:00:00`);
+        query = query.gte('created_at', fromD.toISOString());
+      }
+      if (dateTo) {
+        // Creamos fecha local fin del día (23:59:59) y la pasamos a ISO (UTC)
+        // Esto maneja correctamente el desfase horario (ej: UTC-5 serían las 04:59 del día siguiente en UTC)
+        const toD = new Date(`${dateTo}T23:59:59.999`);
+        query = query.lte('created_at', toD.toISOString());
+      }
 
       if (selectedPdvs.length > 0) {
         query = query.in('task_instances.pdv_id', selectedPdvs);
