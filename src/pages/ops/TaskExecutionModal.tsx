@@ -17,7 +17,6 @@ import { InventoryStep } from "./components/execution/InventoryStep";
 
 // Logic
 import { buildTaskSchema, TaskField } from "./logic/task-schema";
-import { calculateTaskDeadline } from "./logic/task-deadline";
 
 interface TaskExecutionModalProps {
   task: any;
@@ -56,23 +55,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const routine = task?.routine_templates;
   const pdv = task?.pdv;
 
-  // --- LÓGICA DE ESTADO Y PERMISOS CORREGIDA ---
-  
-  // 1. Estado original de la tarea
   const isTaskPending = task?.estado === 'pendiente' || task?.estado === 'en_proceso';
-  const isTaskCompleted = !isTaskPending; // ✅ FIX: Definición agregada
-  
-  // 2. Verificar si fue rechazada y necesita corrección
+  const isTaskCompleted = !isTaskPending;
   const isRejected = task?.audit_status === 'rechazado';
-  
-  // 3. Verificar si soy el ejecutor (Owner)
-  // Nota: Usamos completado_por ya que responsable_id no parece existir en la tabla actual según el error SQL anterior
   const isExecutor = user?.id === task?.completado_por;
   
-  // 4. Determinar si puedo editar:
-  //    a) Está pendiente/en proceso
-  //    b) O está rechazada Y soy el ejecutor (para corregir)
-  //    c) O tengo rol alto (director/lider) para editar admin
   const userRole = profile?.role || '';
   const canEditAsAdmin = ['director', 'lider', 'auditor'].includes(userRole);
   
@@ -164,7 +151,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleComplete = async () => {
-    // 1. Validaciones
+    // 1. Validaciones en Cliente (UX)
     for (const field of schema) {
       let valueToValidate;
       switch (field.id) {
@@ -182,56 +169,32 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
     setIsProcessing(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No autenticado");
-      
-      // 2. Guardar Inventario
-      if (formData.inventory.length > 0) {
-        await supabase.from('inventory_submission_rows').delete().eq('task_id', task.id);
-        const rows = formData.inventory.map(r => ({ task_id: task.id, producto_id: r.producto_id, esperado: r.esperado, fisico: r.fisico }));
-        await supabase.from('inventory_submission_rows').insert(rows);
-      }
-
-      // 3. Calcular Estado
-      const now = new Date();
-      let newStatus = task.estado;
-      
-      // Si estaba pendiente, calculamos si venció
-      if (isTaskPending) {
-         try { const limit = calculateTaskDeadline(task); newStatus = now > limit ? 'completada_vencida' : 'completada_a_tiempo'; } 
-         catch (e) { newStatus = 'completada_a_tiempo'; }
-      }
-
-      // 4. Determinar Audit Status (Lógica de Reenvío)
-      // Si estaba rechazada, al guardar pasa a 'pendiente' (se reenvía a la cola del auditor)
-      const nextAuditStatus = task.audit_status === 'rechazado' ? 'pendiente' : task.audit_status;
-
-      // 5. Update Principal
-      const { error } = await supabase.from('task_instances').update({
-          estado: newStatus, 
-          completado_at: isTaskPending ? now.toISOString() : task.completado_at,
-          completado_por: task.completado_por || user.id, // Si ya tenía ejecutor, mantenerlo, sino yo
-          gps_latitud: formData.gps?.lat, 
-          gps_longitud: formData.gps?.lng, 
-          gps_en_rango: formData.gps?.valid,
-          comentario: formData.comments,
-          
-          // Reenvío a auditoría
-          audit_status: nextAuditStatus,
-        }).eq('id', task.id);
+      // 2. Invocación Segura al Edge Function
+      const { data, error } = await supabase.functions.invoke('complete-task', {
+        body: {
+          taskId: task.id,
+          gpsData: formData.gps,
+          inventory: formData.inventory,
+          comments: formData.comments
+        }
+      });
 
       if (error) throw error;
+      if (data && data.error) throw new Error(data.error);
 
       toast({ 
         title: isRejected ? "Corrección Enviada" : "Tarea Finalizada", 
-        description: isRejected ? "La tarea ha sido enviada nuevamente a revisión." : "Información guardada correctamente." 
+        description: isRejected ? "La tarea ha sido enviada nuevamente a revisión." : "Información verificada y guardada correctamente." 
       });
       
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally { setIsProcessing(false); }
+      console.error(error);
+      toast({ variant: "destructive", title: "Error al guardar", description: error.message });
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const renderField = (field: TaskField) => {
