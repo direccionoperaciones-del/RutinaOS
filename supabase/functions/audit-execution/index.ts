@@ -7,66 +7,46 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    // 1. Setup Supabase Client
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    
-    // Usamos Service Key para poder escribir notificaciones a otros usuarios y actualizar tareas sin restricciones de RLS de frontend
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 2. Get User from Auth Header (Security Check)
+    // 1. Obtener Auditor (Usuario Actual)
     const authHeader = req.headers.get('Authorization')!
-    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
+    const { data: { user: auditor }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
 
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (authError || !auditor) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
     }
 
-    // 3. Parse Body
+    // 2. Parsear Body
     const { taskId, status, note } = await req.json()
 
-    if (!taskId || !status) {
-      return new Response(JSON.stringify({ error: 'Missing taskId or status' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
     if (status === 'rejected' && (!note || !note.trim())) {
-      return new Response(JSON.stringify({ error: 'Audit note is required for rejection' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'La nota de auditoría es obligatoria para rechazar.' }), { status: 400, headers: corsHeaders })
     }
 
-    // 4. Verify Role (Must be Director, Lider, Auditor)
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, tenant_id')
-      .eq('id', user.id)
-      .single()
-
-    const allowedRoles = ['director', 'lider', 'auditor']
-    if (!profile || !allowedRoles.includes(profile.role)) {
-      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    // 5. Fetch Task Details (to get executor)
+    // 3. Obtener Tarea y Ejecutor
     const { data: task, error: taskError } = await supabase
       .from('task_instances')
-      .select('id, completado_por, routine_templates(nombre)')
+      .select('id, completado_por, routine_templates(nombre), tenant_id')
       .eq('id', taskId)
       .single()
 
     if (taskError || !task) {
-      return new Response(JSON.stringify({ error: 'Task not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Tarea no encontrada' }), { status: 404, headers: corsHeaders })
     }
 
-    // 6. Update Task
+    // 4. Actualizar Tarea
     const updateData = {
-      audit_status: status, // 'approved' | 'rejected'
+      audit_status: status === 'approved' ? 'aprobado' : 'rechazado',
       audit_at: new Date().toISOString(),
-      audit_by: user.id,
+      audit_by: auditor.id,
       audit_notas: note
     }
 
@@ -77,22 +57,21 @@ serve(async (req) => {
 
     if (updateError) throw updateError
 
-    // 7. Create Notification for Executor
-    // Solo notificar si hay un usuario ejecutor definido
-    if (task.completado_por) {
+    // 5. Notificar al Ejecutor (Si existe y es diferente al auditor)
+    // CRÍTICO: recipient_user_id = task.completado_por
+    if (task.completado_por && task.completado_por !== auditor.id) {
       const isApproved = status === 'approved'
-      const title = isApproved ? 'Rutina Aprobada ✅' : 'Rutina Rechazada ⚠️'
+      const title = isApproved ? 'Rutina Aprobada ✅' : 'Corrección Requerida ⚠️'
       const routineName = task.routine_templates?.nombre || 'Rutina'
       const body = isApproved 
-        ? `La ejecución de "${routineName}" ha sido aprobada por auditoría.` 
-        : `La ejecución de "${routineName}" fue rechazada. Motivo: ${note}`
+        ? `Tu ejecución de "${routineName}" ha sido aprobada.` 
+        : `La rutina "${routineName}" fue rechazada. Motivo: "${note}". Por favor corrige y reenvía.`
 
       await supabase.from('notifications').insert({
-        tenant_id: profile.tenant_id,
-        user_id: task.completado_por,
+        tenant_id: task.tenant_id,
+        user_id: task.completado_por, // DESTINATARIO CORRECTO
         type: isApproved ? 'routine_approved' : 'routine_rejected',
         title: title,
-        // Usamos el entity_id para navegar al detalle
         entity_id: taskId, 
         leido: false
       })

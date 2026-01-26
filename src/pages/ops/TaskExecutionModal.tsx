@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, AlertCircle, X, CheckCircle2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Loader2, AlertCircle, X, CheckCircle2, ShieldAlert, ShieldCheck, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -28,7 +28,7 @@ interface TaskExecutionModalProps {
 
 export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: TaskExecutionModalProps) {
   const { toast } = useToast();
-  const { profile } = useCurrentUser();
+  const { user, profile } = useCurrentUser();
   
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
@@ -56,11 +56,25 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const routine = task?.routine_templates;
   const pdv = task?.pdv;
 
+  // --- LÓGICA DE ESTADO Y PERMISOS CORREGIDA ---
+  
+  // 1. Estado original de la tarea
   const isTaskPending = task?.estado === 'pendiente' || task?.estado === 'en_proceso';
-  const isTaskCompleted = !isTaskPending;
+  
+  // 2. Verificar si fue rechazada y necesita corrección
+  const isRejected = task?.audit_status === 'rechazado';
+  
+  // 3. Verificar si soy el ejecutor (Owner)
+  const isExecutor = user?.id === task?.completado_por || user?.id === task?.responsable_id;
+  
+  // 4. Determinar si puedo editar:
+  //    a) Está pendiente/en proceso
+  //    b) O está rechazada Y soy el ejecutor (para corregir)
+  //    c) O tengo rol alto (director/lider) para editar admin
   const userRole = profile?.role || '';
-  const canEditCompleted = ['director', 'lider', 'auditor'].includes(userRole);
-  const canPerformAction = isTaskPending || canEditCompleted;
+  const canEditAsAdmin = ['director', 'lider', 'auditor'].includes(userRole);
+  
+  const canPerformAction = isTaskPending || (isRejected && isExecutor) || canEditAsAdmin;
 
   const schema: TaskField[] = useMemo(() => {
     return buildTaskSchema(routine, pdv);
@@ -108,9 +122,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'foto' | 'archivo') => {
-    // ... (Mantener lógica existente de upload) ...
-    // Para simplificar la respuesta, asumo que esta lógica se mantiene igual que el archivo original.
-    // Solo estoy modificando la visualización del estado de auditoría.
     const files = event.target.files; 
     if (!files || files.length === 0 || !task) return;
     setIsUploading(true);
@@ -142,7 +153,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleDeleteEvidence = async (id: string, path: string) => {
-    // ... (Mantener lógica existente) ...
     if (!confirm("¿Borrar archivo?")) return;
     try {
       await supabase.storage.from('evidence').remove([path]);
@@ -152,7 +162,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleComplete = async () => {
-    // ... (Mantener lógica existente de guardado) ...
+    // 1. Validaciones
     for (const field of schema) {
       let valueToValidate;
       switch (field.id) {
@@ -167,36 +177,56 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       const error = field.validate(valueToValidate);
       if (error) { toast({ variant: "destructive", title: "Falta información", description: error }); return; }
     }
+
     setIsProcessing(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
       
+      // 2. Guardar Inventario
       if (formData.inventory.length > 0) {
         await supabase.from('inventory_submission_rows').delete().eq('task_id', task.id);
         const rows = formData.inventory.map(r => ({ task_id: task.id, producto_id: r.producto_id, esperado: r.esperado, fisico: r.fisico }));
         await supabase.from('inventory_submission_rows').insert(rows);
       }
 
+      // 3. Calcular Estado
       const now = new Date();
       let newStatus = task.estado;
+      
+      // Si estaba pendiente, calculamos si venció
       if (isTaskPending) {
          try { const limit = calculateTaskDeadline(task); newStatus = now > limit ? 'completada_vencida' : 'completada_a_tiempo'; } 
          catch (e) { newStatus = 'completada_a_tiempo'; }
       }
 
+      // 4. Determinar Audit Status (Lógica de Reenvío)
+      // Si estaba rechazada, al guardar pasa a 'pendiente' (se reenvía a la cola del auditor)
+      const nextAuditStatus = task.audit_status === 'rechazado' ? 'pendiente' : task.audit_status;
+
+      // 5. Update Principal
       const { error } = await supabase.from('task_instances').update({
           estado: newStatus, 
           completado_at: isTaskPending ? now.toISOString() : task.completado_at,
-          completado_por: isTaskPending ? user.id : task.completado_por,
-          gps_latitud: formData.gps?.lat, gps_longitud: formData.gps?.lng, gps_en_rango: formData.gps?.valid,
+          completado_por: task.completado_por || user.id, // Si ya tenía ejecutor, mantenerlo, sino yo
+          gps_latitud: formData.gps?.lat, 
+          gps_longitud: formData.gps?.lng, 
+          gps_en_rango: formData.gps?.valid,
           comentario: formData.comments,
-          // Si estaba rechazada y se actualiza, vuelve a pendiente de auditoría
-          audit_status: task.audit_status === 'rechazado' ? 'pendiente' : task.audit_status
+          
+          // Reenvío a auditoría
+          audit_status: nextAuditStatus,
+          // Opcional: Podríamos limpiar audit_notas para "limpiar" el rechazo visualmente, 
+          // pero mejor dejarlo hasta que el auditor lo apruebe de nuevo.
         }).eq('id', task.id);
 
       if (error) throw error;
-      toast({ title: "Guardado", description: "Información actualizada correctamente." });
+
+      toast({ 
+        title: isRejected ? "Corrección Enviada" : "Tarea Finalizada", 
+        description: isRejected ? "La tarea ha sido enviada nuevamente a revisión." : "Información guardada correctamente." 
+      });
+      
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
@@ -205,7 +235,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const renderField = (field: TaskField) => {
-    // ... (Mantener mapeo de campos igual) ...
     switch (field.type) {
       case 'location': return <LocationStep key={field.id} pdv={pdv} required={field.required} onLocationVerified={(lat, lng, valid) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid } }))} />;
       case 'email_check': return <EmailStep key={field.id} requiresSend={field.id === 'email_send'} requiresRespond={field.id === 'email_respond'} sentConfirmed={formData.email_send} respondedConfirmed={formData.email_respond} onUpdate={(k, v) => setFormData(prev => ({ ...prev, [k === 'sent' ? 'email_send' : 'email_respond']: v }))} />;
@@ -242,7 +271,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           
-          {/* --- AUDIT STATUS SECTION (NUEVO) --- */}
+          {/* --- AUDIT STATUS SECTION --- */}
           {task.audit_status && task.audit_status !== 'pendiente' && (
             <div className={`mb-6 p-4 rounded-lg border ${task.audit_status === 'aprobado' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
               <div className="flex items-center gap-2 mb-2">
@@ -263,9 +292,10 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
                 </div>
               )}
 
-              {task.audit_status === 'rechazado' && isTaskCompleted && (
-                <div className="mt-3 text-xs text-red-700 font-medium">
-                  * Por favor corrige la información y vuelve a guardar para enviar a revisión.
+              {task.audit_status === 'rechazado' && (
+                <div className="mt-3 text-xs text-red-700 font-medium flex items-center gap-2">
+                  <RefreshCw className="w-3 h-3" />
+                  Puedes editar la información abajo y reenviar para nueva revisión.
                 </div>
               )}
             </div>
@@ -277,7 +307,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             <div className="py-10 text-center text-destructive"><AlertCircle className="w-8 h-8 mx-auto mb-2"/>{initError}</div>
           ) : (
             <div className={`space-y-6 pb-4 ${!canPerformAction ? 'opacity-80 pointer-events-none' : ''}`}>
-              {!canPerformAction && <div className="bg-muted p-3 rounded text-sm text-center text-muted-foreground">Solo lectura.</div>}
+              {!canPerformAction && <div className="bg-muted p-3 rounded text-sm text-center text-muted-foreground">Solo lectura (Sin permisos de edición).</div>}
               {schema.map(field => renderField(field))}
             </div>
           )}
@@ -293,10 +323,10 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             <Button 
               onClick={handleComplete} 
               disabled={isInitializing || isProcessing || isUploading || !!initError}
-              className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+              className={`w-full sm:w-auto ${isRejected ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-green-600 hover:bg-green-700'}`}
             >
               {isProcessing && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              {isTaskPending ? 'Finalizar Tarea' : 'Corregir y Guardar'}
+              {isRejected ? 'Corregir y Reenviar' : (isTaskPending ? 'Finalizar Tarea' : 'Guardar Cambios')}
             </Button>
           )}
         </DialogFooter>
