@@ -12,10 +12,30 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    
+    // SECURITY CHECK
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+    }
+    
+    // Create a temporary client to verify the user
+    const supabaseAnon = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '')
+    const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(authHeader.replace('Bearer ', ''))
+
+    // Allow if valid user (you can restrict to specific roles here) OR if it is a service call (check specific header/secret)
+    if (authError || !user) {
+       // Optional: allow CRON if you set a custom header in pg_cron
+       const cronSecret = req.headers.get('x-cron-secret')
+       if (cronSecret !== Deno.env.get('CRON_SECRET')) {
+         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+       }
+    }
+
+    // Initialize admin client only after auth check
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // --- 1. DETERMINAR FECHA (COLOMBIA GMT-5) ---
     const { date } = await req.json().catch(() => ({ date: null }))
@@ -24,28 +44,24 @@ serve(async (req) => {
     
     if (date) {
       const [y, m, d] = date.split('-').map(Number);
-      // Creamos fecha a mediodía UTC para evitar bordes, asumiendo que el string ya es la fecha deseada
       targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
     } else {
-      // Automático: Ajuste -5 horas desde UTC actual
       const now = new Date();
       const colombiaOffset = -5;
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       targetDate = new Date(utc + (3600000 * colombiaOffset));
     }
 
-    const dayOfWeek = targetDate.getDay() // 0 = Domingo
+    const dayOfWeek = targetDate.getDay() 
     const dayOfMonth = targetDate.getDate()
     const year = targetDate.getFullYear();
     const monthStr = String(targetDate.getMonth() + 1).padStart(2, '0');
     const dayStr = String(targetDate.getDate()).padStart(2, '0');
-    const dateStr = date || `${year}-${monthStr}-${dayStr}`; // YYYY-MM-DD
+    const dateStr = date || `${year}-${monthStr}-${dayStr}`;
 
-    console.log(`🇨🇴 Motor iniciando para: ${dateStr} (Dia: ${dayOfWeek})`)
+    console.log(`[generate-daily-tasks] 🇨🇴 Motor iniciando para: ${dateStr} (Dia: ${dayOfWeek})`)
 
     // --- 2. CARGAR DATOS MAESTROS ---
-    
-    // A. Rutinas Asignadas (Qué hacer)
     const { data: assignments, error: assignError } = await supabase
       .from('routine_assignments')
       .select(`
@@ -60,7 +76,6 @@ serve(async (req) => {
 
     if (assignError) throw new Error(`Error cargando rutinas: ${assignError.message}`);
 
-    // B. Responsables de PDV (Quién lo hace)
     const { data: pdvResponsibles, error: pdvError } = await supabase
       .from('pdv_assignments')
       .select('pdv_id, user_id')
@@ -68,11 +83,9 @@ serve(async (req) => {
     
     if (pdvError) throw new Error(`Error cargando responsables: ${pdvError.message}`);
 
-    // Mapa rápido: PDV_ID -> USER_ID
     const responsibleMap = new Map();
     pdvResponsibles?.forEach(p => responsibleMap.set(p.pdv_id, p.user_id));
 
-    // C. Ausencias / Novedades para la fecha (Está disponible?)
     const { data: absences, error: absError } = await supabase
       .from('user_absences')
       .select('user_id, politica, receptor_id')
@@ -81,11 +94,9 @@ serve(async (req) => {
 
     if (absError) throw new Error(`Error cargando ausencias: ${absError.message}`);
 
-    // Mapa: USER_ID -> { politica, receptor }
     const absenceMap = new Map();
     absences?.forEach(a => absenceMap.set(a.user_id, a));
 
-    // D. Excepciones de Rutina (Cancelaciones específicas para hoy)
     const { data: exceptions, error: excError } = await supabase
       .from('routine_assignment_exceptions')
       .select('assignment_id')
@@ -96,18 +107,15 @@ serve(async (req) => {
     const exceptionSet = new Set(exceptions?.map(e => e.assignment_id));
 
     // --- 3. PROCESAMIENTO ---
-    
     const tasksToCreate = [];
     const logs = [];
 
     for (const assignment of assignments) {
-      // Filtro 1: Excepción manual para hoy
       if (exceptionSet.has(assignment.id)) continue;
 
       const rutina = assignment.routine_templates;
       if (!rutina) continue;
 
-      // Filtro 2: Frecuencia (¿Toca hoy?)
       let shouldGenerate = false;
       let calculatedDate = dateStr;
 
@@ -121,7 +129,7 @@ serve(async (req) => {
         case 'mensual':
            if (dayOfMonth <= (rutina.vencimiento_dia_mes || 31)) {
              shouldGenerate = true;
-             calculatedDate = `${year}-${monthStr}-01`; // Agrupar mensual al día 1
+             calculatedDate = `${year}-${monthStr}-01`;
            }
            break;
         case 'quincenal':
@@ -140,7 +148,6 @@ serve(async (req) => {
 
       if (!shouldGenerate) continue;
 
-      // Filtro 3: Determinar Responsable
       let responsibleId = responsibleMap.get(assignment.pdv_id);
 
       if (!responsibleId) {
@@ -148,7 +155,6 @@ serve(async (req) => {
         continue;
       }
 
-      // Filtro 4: Verificar Ausencia del Responsable
       const absence = absenceMap.get(responsibleId);
       if (absence) {
         if (absence.politica === 'omitir') {
@@ -160,13 +166,12 @@ serve(async (req) => {
         }
       }
 
-      // --- PREPARAR INSERT ---
       tasksToCreate.push({
         tenant_id: assignment.tenant_id,
         assignment_id: assignment.id,
         rutina_id: assignment.rutina_id,
         pdv_id: assignment.pdv_id,
-        responsable_id: responsibleId, // ¡CRÍTICO: AHORA SÍ SE ASIGNA!
+        responsable_id: responsibleId,
         fecha_programada: calculatedDate,
         estado: 'pendiente',
         prioridad_snapshot: rutina.prioridad,
@@ -187,7 +192,8 @@ serve(async (req) => {
       if (insertError) throw insertError;
     }
 
-    // --- 5. RESULTADO ---
+    console.log(`[generate-daily-tasks] Generadas ${tasksToCreate.length} tareas.`)
+
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -198,7 +204,7 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error("Critical Error:", error);
+    console.error("[generate-daily-tasks] Error:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
