@@ -111,17 +111,43 @@ export const useDashboardData = () => {
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
 
-      // --- FILTRO DE SEGURIDAD POR ROL ---
+      // --- LÓGICA DE FILTRADO SEGÚN ROL ---
+      
       if (profile.role === 'administrador') {
-        // El admin solo ve lo suyo (asignado o ejecutado por él)
-        query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
-      } else if (selectedUsers.length > 0) {
-        // Director/Líder puede filtrar por usuarios específicos
-        query = query.in('completado_por', selectedUsers);
+        // 1. Obtener IDs de PDVs asignados vigentes
+        const { data: assignments } = await supabase
+          .from('pdv_assignments')
+          .select('pdv_id')
+          .eq('user_id', user.id)
+          .eq('vigente', true);
+        
+        const myPdvIds = assignments?.map((a: any) => a.pdv_id) || [];
+
+        if (myPdvIds.length > 0) {
+          // Si seleccionó PDVs en el filtro, usamos la intersección (seguridad)
+          // Si no seleccionó nada, usamos todos sus asignados
+          const filterIds = selectedPdvs.length > 0 
+            ? selectedPdvs.filter(id => myPdvIds.includes(id))
+            : myPdvIds;
+            
+          if (filterIds.length > 0) {
+            query = query.in('pdv_id', filterIds);
+          } else {
+            // Caso raro: seleccionó algo que no tiene asignado -> no mostrar nada
+            query = query.in('pdv_id', ['00000000-0000-0000-0000-000000000000']);
+          }
+        } else {
+          // Si no tiene PDV asignado, fallback a ver solo lo que haya completado él mismo
+          query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+        }
+
+      } else {
+        // ROL: Director / Líder / Auditor
+        if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
+        if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
       }
 
-      // Filtros opcionales
-      if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+      // Filtro común de rutinas
       if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
 
       const { data: tasks, error } = await query;
