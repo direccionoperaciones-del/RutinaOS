@@ -13,7 +13,7 @@ import {
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
   Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
-  Calendar as CalendarIcon, CheckCircle2, X
+  Calendar as CalendarIcon, CheckCircle2, X, Eye
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
