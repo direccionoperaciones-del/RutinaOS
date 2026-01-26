@@ -47,9 +47,37 @@ export const useDashboardData = () => {
   // Load Filter Options
   useEffect(() => {
     const loadOptions = async () => {
-      const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
+      if (!user || !profile) return;
+
+      let pdvData: any[] = [];
+
+      // 1. Cargar PDVs (Filtrado por rol)
+      if (profile.role === 'administrador') {
+        // Solo los asignados al usuario
+        const { data: assignments } = await supabase
+          .from('pdv_assignments')
+          .select('pdv (id, nombre)')
+          .eq('user_id', user.id)
+          .eq('vigente', true);
+        
+        // Extraer el objeto PDV anidado y eliminar nulos
+        pdvData = assignments?.map((a: any) => a.pdv).filter(Boolean) || [];
+        // Ordenar alfabéticamente
+        pdvData.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      } else {
+        // Director/Líder ve todos
+        const { data } = await supabase
+          .from('pdv')
+          .select('id, nombre')
+          .eq('activo', true)
+          .order('nombre');
+        pdvData = data || [];
+      }
+
+      // 2. Cargar Rutinas (Todas las activas)
       const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
       
+      // 3. Cargar Usuarios (Solo si no es admin)
       let userData: any[] = [];
       if (profile?.role !== 'administrador') {
         const { data } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
@@ -57,43 +85,55 @@ export const useDashboardData = () => {
       }
 
       setFilterOptions({
-        pdvs: pdvData?.map(p => ({ label: p.nombre, value: p.id })) || [],
+        pdvs: pdvData.map(p => ({ label: p.nombre, value: p.id })),
         routines: routData?.map(r => ({ label: r.nombre, value: r.id })) || [],
         users: userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []
       });
     };
-    if (profile) loadOptions();
-  }, [profile]);
+    
+    loadOptions();
+  }, [profile, user]);
 
   // Fetch Data
   const fetchData = async () => {
     if (!profile || !user || !dateFrom || !dateTo) return;
     setLoading(true);
 
-    let query = supabase
-      .from('task_instances')
-      .select(`
-        id, estado, prioridad_snapshot, completado_at, created_at, fecha_programada, audit_status,
-        routine_templates (nombre),
-        pdv (nombre),
-        profiles:completado_por (nombre, apellido)
-      `)
-      .gte('fecha_programada', dateFrom)
-      .lte('fecha_programada', dateTo);
+    try {
+      let query = supabase
+        .from('task_instances')
+        .select(`
+          id, estado, prioridad_snapshot, completado_at, created_at, fecha_programada, audit_status, responsable_id, completado_por,
+          routine_templates (nombre),
+          pdv (nombre),
+          profiles:completado_por (nombre, apellido)
+        `)
+        .gte('fecha_programada', dateFrom)
+        .lte('fecha_programada', dateTo);
 
-    if (profile.role === 'administrador') {
-      query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
-    } else if (selectedUsers.length > 0) {
-      query = query.in('completado_por', selectedUsers);
+      // --- FILTRO DE SEGURIDAD POR ROL ---
+      if (profile.role === 'administrador') {
+        // El admin solo ve lo suyo (asignado o ejecutado por él)
+        query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
+      } else if (selectedUsers.length > 0) {
+        // Director/Líder puede filtrar por usuarios específicos
+        query = query.in('completado_por', selectedUsers);
+      }
+
+      // Filtros opcionales
+      if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+      if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
+
+      const { data: tasks, error } = await query;
+      
+      if (error) throw error;
+
+      processData(tasks || []);
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
     }
-    if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
-    if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
-
-    const { data: tasks, error } = await query;
-    if (error) { console.error(error); setLoading(false); return; }
-
-    processData(tasks);
-    setLoading(false);
   };
 
   const processData = (tasks: any[]) => {
@@ -109,8 +149,8 @@ export const useDashboardData = () => {
     // 2. Trends
     const groupedByDate = tasks.reduce((acc: any, curr) => {
       const d = curr.fecha_programada;
-      if (!acc[d]) acc[d] = { date: d, total: 0, completed: 0, pending: 0 };
-      acc[d].total++;
+      if (!acc[d]) acc[d] = { date: d, Total: 0, completed: 0, pending: 0 };
+      acc[d].Total++;
       if (curr.estado.startsWith('completada')) acc[d].completed++;
       if (curr.estado === 'pendiente') acc[d].pending++;
       return acc;
