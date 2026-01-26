@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
-import { getLocalDate, parseLocalDate } from "@/lib/utils";
+import { getLocalDate, parseLocalDate, openDatePicker } from "@/lib/utils";
 import { calculateTaskDeadline } from "./logic/task-deadline";
 
 const getPriorityStyles = (priority: string) => {
@@ -252,7 +252,7 @@ export default function TasksList() {
               <div className="relative">
                 <CalendarIcon 
                   className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" 
-                  onClick={() => document.getElementById('date-from-task')?.showPicker()} 
+                  onClick={() => openDatePicker('date-from-task')} 
                 />
                 <Input 
                   id="date-from-task"
@@ -268,7 +268,7 @@ export default function TasksList() {
               <div className="relative">
                 <CalendarIcon 
                   className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" 
-                  onClick={() => document.getElementById('date-to-task')?.showPicker()} 
+                  onClick={() => openDatePicker('date-to-task')} 
                 />
                 <Input 
                   id="date-to-task"

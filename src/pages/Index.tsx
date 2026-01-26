@@ -12,6 +12,7 @@ import { StatusChart } from "./dashboard/components/StatusChart";
 import { RoutineChart } from "./dashboard/components/RoutineChart";
 import { UserRanking } from "./dashboard/components/UserRanking";
 import { RecentActivityList } from "./dashboard/components/RecentActivityList";
+import { openDatePicker } from "@/lib/utils";
 
 const Index = () => {
   const { 
@@ -68,7 +69,7 @@ const Index = () => {
                   <div className="relative">
                     <CalendarIcon 
                       className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                      onClick={() => document.getElementById('date-from-dash')?.showPicker()} 
+                      onClick={() => openDatePicker('date-from-dash')} 
                     />
                     <Input 
                       id="date-from-dash"
@@ -84,7 +85,7 @@ const Index = () => {
                   <div className="relative">
                     <CalendarIcon 
                       className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                      onClick={() => document.getElementById('date-to-dash')?.showPicker()} 
+                      onClick={() => openDatePicker('date-to-dash')} 
                     />
                     <Input 
                       id="date-to-dash"

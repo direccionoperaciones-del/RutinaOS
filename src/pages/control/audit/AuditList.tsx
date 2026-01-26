@@ -14,6 +14,7 @@ import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { AuditReviewModal } from "./AuditReviewModal";
 import { calculateTaskDeadline } from "@/pages/ops/logic/task-deadline";
+import { openDatePicker } from "@/lib/utils";
 
 export default function AuditList() {
   const { toast } = useToast();
@@ -153,7 +154,7 @@ export default function AuditList() {
                     <div className="relative">
                       <CalendarIcon 
                         className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
-                        onClick={() => document.getElementById('date-from-audit-m')?.showPicker()} 
+                        onClick={() => openDatePicker('date-from-audit-m')} 
                       />
                       <Input 
                         id="date-from-audit-m"
@@ -169,7 +170,7 @@ export default function AuditList() {
                     <div className="relative">
                       <CalendarIcon 
                         className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
-                        onClick={() => document.getElementById('date-to-audit-m')?.showPicker()} 
+                        onClick={() => openDatePicker('date-to-audit-m')} 
                       />
                       <Input 
                         id="date-to-audit-m"
@@ -218,7 +219,7 @@ export default function AuditList() {
               <div className="relative">
                 <CalendarIcon 
                   className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
-                  onClick={() => document.getElementById('date-from-audit')?.showPicker()} 
+                  onClick={() => openDatePicker('date-from-audit')} 
                 />
                 <Input 
                   id="date-from-audit"
@@ -234,7 +235,7 @@ export default function AuditList() {
               <div className="relative">
                 <CalendarIcon 
                   className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
-                  onClick={() => document.getElementById('date-to-audit')?.showPicker()} 
+                  onClick={() => openDatePicker('date-to-audit')} 
                 />
                 <Input 
                   id="date-to-audit"

@@ -11,7 +11,7 @@ import { Search, Image as ImageIcon, Filter, Calendar, MapPin, User, X, Loader2,
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
-import { getLocalDate } from "@/lib/utils";
+import { getLocalDate, openDatePicker } from "@/lib/utils";
 
 export default function GalleryPage() {
   const { toast } = useToast();
@@ -166,7 +166,7 @@ export default function GalleryPage() {
                     <div className="relative">
                       <CalendarIcon 
                         className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
-                        onClick={() => document.getElementById('date-from-gallery-m')?.showPicker()} 
+                        onClick={() => openDatePicker('date-from-gallery-m')} 
                       />
                       <Input 
                         id="date-from-gallery-m"
@@ -182,7 +182,7 @@ export default function GalleryPage() {
                     <div className="relative">
                       <CalendarIcon 
                         className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
-                        onClick={() => document.getElementById('date-to-gallery-m')?.showPicker()} 
+                        onClick={() => openDatePicker('date-to-gallery-m')} 
                       />
                       <Input 
                         id="date-to-gallery-m"
@@ -229,7 +229,7 @@ export default function GalleryPage() {
               <div className="relative">
                 <CalendarIcon 
                   className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
-                  onClick={() => document.getElementById('date-from-gallery')?.showPicker()} 
+                  onClick={() => openDatePicker('date-from-gallery')} 
                 />
                 <Input 
                   id="date-from-gallery"
@@ -245,7 +245,7 @@ export default function GalleryPage() {
               <div className="relative">
                 <CalendarIcon 
                   className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
-                  onClick={() => document.getElementById('date-to-gallery')?.showPicker()} 
+                  onClick={() => openDatePicker('date-to-gallery')} 
                 />
                 <Input 
                   id="date-to-gallery"

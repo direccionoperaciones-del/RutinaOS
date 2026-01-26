@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2, Calendar as CalendarIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getLocalDate } from "@/lib/utils";
+import { getLocalDate, openDatePicker } from "@/lib/utils";
 
 export default function ReportsPage() {
   const { toast } = useToast();
@@ -224,7 +224,7 @@ export default function ReportsPage() {
             <div className="relative">
               <CalendarIcon 
                 className="absolute left-2 top-2 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                onClick={() => document.getElementById('date-from-report')?.showPicker()} 
+                onClick={() => openDatePicker('date-from-report')} 
               />
               <Input 
                 id="date-from-report"
@@ -240,7 +240,7 @@ export default function ReportsPage() {
             <div className="relative">
               <CalendarIcon 
                 className="absolute left-2 top-2 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                onClick={() => document.getElementById('date-to-report')?.showPicker()} 
+                onClick={() => openDatePicker('date-to-report')} 
               />
               <Input 
                 id="date-to-report"

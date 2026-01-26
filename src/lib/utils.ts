@@ -51,3 +51,25 @@ export function isOverdueInColombia(deadline: Date): boolean {
   const nowColombia = getColombiaDate();
   return nowColombia > deadline;
 }
+
+/**
+ * Intenta abrir el selector de fecha nativo de forma segura.
+ * Maneja excepciones de cross-origin iframe.
+ */
+export function openDatePicker(id: string) {
+  const input = document.getElementById(id) as HTMLInputElement;
+  if (input) {
+    try {
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+      } else {
+        input.focus(); // Fallback para navegadores viejos
+      }
+    } catch (error) {
+      // Fallback silencioso si falla por restricciones de seguridad (iframe)
+      // Simplemente damos foco para permitir escribir
+      console.warn("showPicker blocked:", error);
+      input.focus();
+    }
+  }
+}
