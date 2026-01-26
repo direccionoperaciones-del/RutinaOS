@@ -152,12 +152,6 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
     return data.publicUrl;
   };
 
-  // --- DEBUGGING LOGS ---
-  if (config.requiere_inventario) {
-    console.log('🔍 INVENTORY ITEMS:', inventoryRows);
-    console.log('🔍 LENGTH:', inventoryRows?.length);
-  }
-
   if (!task) return null;
 
   return (
@@ -209,7 +203,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
           </div>
         </DialogHeader>
 
-        {/* Scrollable Content - MAIN SCROLL - NO RESTRICTIONS INSIDE */}
+        {/* Scrollable Content - MAIN SCROLL */}
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-6">
             <Tabs defaultValue="details" className="w-full">
@@ -270,69 +264,77 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 4. Inventario - FIX: REMOVED overflow-hidden FROM PARENT */}
+                {/* 4. Inventario - REDISEÑO CON SCROLL */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg bg-card shadow-sm flex flex-col">
-                    <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center shrink-0">
-                      <h4 className="font-semibold text-sm flex items-center gap-2">
-                        <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
-                      </h4>
-                      <Badge variant="outline" className="text-xs">{inventoryRows.length} Productos</Badge>
-                    </div>
-                    
-                    {isLoadingDetails ? (
-                      <div className="p-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground"/></div>
-                    ) : inventoryRows.length === 0 ? (
-                      <div className="p-8 text-center text-muted-foreground">
-                        <p>No hay datos de inventario registrados.</p>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Package className="h-5 w-5 text-orange-600" />
+                        <h3 className="font-semibold text-sm">Registro de Inventario</h3>
                       </div>
+                      <Badge variant="secondary">{inventoryRows.length} Productos</Badge>
+                    </div>
+
+                    {isLoadingDetails ? (
+                      <div className="p-8 text-center border rounded-lg"><Loader2 className="w-6 h-6 animate-spin mx-auto text-muted-foreground"/></div>
                     ) : (
-                      // NO overflow-hidden or fixed height here
-                      <div className="w-full">
-                        <Table>
-                          <TableHeader className="bg-muted/50">
-                            <TableRow>
-                              <TableHead className="text-left px-4 py-3 font-medium text-muted-foreground">Producto</TableHead>
-                              <TableHead className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Físico</TableHead>
-                              <TableHead className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Sistema</TableHead>
-                              <TableHead className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px]">Diferencia</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {inventoryRows.map((row) => (
-                              <TableRow key={row.id} className="hover:bg-muted/20 transition-colors">
-                                <TableCell className="px-4 py-3">
-                                  <div className="font-medium text-slate-900">{row.inventory_products?.nombre}</div>
-                                  <div className="text-[10px] text-muted-foreground flex gap-2 mt-0.5">
-                                    <span className="bg-muted px-1.5 py-0.5 rounded">SKU: {row.inventory_products?.codigo_sku || '-'}</span>
-                                    <span className="bg-muted px-1.5 py-0.5 rounded">Unidad: {row.inventory_products?.unidad || '-'}</span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-center px-2 py-3">
-                                  <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
-                                    {row.fisico}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="text-center px-2 py-3">
-                                  <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                                    {row.esperado}
-                                  </span>
-                                </TableCell>
-                                <TableCell className="text-right px-4 py-3">
-                                  <span className={`font-bold px-2 py-1 rounded ${
-                                    row.diferencia === 0 
-                                      ? 'text-green-700 bg-green-50' 
-                                      : row.diferencia > 0 
-                                        ? 'text-blue-700 bg-blue-50' 
-                                        : 'text-red-700 bg-red-50'
-                                  }`}>
-                                    {row.diferencia > 0 ? '+' : ''}{row.diferencia}
-                                  </span>
-                                </TableCell>
+                      <div className="border rounded-lg overflow-hidden bg-card">
+                        <ScrollArea className="h-[300px] w-full">
+                          <Table>
+                            <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                              <TableRow>
+                                <TableHead className="w-[40%]">Producto</TableHead>
+                                <TableHead className="text-center w-[20%]">Físico</TableHead>
+                                <TableHead className="text-center w-[20%]">Sistema</TableHead>
+                                <TableHead className="text-center w-[20%]">Diferencia</TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                            </TableHeader>
+                            <TableBody>
+                              {inventoryRows && inventoryRows.length > 0 ? (
+                                inventoryRows.map((item, index) => (
+                                  <TableRow key={item.id || index}>
+                                    <TableCell>
+                                      <div>
+                                        <p className="font-medium text-sm">{item.inventory_products?.nombre}</p>
+                                        <p className="text-[10px] text-muted-foreground">
+                                          SKU: {item.inventory_products?.codigo_sku || '-'} | UND: {item.inventory_products?.unidad || '-'}
+                                        </p>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded text-xs">
+                                        {item.fisico}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="text-center text-muted-foreground text-sm">
+                                      {item.esperado}
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge 
+                                        variant="outline" 
+                                        className={`font-bold ${
+                                          item.diferencia === 0 
+                                            ? "bg-green-50 text-green-700 border-green-200" 
+                                            : item.diferencia > 0 
+                                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                                              : "bg-red-50 text-red-700 border-red-200"
+                                        }`}
+                                      >
+                                        {item.diferencia > 0 ? '+' : ''}{item.diferencia}
+                                      </Badge>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                                    No hay productos registrados
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </ScrollArea>
                       </div>
                     )}
                   </div>
