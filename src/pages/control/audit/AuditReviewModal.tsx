@@ -202,7 +202,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
           </div>
         </DialogHeader>
 
-        {/* Scrollable Content - MAIN SCROLL */}
+        {/* Scrollable Content - MAIN SCROLL - NO RESTRICTIONS INSIDE */}
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-6">
             <Tabs defaultValue="details" className="w-full">
@@ -244,7 +244,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 3. GPS (Solo si es obligatorio en la configuración) */}
+                {/* 3. GPS */}
                 {config.gps_obligatorio && (
                   <div className={`p-4 rounded-lg border flex items-start gap-3 ${task.gps_en_rango ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     {task.gps_en_rango ? (
@@ -263,7 +263,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 4. Inventario - DISEÑO EXPANDIBLE */}
+                {/* 4. Inventario - FULLY EXPANDED TABLE */}
                 {config.requiere_inventario && (
                   <div className="border rounded-lg bg-card shadow-sm flex flex-col">
                     <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center shrink-0">
@@ -280,7 +280,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      // Eliminamos max-height para permitir que la tabla crezca totalmente
+                      // NO overflow-hidden or fixed height here
                       <div className="w-full">
                         <table className="w-full text-sm">
                           <thead className="bg-muted/50 border-b">
