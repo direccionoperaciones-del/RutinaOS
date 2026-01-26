@@ -91,7 +91,7 @@ const Login = () => {
             nombre: values.nombre,
             apellido: values.apellido,
             tenant_name: values.empresa, // Trigger debe usar esto para crear el tenant
-            role: 'director' // Primer usuario suele ser director
+            // Role assignment removed for security
           }
         }
       });
