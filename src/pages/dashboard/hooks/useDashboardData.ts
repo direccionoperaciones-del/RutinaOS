@@ -70,30 +70,55 @@ export const useDashboardData = () => {
     if (!profile || !user || !dateFrom || !dateTo) return;
     setLoading(true);
 
-    let query = supabase
-      .from('task_instances')
-      .select(`
-        id, estado, prioridad_snapshot, completado_at, created_at, fecha_programada, audit_status,
-        routine_templates (nombre),
-        pdv (nombre),
-        profiles:completado_por (nombre, apellido)
-      `)
-      .gte('fecha_programada', dateFrom)
-      .lte('fecha_programada', dateTo);
+    try {
+      let query = supabase
+        .from('task_instances')
+        .select(`
+          id, estado, prioridad_snapshot, completado_at, created_at, fecha_programada, audit_status,
+          routine_templates (nombre),
+          pdv (nombre),
+          profiles:completado_por (nombre, apellido)
+        `)
+        .gte('fecha_programada', dateFrom)
+        .lte('fecha_programada', dateTo);
 
-    if (profile.role === 'administrador') {
-      query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
-    } else if (selectedUsers.length > 0) {
-      query = query.in('completado_por', selectedUsers);
+      // --- LOGICA DE FILTRADO POR ROL ---
+      if (profile.role === 'administrador') {
+        // 1. Obtener PDVs asignados al administrador
+        const { data: assignments } = await supabase
+          .from('pdv_assignments')
+          .select('pdv_id')
+          .eq('user_id', user.id)
+          .eq('vigente', true);
+        
+        const myPdvIds = assignments?.map(a => a.pdv_id) || [];
+        
+        if (myPdvIds.length > 0) {
+          // El admin ve tareas de sus PDVs asignados O tareas que él haya completado (histórico)
+          query = query.or(`pdv_id.in.(${myPdvIds.join(',')}),completado_por.eq.${user.id}`);
+        } else {
+          // Si no tiene PDV, solo ve lo que haya completado él
+          query = query.eq('completado_por', user.id);
+        }
+      } else if (selectedUsers.length > 0) {
+        // Para Directores/Líderes filtrando por usuario
+        query = query.in('completado_por', selectedUsers);
+      }
+
+      // --- FILTROS ADICIONALES ---
+      if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+      if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
+
+      const { data: tasks, error } = await query;
+      
+      if (error) throw error;
+
+      processData(tasks || []);
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
     }
-    if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
-    if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
-
-    const { data: tasks, error } = await query;
-    if (error) { console.error(error); setLoading(false); return; }
-
-    processData(tasks);
-    setLoading(false);
   };
 
   const processData = (tasks: any[]) => {
