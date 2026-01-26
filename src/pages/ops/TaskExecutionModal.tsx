@@ -60,12 +60,14 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   
   // 1. Estado original de la tarea
   const isTaskPending = task?.estado === 'pendiente' || task?.estado === 'en_proceso';
+  const isTaskCompleted = !isTaskPending; // ✅ FIX: Definición agregada
   
   // 2. Verificar si fue rechazada y necesita corrección
   const isRejected = task?.audit_status === 'rechazado';
   
   // 3. Verificar si soy el ejecutor (Owner)
-  const isExecutor = user?.id === task?.completado_por || user?.id === task?.responsable_id;
+  // Nota: Usamos completado_por ya que responsable_id no parece existir en la tabla actual según el error SQL anterior
+  const isExecutor = user?.id === task?.completado_por;
   
   // 4. Determinar si puedo editar:
   //    a) Está pendiente/en proceso
@@ -216,8 +218,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           
           // Reenvío a auditoría
           audit_status: nextAuditStatus,
-          // Opcional: Podríamos limpiar audit_notas para "limpiar" el rechazo visualmente, 
-          // pero mejor dejarlo hasta que el auditor lo apruebe de nuevo.
         }).eq('id', task.id);
 
       if (error) throw error;
@@ -292,10 +292,9 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
                 </div>
               )}
 
-              {task.audit_status === 'rechazado' && (
-                <div className="mt-3 text-xs text-red-700 font-medium flex items-center gap-2">
-                  <RefreshCw className="w-3 h-3" />
-                  Puedes editar la información abajo y reenviar para nueva revisión.
+              {task.audit_status === 'rechazado' && isTaskCompleted && (
+                <div className="mt-3 text-xs text-red-700 font-medium">
+                  * Por favor corrige la información y vuelve a guardar para enviar a revisión.
                 </div>
               )}
             </div>
