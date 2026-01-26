@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Search, Image as ImageIcon, Filter, Calendar, MapPin, User, X, Loader2 } from "lucide-react";
+import { Search, Image as ImageIcon, Filter, Calendar, MapPin, User, X, Loader2, Calendar as CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -163,11 +163,35 @@ export default function GalleryPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Desde</Label>
-                    <Input type="date" className="h-9" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                    <div className="relative">
+                      <CalendarIcon 
+                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                        onClick={() => document.getElementById('date-from-gallery-m')?.showPicker()} 
+                      />
+                      <Input 
+                        id="date-from-gallery-m"
+                        type="date" 
+                        className="h-9 pl-8" 
+                        value={dateFrom} 
+                        onChange={(e) => setDateFrom(e.target.value)} 
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Hasta</Label>
-                    <Input type="date" className="h-9" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                    <div className="relative">
+                      <CalendarIcon 
+                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                        onClick={() => document.getElementById('date-to-gallery-m')?.showPicker()} 
+                      />
+                      <Input 
+                        id="date-to-gallery-m"
+                        type="date" 
+                        className="h-9 pl-8" 
+                        value={dateTo} 
+                        onChange={(e) => setDateTo(e.target.value)} 
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -202,11 +226,35 @@ export default function GalleryPage() {
           <div className="grid grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
-              <Input type="date" className="h-8 pl-2 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <div className="relative">
+                <CalendarIcon 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
+                  onClick={() => document.getElementById('date-from-gallery')?.showPicker()} 
+                />
+                <Input 
+                  id="date-from-gallery"
+                  type="date" 
+                  className="h-8 pl-8 text-xs bg-background" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)} 
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
-              <Input type="date" className="h-8 pl-2 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <div className="relative">
+                <CalendarIcon 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
+                  onClick={() => document.getElementById('date-to-gallery')?.showPicker()} 
+                />
+                <Input 
+                  id="date-to-gallery"
+                  type="date" 
+                  className="h-8 pl-8 text-xs bg-background" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)} 
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Rutina</Label>

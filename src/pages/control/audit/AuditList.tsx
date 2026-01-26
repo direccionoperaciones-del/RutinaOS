@@ -150,11 +150,35 @@ export default function AuditList() {
                 <div className="grid grid-cols-1 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">Desde</Label>
-                    <Input type="date" className="h-9" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                    <div className="relative">
+                      <CalendarIcon 
+                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                        onClick={() => document.getElementById('date-from-audit-m')?.showPicker()} 
+                      />
+                      <Input 
+                        id="date-from-audit-m"
+                        type="date" 
+                        className="h-9 pl-8" 
+                        value={dateFrom} 
+                        onChange={(e) => setDateFrom(e.target.value)} 
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Hasta</Label>
-                    <Input type="date" className="h-9" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                    <div className="relative">
+                      <CalendarIcon 
+                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
+                        onClick={() => document.getElementById('date-to-audit-m')?.showPicker()} 
+                      />
+                      <Input 
+                        id="date-to-audit-m"
+                        type="date" 
+                        className="h-9 pl-8" 
+                        value={dateTo} 
+                        onChange={(e) => setDateTo(e.target.value)} 
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Estado Auditoría</Label>
@@ -191,11 +215,35 @@ export default function AuditList() {
           <div className="grid grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
-              <Input type="date" className="h-8 pl-2 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <div className="relative">
+                <CalendarIcon 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
+                  onClick={() => document.getElementById('date-from-audit')?.showPicker()} 
+                />
+                <Input 
+                  id="date-from-audit"
+                  type="date" 
+                  className="h-8 pl-8 text-xs bg-background" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)} 
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
-              <Input type="date" className="h-8 pl-2 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <div className="relative">
+                <CalendarIcon 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
+                  onClick={() => document.getElementById('date-to-audit')?.showPicker()} 
+                />
+                <Input 
+                  id="date-to-audit"
+                  type="date" 
+                  className="h-8 pl-8 text-xs bg-background" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)} 
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Estado Auditoría</Label>

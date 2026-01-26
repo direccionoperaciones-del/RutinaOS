@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { 
-  Clock, MapPin, CheckCircle2, X, 
-  Calendar as CalendarIcon, Eye, Camera, Mail, 
+  Clock, MapPin, Camera, Mail, 
   MessageSquareText, Box, FileText,
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
-  Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert
+  Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
+  Calendar as CalendarIcon, CheckCircle2, X
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -247,8 +247,38 @@ export default function TasksList() {
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="space-y-1"><Label className="text-xs">Desde</Label><div className="relative"><CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" /><Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} /></div></div>
-            <div className="space-y-1"><Label className="text-xs">Hasta</Label><div className="relative"><CalendarIcon className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" /><Input type="date" className="h-8 pl-7 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} /></div></div>
+            <div className="space-y-1">
+              <Label className="text-xs">Desde</Label>
+              <div className="relative">
+                <CalendarIcon 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" 
+                  onClick={() => document.getElementById('date-from-task')?.showPicker()} 
+                />
+                <Input 
+                  id="date-from-task"
+                  type="date" 
+                  className="h-8 pl-8 text-xs bg-background" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)} 
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Hasta</Label>
+              <div className="relative">
+                <CalendarIcon 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" 
+                  onClick={() => document.getElementById('date-to-task')?.showPicker()} 
+                />
+                <Input 
+                  id="date-to-task"
+                  type="date" 
+                  className="h-8 pl-8 text-xs bg-background" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)} 
+                />
+              </div>
+            </div>
             <div className="space-y-1"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
             <div className="space-y-1"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>
             {profile?.role !== 'administrador' && (<div className="space-y-1"><Label className="text-xs">Usuarios</Label><MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" /></div>)}

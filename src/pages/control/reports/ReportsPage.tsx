@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2 } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2, Calendar as CalendarIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getLocalDate } from "@/lib/utils";
 
@@ -221,11 +221,35 @@ export default function ReportsPage() {
         <CardContent className="grid grid-cols-2 gap-4 max-w-lg">
           <div className="space-y-2">
             <Label>Desde</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <div className="relative">
+              <CalendarIcon 
+                className="absolute left-2 top-2 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                onClick={() => document.getElementById('date-from-report')?.showPicker()} 
+              />
+              <Input 
+                id="date-from-report"
+                type="date" 
+                className="pl-9" 
+                value={dateFrom} 
+                onChange={(e) => setDateFrom(e.target.value)} 
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label>Hasta</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <div className="relative">
+              <CalendarIcon 
+                className="absolute left-2 top-2 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                onClick={() => document.getElementById('date-to-report')?.showPicker()} 
+              />
+              <Input 
+                id="date-to-report"
+                type="date" 
+                className="pl-9" 
+                value={dateTo} 
+                onChange={(e) => setDateTo(e.target.value)} 
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

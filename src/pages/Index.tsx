@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Activity, BarChart3, Clock, AlertOctagon, Filter, X, Search } from "lucide-react";
+import { Activity, BarChart3, Clock, AlertOctagon, Filter, X, Search, Calendar as CalendarIcon } from "lucide-react";
 import { useDashboardData } from "./dashboard/hooks/useDashboardData";
 import { StatCard } from "./dashboard/components/StatCard";
 import { TrendChart } from "./dashboard/components/TrendChart";
@@ -65,11 +65,35 @@ const Index = () => {
               <div className="grid grid-cols-2 xl:grid-cols-1 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
-                  <Input type="date" className="h-9 text-sm" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                  <div className="relative">
+                    <CalendarIcon 
+                      className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                      onClick={() => document.getElementById('date-from-dash')?.showPicker()} 
+                    />
+                    <Input 
+                      id="date-from-dash"
+                      type="date" 
+                      className="h-9 pl-8 text-sm" 
+                      value={dateFrom} 
+                      onChange={(e) => setDateFrom(e.target.value)} 
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Hasta</Label>
-                  <Input type="date" className="h-9 text-sm" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                  <div className="relative">
+                    <CalendarIcon 
+                      className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                      onClick={() => document.getElementById('date-to-dash')?.showPicker()} 
+                    />
+                    <Input 
+                      id="date-to-dash"
+                      type="date" 
+                      className="h-9 pl-8 text-sm" 
+                      value={dateTo} 
+                      onChange={(e) => setDateTo(e.target.value)} 
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-1.5">
