@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -203,7 +202,7 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
           </div>
         </DialogHeader>
 
-        {/* Scrollable Content */}
+        {/* Scrollable Content - MAIN SCROLL */}
         <ScrollArea className="flex-1 min-h-0">
           <div className="p-6">
             <Tabs defaultValue="details" className="w-full">
@@ -264,9 +263,9 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 4. Inventario - DISEÑO MEJORADO CON SCROLL */}
+                {/* 4. Inventario - DISEÑO EXPANDIBLE */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg bg-card shadow-sm overflow-hidden flex flex-col">
+                  <div className="border rounded-lg bg-card shadow-sm flex flex-col">
                     <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center shrink-0">
                       <h4 className="font-semibold text-sm flex items-center gap-2">
                         <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
@@ -281,15 +280,15 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      // Contenedor scrolleable limitado a 300px
-                      <div className="overflow-y-auto max-h-[300px] relative w-full">
+                      // Eliminamos max-height para permitir que la tabla crezca totalmente
+                      <div className="w-full">
                         <table className="w-full text-sm">
-                          <thead className="bg-gray-50/95 backdrop-blur sticky top-0 z-20 border-b shadow-sm">
+                          <thead className="bg-muted/50 border-b">
                             <tr>
-                              <th className="text-left px-4 py-3 font-medium text-muted-foreground bg-gray-50/95">Producto</th>
-                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px] bg-gray-50/95">Físico</th>
-                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px] bg-gray-50/95">Sistema</th>
-                              <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px] bg-gray-50/95">Diferencia</th>
+                              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Producto</th>
+                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Físico</th>
+                              <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Sistema</th>
+                              <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px]">Diferencia</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y">
