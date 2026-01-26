@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -103,34 +102,23 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       if (error) throw error;
 
       // 2. Si es RECHAZO -> Enviar Mensaje Directo al usuario
-      // Lógica Robusta: Intentamos obtener el ID del usuario de tres fuentes posibles
       const targetUserId = task.profiles?.id || task.completado_por || task.responsable_id;
 
       if (status === 'reject') {
         if (!targetUserId) {
            console.error("CRITICAL: No target user found for rejection message", task);
-           toast({ 
-             variant: "destructive", 
-             title: "Error de notificación", 
-             description: "La tarea se rechazó, pero no se pudo notificar al usuario (ID no encontrado)." 
-           });
         } else {
           const messageBody = `La rutina "${config.nombre}" ejecutada el ${format(new Date(task.completado_at), "dd/MM/yyyy")} ha sido rechazada.\n\nMotivo de auditoría:\n"${notes}"\n\nPor favor, revisa las observaciones y realiza las correcciones necesarias en la siguiente ejecución.`;
 
-          const { error: msgError } = await supabase.rpc('send_broadcast_message', {
+          await supabase.rpc('send_broadcast_message', {
             p_asunto: `⚠️ Rutina Rechazada: ${config.nombre}`,
             p_cuerpo: messageBody,
             p_tipo: 'mensaje',
             p_prioridad: 'alta',
             p_requiere_confirmacion: true,
             p_recipient_type: 'user',
-            p_recipient_id: String(targetUserId) // Force string conversion para asegurar compatibilidad
+            p_recipient_id: String(targetUserId)
           });
-
-          if (msgError) {
-            console.error("Error sending message RPC:", msgError);
-            toast({ variant: "destructive", title: "Advertencia", description: "Se rechazó la tarea pero falló el envío del mensaje." });
-          }
         }
       }
 
@@ -244,7 +232,19 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 </div>
 
-                {/* 2. GPS (Solo si es obligatorio en la configuración) */}
+                {/* 2. Notas/Comentarios del Usuario (MOVIDO AQUI) */}
+                {task.comentario && (
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase text-muted-foreground flex items-center gap-2">
+                      <MessageSquareText className="w-3 h-3" /> Notas del Ejecutor
+                    </Label>
+                    <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-md text-sm text-blue-900">
+                      "{task.comentario}"
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. GPS (Solo si es obligatorio en la configuración) */}
                 {config.gps_obligatorio && (
                   <div className={`p-4 rounded-lg border flex items-start gap-3 ${task.gps_en_rango ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     {task.gps_en_rango ? (
@@ -263,9 +263,9 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   </div>
                 )}
 
-                {/* 3. Inventario (Solo si requiere inventario) */}
+                {/* 4. Inventario - DISEÑO MEJORADO */}
                 {config.requiere_inventario && (
-                  <div className="border rounded-lg overflow-hidden bg-card">
+                  <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
                     <div className="bg-muted/30 px-4 py-3 border-b flex justify-between items-center">
                       <h4 className="font-semibold text-sm flex items-center gap-2">
                         <Package className="w-4 h-4 text-orange-600" /> Registro de Inventario
@@ -279,45 +279,60 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                         <p>No hay datos de inventario registrados.</p>
                       </div>
                     ) : (
-                      <div className="text-sm max-h-[350px] overflow-y-auto">
-                        <Table>
-                          <TableHeader className="bg-muted/20 sticky top-0 z-10 shadow-sm">
-                            <TableRow>
-                              <TableHead>Producto</TableHead>
-                              <TableHead className="text-center w-[100px]">Físico</TableHead>
-                              <TableHead className="text-center w-[100px]">Sistema</TableHead>
-                              <TableHead className="text-right w-[80px]">Dif</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {inventoryRows.map((row) => (
-                              <TableRow key={row.id}>
-                                <TableCell>
-                                  <div className="font-medium text-sm">{row.inventory_products?.nombre}</div>
-                                  <div className="text-[10px] text-muted-foreground flex gap-2">
-                                    <span>SKU: {row.inventory_products?.codigo_sku || '-'}</span>
-                                    <span>Unidad: {row.inventory_products?.unidad || '-'}</span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-center font-bold bg-blue-50/50">
-                                  {row.fisico}
-                                </TableCell>
-                                <TableCell className="text-center text-muted-foreground bg-gray-50/50">
-                                  {row.esperado}
-                                </TableCell>
-                                <TableCell className={`text-right font-bold ${row.diferencia !== 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                  {row.diferencia > 0 ? '+' : ''}{row.diferencia}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                      // Contenedor con scroll explícito y altura controlada
+                      <div className="relative overflow-hidden w-full">
+                        <div className="max-h-[400px] overflow-y-auto w-full">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/50 sticky top-0 z-10 border-b">
+                              <tr>
+                                <th className="text-left px-4 py-3 font-medium text-muted-foreground">Producto</th>
+                                <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Físico</th>
+                                <th className="text-center px-2 py-3 font-medium text-muted-foreground w-[100px]">Sistema</th>
+                                <th className="text-right px-4 py-3 font-medium text-muted-foreground w-[100px]">Diferencia</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {inventoryRows.map((row) => (
+                                <tr key={row.id} className="hover:bg-muted/20 transition-colors">
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium text-slate-900">{row.inventory_products?.nombre}</div>
+                                    <div className="text-[10px] text-muted-foreground flex gap-2 mt-0.5">
+                                      <span className="bg-muted px-1.5 py-0.5 rounded">SKU: {row.inventory_products?.codigo_sku || '-'}</span>
+                                      <span className="bg-muted px-1.5 py-0.5 rounded">Unidad: {row.inventory_products?.unidad || '-'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="text-center px-2 py-3">
+                                    <span className="font-bold text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                                      {row.fisico}
+                                    </span>
+                                  </td>
+                                  <td className="text-center px-2 py-3">
+                                    <span className="text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                                      {row.esperado}
+                                    </span>
+                                  </td>
+                                  <td className="text-right px-4 py-3">
+                                    <span className={`font-bold px-2 py-1 rounded ${
+                                      row.diferencia === 0 
+                                        ? 'text-green-700 bg-green-50' 
+                                        : row.diferencia > 0 
+                                          ? 'text-blue-700 bg-blue-50' 
+                                          : 'text-red-700 bg-red-50'
+                                    }`}>
+                                      {row.diferencia > 0 ? '+' : ''}{row.diferencia}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* 4. Correos Enviados/Respondidos */}
+                {/* 5. Correos Enviados/Respondidos */}
                 {(config.enviar_email || config.responder_email) && (
                   <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-100">
                     <h4 className="font-semibold text-sm flex items-center gap-2 mb-2 text-blue-900">
@@ -334,18 +349,6 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                           <CheckCircle2 className="w-4 h-4 text-green-600" /> Confirmado respuesta de correo
                         </div>
                       )}
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. Comentarios del Usuario */}
-                {task.comentario && (
-                  <div className="space-y-2">
-                    <Label className="text-xs uppercase text-muted-foreground flex items-center gap-2">
-                      <MessageSquareText className="w-3 h-3" /> Notas del Ejecutor
-                    </Label>
-                    <div className="p-3 bg-muted/30 rounded-md text-sm italic border">
-                      "{task.comentario}"
                     </div>
                   </div>
                 )}
