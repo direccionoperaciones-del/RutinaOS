@@ -21,14 +21,14 @@ import {
   Settings2,
   Bell,
   Users,
-  CalendarOff,
-  Check
+  CalendarOff
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useNotifications } from "@/hooks/use-notifications";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 
 // Sidebar Group Component
 const SidebarGroup = ({ title, children }: any) => (
@@ -287,15 +287,17 @@ const DashboardLayout = () => {
           <div className="flex items-center gap-2 sm:gap-4">
             <ThemeToggle />
             
-            <div 
-              className="relative cursor-pointer p-2 hover:bg-accent rounded-full transition-colors" 
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="relative" 
               onClick={() => navigate('/messages')}
             >
               <Bell className="h-5 w-5 text-muted-foreground" />
               {unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-card" />
+                <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-card" />
               )}
-            </div>
+            </Button>
 
             <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
 
