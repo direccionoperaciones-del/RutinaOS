@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { getLocalDate, parseLocalDate } from "@/lib/utils";
@@ -15,91 +16,57 @@ const COLORS = {
 
 export const useDashboardData = () => {
   const { profile, user } = useCurrentUser();
+  const queryClient = useQueryClient();
 
-  // Filters
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // --- FILTROS ---
+  const [dateFrom, setDateFrom] = useState(getLocalDate());
+  const [dateTo, setDateTo] = useState(getLocalDate());
   const [selectedPdvs, setSelectedPdvs] = useState<string[]>([]);
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
-  // Options
+  // --- OPCIONES DE FILTRO ---
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ pdvs: [], routines: [], users: [] });
 
-  // Data States
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<DashboardStats>({ totalTasks: 0, completedTasks: 0, pendingTasks: 0, compliance: 0, criticalAlerts: 0 });
-  
-  const [trendData, setTrendData] = useState<ChartDataPoint[]>([]);
-  const [alertsData, setAlertsData] = useState<ChartDataPoint[]>([]);
-  const [statusData, setStatusData] = useState<StatusDataPoint[]>([]);
-  const [routineData, setRoutineData] = useState<ChartDataPoint[]>([]);
-  const [performanceData, setPerformanceData] = useState<UserPerformance[]>([]);
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
-
-  // Init Date
-  useEffect(() => {
-    const today = getLocalDate();
-    setDateFrom(today);
-    setDateTo(today);
-  }, []);
-
-  // Load Filter Options
-  useEffect(() => {
-    const loadOptions = async () => {
-      if (!user || !profile) return;
-
-      let pdvData: any[] = [];
-
-      // 1. Cargar PDVs (Filtrado por rol)
-      if (profile.role === 'administrador') {
-        // Solo los asignados al usuario
-        const { data: assignments } = await supabase
-          .from('pdv_assignments')
-          .select('pdv (id, nombre)')
-          .eq('user_id', user.id)
-          .eq('vigente', true);
-        
-        // Extraer el objeto PDV anidado y eliminar nulos
-        pdvData = assignments?.map((a: any) => a.pdv).filter(Boolean) || [];
-        // Ordenar alfabéticamente
-        pdvData.sort((a, b) => a.nombre.localeCompare(b.nombre));
-      } else {
-        // Director/Líder ve todos
-        const { data } = await supabase
-          .from('pdv')
-          .select('id, nombre')
-          .eq('activo', true)
-          .order('nombre');
-        pdvData = data || [];
-      }
-
-      // 2. Cargar Rutinas (Todas las activas)
-      const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+  // Cargar opciones al inicio
+  useQuery({
+    queryKey: ['dashboard-options', user?.id],
+    enabled: !!user && !!profile,
+    queryFn: async () => {
+      // 1. PDVs
+      const { data: pdvs } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
       
-      // 3. Cargar Usuarios (Solo si no es admin)
-      let userData: any[] = [];
-      if (profile?.role !== 'administrador') {
-        const { data } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
-        userData = data || [];
-      }
+      // 2. Rutinas
+      const { data: routines } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+      
+      // 3. Usuarios
+      const { data: usersData } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
 
       setFilterOptions({
-        pdvs: pdvData.map(p => ({ label: p.nombre, value: p.id })),
-        routines: routData?.map(r => ({ label: r.nombre, value: r.id })) || [],
-        users: userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []
+        pdvs: pdvs?.map(p => ({ label: p.nombre, value: p.id })) || [],
+        routines: routines?.map(r => ({ label: r.nombre, value: r.id })) || [],
+        users: usersData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []
       });
-    };
-    
-    loadOptions();
-  }, [profile, user]);
+      return true;
+    }
+  });
 
-  // Fetch Data
-  const fetchData = async () => {
-    if (!profile || !user || !dateFrom || !dateTo) return;
-    setLoading(true);
+  // --- QUERY PRINCIPAL (DASHBOARD DATA) ---
+  const { data: tasks = [], isLoading: loading, refetch } = useQuery({
+    queryKey: ['dashboard-data', profile?.tenant_id, dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers],
+    enabled: !!profile && !!dateFrom && !!dateTo,
+    queryFn: async () => {
+      console.log("Dashboard filters:", { 
+        from: dateFrom, 
+        to: dateTo, 
+        pdvs: selectedPdvs, 
+        routines: selectedRoutines, 
+        users: selectedUsers, 
+        tenantId: profile?.tenant_id, 
+        role: profile?.role, 
+        userId: user?.id 
+      });
 
-    try {
       let query = supabase
         .from('task_instances')
         .select(`
@@ -108,61 +75,33 @@ export const useDashboardData = () => {
           pdv (nombre),
           profiles:completado_por (nombre, apellido)
         `)
+        // Filtro de fecha inclusivo
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
 
-      // --- LÓGICA DE FILTRADO SEGÚN ROL ---
+      // --- LOGICA DE FILTRADO POR ROL ---
+      // FIX: Administrador ahora ve todo el tenant (Organizacional) a menos que filtre.
+      // Se eliminó la restricción que forzaba a ver solo "mis tareas".
       
-      if (profile.role === 'administrador') {
-        // 1. Obtener IDs de PDVs asignados vigentes
-        const { data: assignments } = await supabase
-          .from('pdv_assignments')
-          .select('pdv_id')
-          .eq('user_id', user.id)
-          .eq('vigente', true);
-        
-        const myPdvIds = assignments?.map((a: any) => a.pdv_id) || [];
+      // Aplicar filtros explícitos si existen
+      if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+      if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
+      if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
 
-        if (myPdvIds.length > 0) {
-          // Si seleccionó PDVs en el filtro, usamos la intersección (seguridad)
-          // Si no seleccionó nada, usamos todos sus asignados
-          const filterIds = selectedPdvs.length > 0 
-            ? selectedPdvs.filter(id => myPdvIds.includes(id))
-            : myPdvIds;
-            
-          if (filterIds.length > 0) {
-            query = query.in('pdv_id', filterIds);
-          } else {
-            // Caso raro: seleccionó algo que no tiene asignado -> no mostrar nada
-            query = query.in('pdv_id', ['00000000-0000-0000-0000-000000000000']);
-          }
-        } else {
-          // Si no tiene PDV asignado, fallback a ver solo lo que haya completado él mismo
-          query = query.or(`responsable_id.eq.${user.id},completado_por.eq.${user.id}`);
-        }
-
-      } else {
-        // ROL: Director / Líder / Auditor
-        if (selectedUsers.length > 0) query = query.in('completado_por', selectedUsers);
-        if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error("Dashboard query error:", error);
+        throw error;
       }
 
-      // Filtro común de rutinas
-      if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
-
-      const { data: tasks, error } = await query;
-      
-      if (error) throw error;
-
-      processData(tasks || []);
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
+      console.log("Dashboard raw result:", data?.length, "records found.");
+      return data || [];
     }
-  };
+  });
 
-  const processData = (tasks: any[]) => {
+  // --- PROCESAMIENTO DE DATOS (useMemo para optimizar) ---
+  const processedData = useMemo(() => {
     // 1. Stats
     const total = tasks.length;
     const completed = tasks.filter(t => t.estado.startsWith('completada')).length;
@@ -170,7 +109,7 @@ export const useDashboardData = () => {
     const compliance = total > 0 ? Math.round((completed / total) * 100) : 0;
     const critical = tasks.filter(t => t.prioridad_snapshot === 'critica' || t.audit_status === 'rechazado').length;
     
-    setStats({ totalTasks: total, completedTasks: completed, pendingTasks: pending, compliance, criticalAlerts: critical });
+    const stats: DashboardStats = { totalTasks: total, completedTasks: completed, pendingTasks: pending, compliance, criticalAlerts: critical };
 
     // 2. Trends
     const groupedByDate = tasks.reduce((acc: any, curr) => {
@@ -182,9 +121,9 @@ export const useDashboardData = () => {
       return acc;
     }, {});
     
-    setTrendData(Object.values(groupedByDate).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
+    const trendData = Object.values(groupedByDate).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
       ...i, name: format(parseLocalDate(i.date), 'dd MMM', { locale: es })
-    })));
+    }));
 
     // 3. Alerts
     const alertsMap = tasks.reduce((acc: any, curr) => {
@@ -195,10 +134,10 @@ export const useDashboardData = () => {
       }
       return acc;
     }, {});
-    setAlertsData(Object.values(alertsMap).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
+    const alertsData = Object.values(alertsMap).sort((a:any, b:any) => a.date.localeCompare(b.date)).map((i:any) => ({
       name: format(parseLocalDate(i.date), 'dd MMM', { locale: es }),
       Alertas: i.count
-    })));
+    }));
 
     // 4. Status (Pie)
     const statusCounts = { 'a_tiempo': 0, 'vencida': 0, 'pendiente': 0, 'incumplida': 0 };
@@ -208,12 +147,12 @@ export const useDashboardData = () => {
       else if (t.estado === 'incumplida') statusCounts.incumplida++;
       else statusCounts.pendiente++;
     });
-    setStatusData([
+    const statusData = [
       { name: 'A Tiempo', value: statusCounts.a_tiempo, color: COLORS.a_tiempo },
       { name: 'Vencida', value: statusCounts.vencida, color: COLORS.vencida },
       { name: 'Pendiente', value: statusCounts.pendiente, color: COLORS.pendiente },
       { name: 'Incumplida', value: statusCounts.incumplida, color: COLORS.incumplida },
-    ].filter(i => i.value > 0));
+    ].filter(i => i.value > 0);
 
     // 5. Routines
     const routineMap = tasks.reduce((acc: any, curr) => {
@@ -223,9 +162,7 @@ export const useDashboardData = () => {
       else acc[name].fallas++;
       return acc;
     }, {});
-    
-    // Fix: Explicitly cast to ChartDataPoint[] to resolve type error
-    setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8) as ChartDataPoint[]);
+    const routineData = Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8) as ChartDataPoint[];
 
     // 6. Performance
     const userMap = tasks.reduce((acc: any, curr) => {
@@ -236,16 +173,18 @@ export const useDashboardData = () => {
       if (curr.estado.startsWith('completada')) acc[name].completed++;
       return acc;
     }, {});
-    setPerformanceData(Object.values(userMap)
+    const performanceData = Object.values(userMap)
       .map((u:any) => ({ ...u, percentage: Math.round((u.completed / u.total) * 100) }))
       .sort((a:any, b:any) => b.percentage - a.percentage)
-      .slice(0, 10));
+      .slice(0, 10);
 
     // 7. Recent
-    setRecentActivity([...tasks].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6));
-  };
+    const recentActivity = [...tasks].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6);
 
-  useEffect(() => { fetchData(); }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, profile]);
+    return {
+      stats, trendData, alertsData, statusData, routineData, performanceData, recentActivity
+    };
+  }, [tasks]);
 
   const clearFilters = () => {
     const today = getLocalDate();
@@ -255,13 +194,7 @@ export const useDashboardData = () => {
 
   return {
     loading,
-    stats,
-    trendData,
-    alertsData,
-    statusData,
-    routineData,
-    performanceData,
-    recentActivity,
+    ...processedData,
     filters: {
       dateFrom, setDateFrom,
       dateTo, setDateTo,
@@ -269,7 +202,7 @@ export const useDashboardData = () => {
       selectedRoutines, setSelectedRoutines,
       selectedUsers, setSelectedUsers,
       clearFilters,
-      fetchData
+      fetchData: refetch // Conectamos el botón actualizar al refetch de React Query
     },
     options: filterOptions,
     profile
