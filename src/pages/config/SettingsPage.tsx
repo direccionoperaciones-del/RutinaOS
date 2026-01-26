@@ -160,7 +160,7 @@ export default function SettingsPage() {
               <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
                 <div className="relative group">
                   <Avatar className="w-24 h-24 border-2 border-muted">
-                    <AvatarImage src={avatarUrl || ""} objectFit="cover" />
+                    <AvatarImage src={avatarUrl || ""} className="object-cover" />
                     <AvatarFallback className="text-2xl bg-slate-100">
                       {profile?.nombre?.[0]}{profile?.apellido?.[0]}
                     </AvatarFallback>
