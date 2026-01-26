@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Bell, Check, Clock, Mail, MessageSquare, Megaphone, AlertCircle, Send, CheckCheck, Eye } from "lucide-react";
+import { Bell, Check, Clock, Mail, MessageSquare, Megaphone, AlertCircle, Send, CheckCheck, Eye, ShieldAlert, ShieldCheck } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
@@ -33,71 +33,97 @@ export default function MessageList() {
   // Función de carga de datos
   const fetchMessages = async () => {
     if (!user) return;
+    setLoading(true);
     
-    // 1. RECIBIDOS
-    const { data: receipts, error: rxError } = await supabase
-      .from('message_receipts')
-      .select(`
-        id,
-        leido_at,
-        confirmado_at,
-        messages (
-          id, tipo, asunto, cuerpo, prioridad, requiere_confirmacion, created_at,
-          profiles:created_by (nombre, apellido)
-        )
-      `)
-      .eq('user_id', user.id)
-      .order('messages(created_at)', { ascending: false }); // Nota: order en joined table a veces requiere lógica post-query
+    try {
+      // 1. RECIBIDOS (Mensajes Directos / Comunicados)
+      const { data: receipts, error: rxError } = await supabase
+        .from('message_receipts')
+        .select(`
+          id,
+          leido_at,
+          confirmado_at,
+          messages (
+            id, tipo, asunto, cuerpo, prioridad, requiere_confirmacion, created_at,
+            profiles:created_by (nombre, apellido)
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('messages(created_at)', { ascending: false });
 
-    if (rxError) console.error("Error inbox:", rxError);
-    
-    const inbox = receipts?.map((r: any) => ({
-      receipt_id: r.id,
-      ...r.messages,
-      leido_at: r.leido_at,
-      confirmado_at: r.confirmado_at
-    })) || [];
-    
-    inbox.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    setInboxMessages(inbox);
+      if (rxError) console.error("Error inbox:", rxError);
+      
+      const formattedMessages = receipts?.map((r: any) => ({
+        unique_id: `msg_${r.id}`, // ID único para la lista
+        receipt_id: r.id,
+        source: 'message',
+        ...r.messages,
+        leido_at: r.leido_at,
+        confirmado_at: r.confirmado_at,
+        timestamp: new Date(r.messages.created_at).getTime()
+      })) || [];
 
-    // 2. ENVIADOS
-    if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
-      const { data: sent } = await supabase
-        .from('messages')
-        .select(`*, message_receipts (id, leido_at)`)
-        .eq('created_by', user.id)
+      // 2. NOTIFICACIONES DEL SISTEMA (Auditoría, Alertas, etc)
+      const { data: notifications, error: notifError } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
-        
-      setSentMessages(sent || []);
+
+      if (notifError) console.error("Error notifications:", notifError);
+
+      const formattedNotifications = notifications?.map((n: any) => ({
+        unique_id: `notif_${n.id}`,
+        receipt_id: n.id, // Usamos ID de notificación como receipt_id para la lógica de lectura
+        source: 'notification',
+        tipo: n.type, // 'routine_rejected', 'routine_approved'
+        asunto: n.title,
+        cuerpo: n.type === 'routine_rejected' 
+          ? "Tu rutina ha sido rechazada por auditoría. Por favor revisa los detalles y realiza las correcciones necesarias." 
+          : "Notificación automática del sistema.",
+        prioridad: n.type === 'routine_rejected' ? 'alta' : 'normal',
+        requiere_confirmacion: false,
+        created_at: n.created_at,
+        leido_at: n.leido ? n.created_at : null, // Mapeamos boolean leido a fecha para compatibilidad UI
+        timestamp: new Date(n.created_at).getTime(),
+        entity_id: n.entity_id
+      })) || [];
+      
+      // 3. UNIFICAR Y ORDENAR
+      const combinedInbox = [...formattedMessages, ...formattedNotifications];
+      combinedInbox.sort((a, b) => b.timestamp - a.timestamp);
+      
+      setInboxMessages(combinedInbox);
+
+      // 4. ENVIADOS (Solo si aplica)
+      if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
+        const { data: sent } = await supabase
+          .from('messages')
+          .select(`*, message_receipts (id, leido_at)`)
+          .eq('created_by', user.id)
+          .order('created_at', { ascending: false });
+          
+        setSentMessages(sent || []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchMessages();
   }, [user, profile]);
 
-  // SUSCRIPCIÓN EN TIEMPO REAL PARA LA LISTA (Nuevo)
+  // SUSCRIPCIÓN EN TIEMPO REAL
   useEffect(() => {
     if (!user) return;
 
-    // Escuchar nuevos recibos de mensajes para MÍ
     const channel = supabase
-      .channel('inbox-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'message_receipts',
-          filter: `user_id=eq.${user.id}`
-        },
-        () => {
-          // Si llega un nuevo recibo, recargamos la lista
-          fetchMessages();
-        }
-      )
+      .channel('inbox-unified-realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchMessages())
       .subscribe();
 
     return () => {
@@ -106,36 +132,37 @@ export default function MessageList() {
   }, [user]);
 
   const handleOpenMessage = async (msg: any) => {
-    // Optimistic Update UI
-    if (!msg.leido_at) {
-      const now = new Date().toISOString();
-      setInboxMessages(prev => prev.map(m => 
-        m.receipt_id === msg.receipt_id ? { ...m, leido_at: now } : m
-      ));
+    // Si ya está leído, no hacer nada en BD
+    if (msg.leido_at) return;
 
-      // Update DB
+    const now = new Date().toISOString();
+    
+    // Optimistic Update UI
+    setInboxMessages(prev => prev.map(m => 
+      m.unique_id === msg.unique_id ? { ...m, leido_at: now } : m
+    ));
+
+    // Update DB según la fuente
+    if (msg.source === 'message') {
       await supabase
         .from('message_receipts')
         .update({ leido_at: now })
         .eq('id', msg.receipt_id);
-      
-      // Update Notifications
-      const { error } = await supabase
+    } else {
+      await supabase
         .from('notifications')
         .update({ leido: true })
-        .eq('entity_id', msg.id)
-        .eq('user_id', user.id);
-        
-      if (!error) {
-        queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-      }
+        .eq('id', msg.receipt_id);
     }
+    
+    // Invalidar contador global
+    queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
   };
 
   const handleConfirm = async (receiptId: string) => {
     const now = new Date().toISOString();
     setInboxMessages(prev => prev.map(m => 
-      m.receipt_id === receiptId ? { ...m, confirmado_at: now, leido_at: m.leido_at || now } : m
+      m.receipt_id === receiptId && m.source === 'message' ? { ...m, confirmado_at: now, leido_at: m.leido_at || now } : m
     ));
 
     await supabase
@@ -161,6 +188,8 @@ export default function MessageList() {
     switch (type) {
       case 'tarea_flash': return <AlertCircle className="w-5 h-5 text-red-500" />;
       case 'comunicado': return <Megaphone className="w-5 h-5 text-blue-500" />;
+      case 'routine_rejected': return <ShieldAlert className="w-5 h-5 text-red-600" />;
+      case 'routine_approved': return <ShieldCheck className="w-5 h-5 text-green-600" />;
       default: return <MessageSquare className="w-5 h-5 text-gray-500" />;
     }
   };
@@ -172,7 +201,7 @@ export default function MessageList() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Centro de Mensajes</h2>
-          <p className="text-muted-foreground">Bandeja de entrada y notificaciones.</p>
+          <p className="text-muted-foreground">Bandeja de entrada y notificaciones del sistema.</p>
         </div>
         {canCreate && (
           <Button onClick={() => setIsNewModalOpen(true)}>
@@ -208,8 +237,8 @@ export default function MessageList() {
             <Accordion type="single" collapsible className="space-y-2">
               {inboxMessages.map((msg) => (
                 <AccordionItem 
-                  key={msg.receipt_id} 
-                  value={msg.receipt_id} 
+                  key={msg.unique_id} 
+                  value={msg.unique_id} 
                   className={`border rounded-lg px-4 transition-colors ${!msg.leido_at ? 'bg-blue-50/60 border-blue-200' : 'bg-card'}`}
                 >
                   <AccordionTrigger className="hover:no-underline py-3" onClick={() => handleOpenMessage(msg)}>
@@ -224,7 +253,11 @@ export default function MessageList() {
                           {!msg.leido_at && <Badge className="bg-blue-600 hover:bg-blue-700 text-[10px] h-5">Nuevo</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          De: {msg.profiles?.nombre} {msg.profiles?.apellido} • {format(new Date(msg.created_at), "dd MMM HH:mm", {locale: es})}
+                          {msg.source === 'message' 
+                            ? `De: ${msg.profiles?.nombre || 'Admin'} ${msg.profiles?.apellido || ''}` 
+                            : 'Sistema'} 
+                          {' • '} 
+                          {format(new Date(msg.created_at), "dd MMM HH:mm", {locale: es})}
                         </p>
                       </div>
                     </div>
@@ -233,9 +266,10 @@ export default function MessageList() {
                     <div className="prose prose-sm max-w-none text-gray-800 whitespace-pre-line mb-4 pl-9">
                       {msg.cuerpo}
                     </div>
-                    {msg.requiere_confirmacion && (
-                      <div className="flex justify-end pl-9">
-                        {msg.confirmado_at ? (
+                    {/* Botones de acción según tipo */}
+                    <div className="flex justify-end pl-9 gap-2">
+                      {msg.requiere_confirmacion && msg.source === 'message' && (
+                        msg.confirmado_at ? (
                           <div className="flex items-center text-xs text-green-700 font-medium bg-green-50 px-3 py-1.5 rounded border border-green-200">
                             <CheckCheck className="w-3 h-3 mr-2" />
                             Confirmado el {format(new Date(msg.confirmado_at), "dd/MM/yyyy HH:mm")}
@@ -244,9 +278,17 @@ export default function MessageList() {
                           <Button size="sm" onClick={() => handleConfirm(msg.receipt_id)}>
                             <Check className="w-4 h-4 mr-2" /> Confirmar Lectura
                           </Button>
-                        )}
-                      </div>
-                    )}
+                        )
+                      )}
+                      
+                      {msg.source === 'notification' && msg.tipo === 'routine_rejected' && (
+                        <Button size="sm" variant="outline" asChild>
+                          <a href="/tasks">
+                            Ir a Mis Tareas <AlertCircle className="w-4 h-4 ml-2" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
                   </AccordionContent>
                 </AccordionItem>
               ))}
