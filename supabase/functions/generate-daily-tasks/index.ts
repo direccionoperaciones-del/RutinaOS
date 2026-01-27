@@ -33,7 +33,6 @@ serve(async (req) => {
     let requestUserEmail = 'cron'
 
     if (token !== supabaseServiceKey) {
-      // Scoped User Client para validar sesión
       const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } })
       const { data: { user }, error: authError } = await supabaseUserClient.auth.getUser()
 
@@ -135,7 +134,6 @@ serve(async (req) => {
         // Validación 1: Rutina Activa
         if (!r || !r.activo) {
           summary.skipped_inactive_routine++
-          // logs.push(`Skip [${routineName}]: Rutina inactiva o borrada`)
           continue
         }
 
@@ -143,7 +141,6 @@ serve(async (req) => {
         let shouldRun = false
         switch (r.frecuencia) {
           case 'diaria':
-            // Si el array está vacío [], asume todos los días. Si tiene datos, valida include.
             if (!r.dias_ejecucion || r.dias_ejecucion.length === 0 || r.dias_ejecucion.includes(dayOfWeek)) shouldRun = true
             break
           case 'semanal':
@@ -162,7 +159,6 @@ serve(async (req) => {
 
         if (!shouldRun) {
           summary.skipped_wrong_day++
-          // logs.push(`Skip [${routineName} @ ${pdvName}]: No toca hoy (${r.frecuencia})`)
           continue
         }
 
@@ -212,13 +208,19 @@ serve(async (req) => {
             count: 'exact'
           })
         
-        if (!error) totalGenerated += tasksToInsert.length // Aproximado, upsert retorna null count a veces
+        if (error) {
+          // CRITICAL FIX: Reportar error de DB al frontend
+          console.error("DB Insert Error:", error)
+          logs.push(`❌ DB Error: ${error.message}. (Verificar constraint unique)`)
+        } else {
+          totalGenerated += tasksToInsert.length
+        }
       }
     }
 
     const message = totalGenerated > 0 
       ? `Éxito. ${totalGenerated} tareas generadas.`
-      : `Proceso completado sin tareas nuevas.`;
+      : `Proceso completado. Ver detalles.`;
 
     return new Response(
       JSON.stringify({
@@ -234,7 +236,7 @@ serve(async (req) => {
             rutina_inactiva: summary.skipped_inactive_routine,
             ausencia_usuario: summary.skipped_absence
           },
-          logs: logs.slice(0, 10) // Top 10 logs de error
+          logs: logs.slice(0, 20)
         }
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
