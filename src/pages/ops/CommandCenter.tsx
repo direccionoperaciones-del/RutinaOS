@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -14,9 +14,8 @@ export default function CommandCenter() {
   const { toast } = useToast();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [isLoading, setIsLoading] = useState(false);
-  const [lastResult, setLastResult] = useState<string | null>(null);
+  const [lastResult, setLastResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
   
-  // Estados para métricas
   const [metrics, setMetrics] = useState({
     incidencias: 0,
     totalHoy: 0,
@@ -28,8 +27,7 @@ export default function CommandCenter() {
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
     try {
-      const todayStr = getLocalDate(); // Fecha YYYY-MM-DD local Colombia
-      
+      const todayStr = getLocalDate();
       const { data, error } = await supabase
         .from('task_instances')
         .select('estado, audit_status, prioridad_snapshot')
@@ -40,7 +38,6 @@ export default function CommandCenter() {
       if (data) {
         const total = data.length;
         const completadas = data.filter(t => t.estado.startsWith('completada')).length;
-        
         const incidencias = data.filter(t => 
           t.estado === 'incumplida' || 
           t.estado === 'completada_vencida' || 
@@ -73,25 +70,53 @@ export default function CommandCenter() {
 
     try {
       const simpleDate = format(date, "yyyy-MM-dd");
+      console.log("🚀 Iniciando ejecución manual del motor para:", simpleDate);
 
+      // Invocación a Edge Function
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
         body: { date: simpleDate }
       });
 
+      // 1. Manejo de Errores HTTP (Supabase Wrapper)
       if (error) {
-        // Manejo de errores HTTP (400, 500, etc) que vienen envueltos
-        throw new Error(error.message || 'Error de conexión con Edge Function');
+        console.error("❌ Error HTTP en Edge Function:", error);
+        
+        // Intentar extraer el mensaje real del cuerpo si existe
+        let errorBody = "Error desconocido";
+        try {
+          // A veces el error viene como string JSON en el mensaje
+          if (error instanceof Error) {
+             errorBody = error.message;
+             // Si el wrapper de supabase expone 'context' (depende version)
+             const context = (error as any).context;
+             if (context && context.json) {
+                const json = await context.json();
+                if (json.error) errorBody = `[${context.status}] ${json.error}`;
+             }
+          }
+        } catch (parseError) {
+          console.warn("No se pudo parsear el error:", parseError);
+        }
+
+        throw new Error(errorBody);
       }
 
-      // Validar respuesta lógica del backend
-      if (data && !data.success) {
-        throw new Error(data.error || 'El motor reportó un fallo interno.');
+      // 2. Manejo de Errores Lógicos (200 OK pero success: false)
+      if (data && data.ok === false) {
+        throw new Error(data.message || 'El motor reportó un error interno.');
       }
 
-      setLastResult(data.message);
+      // ÉXITO
+      console.log("✅ Motor finalizado con éxito:", data);
+      setLastResult({
+        success: true,
+        message: data.message || "Proceso completado.",
+        details: data
+      });
+
       toast({
-        title: "Motor ejecutado con éxito",
-        description: data.message,
+        title: "Ejecución Exitosa",
+        description: `Generadas: ${data.generated || 0} | Omitidas: ${data.skipped || 0}`,
         className: "bg-green-50 border-green-200 text-green-800"
       });
       
@@ -100,20 +125,20 @@ export default function CommandCenter() {
       }
 
     } catch (error: any) {
-      console.error("Motor Error:", error);
+      console.error("🚨 CRITICAL ERROR EN MOTOR:", error);
       
-      // Intentar parsear si el error viene como string JSON
-      let msg = error.message;
-      try {
-         const parsed = JSON.parse(error.message);
-         if (parsed.error) msg = parsed.error;
-      } catch (e) { /* ignore */ }
+      const errorMsg = error.message || "Error fatal desconocido";
+      setLastResult({ success: false, message: errorMsg });
 
-      setLastResult(null);
       toast({
         variant: "destructive",
-        title: "Error al ejecutar motor",
-        description: msg || "Error desconocido. Revisa la consola.",
+        title: "Fallo en el Motor",
+        description: (
+          <div className="flex flex-col gap-1">
+            <span className="font-semibold">{errorMsg}</span>
+            <span className="text-xs opacity-80">Revisa la consola para el stacktrace completo.</span>
+          </div>
+        ),
       });
     } finally {
       setIsLoading(false);
@@ -189,15 +214,22 @@ export default function CommandCenter() {
             </Button>
 
             {lastResult && (
-              <div className="p-3 bg-white rounded-md border border-green-200 text-sm text-green-700 mt-2 flex gap-2 items-start animate-in fade-in slide-in-from-top-2">
-                <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>{lastResult}</span>
+              <div className={`p-3 rounded-md border text-sm flex gap-2 items-start animate-in fade-in slide-in-from-top-2 ${lastResult.success ? 'bg-white border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                {lastResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                <div className="flex flex-col">
+                  <span className="font-medium">{lastResult.message}</span>
+                  {lastResult.details && (
+                    <span className="text-xs mt-1 opacity-80">
+                      Generated: {lastResult.details.generated}, Skipped: {lastResult.details.skipped}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Stats y Cumplimiento se mantienen igual... */}
+        {/* Stats y Cumplimiento */}
         <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
