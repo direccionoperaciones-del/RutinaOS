@@ -41,12 +41,11 @@ export default function CommandCenter() {
         const total = data.length;
         const completadas = data.filter(t => t.estado.startsWith('completada')).length;
         
-        // Incidencias: Tareas vencidas, incumplidas o rechazadas por auditoría
         const incidencias = data.filter(t => 
           t.estado === 'incumplida' || 
           t.estado === 'completada_vencida' || 
           t.audit_status === 'rechazado' ||
-          (t.prioridad_snapshot === 'critica' && t.estado === 'pendiente') // Críticas pendientes cuentan como alerta
+          (t.prioridad_snapshot === 'critica' && t.estado === 'pendiente')
         ).length;
 
         setMetrics({
@@ -63,7 +62,6 @@ export default function CommandCenter() {
     }
   };
 
-  // Cargar métricas al entrar
   useEffect(() => {
     fetchMetrics();
   }, []);
@@ -80,25 +78,42 @@ export default function CommandCenter() {
         body: { date: simpleDate }
       });
 
-      if (error) throw error;
+      if (error) {
+        // Manejo de errores HTTP (400, 500, etc) que vienen envueltos
+        throw new Error(error.message || 'Error de conexión con Edge Function');
+      }
+
+      // Validar respuesta lógica del backend
+      if (data && !data.success) {
+        throw new Error(data.error || 'El motor reportó un fallo interno.');
+      }
 
       setLastResult(data.message);
       toast({
-        title: "Motor ejecutado",
+        title: "Motor ejecutado con éxito",
         description: data.message,
+        className: "bg-green-50 border-green-200 text-green-800"
       });
       
-      // Recargar métricas después de ejecutar el motor
       if (simpleDate === getLocalDate()) {
         fetchMetrics();
       }
 
     } catch (error: any) {
-      console.error(error);
+      console.error("Motor Error:", error);
+      
+      // Intentar parsear si el error viene como string JSON
+      let msg = error.message;
+      try {
+         const parsed = JSON.parse(error.message);
+         if (parsed.error) msg = parsed.error;
+      } catch (e) { /* ignore */ }
+
+      setLastResult(null);
       toast({
         variant: "destructive",
         title: "Error al ejecutar motor",
-        description: error.message || "Error desconocido",
+        description: msg || "Error desconocido. Revisa la consola.",
       });
     } finally {
       setIsLoading(false);
@@ -174,15 +189,15 @@ export default function CommandCenter() {
             </Button>
 
             {lastResult && (
-              <div className="p-3 bg-background rounded-md border text-sm text-muted-foreground mt-2 flex gap-2 items-start">
-                <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+              <div className="p-3 bg-white rounded-md border border-green-200 text-sm text-green-700 mt-2 flex gap-2 items-start animate-in fade-in slide-in-from-top-2">
+                <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>{lastResult}</span>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Real Stats: Incidencias */}
+        {/* Stats y Cumplimiento se mantienen igual... */}
         <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -201,7 +216,6 @@ export default function CommandCenter() {
           </CardContent>
         </Card>
 
-        {/* Real Stats: Cumplimiento */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
