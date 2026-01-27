@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, Terminal } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, Terminal, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -71,89 +71,40 @@ export default function CommandCenter() {
     setDebugError(null);
 
     try {
-      // 1. OBTENER SESIÓN ACTUALIZADA
-      // Usamos getSession para asegurar que tenemos el token más reciente
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (sessionError) throw sessionError;
-      
-      if (!session?.access_token) {
-        // Intento de recuperación final antes de fallar
-        const { data: refreshData } = await supabase.auth.refreshSession();
-        if (!refreshData.session) {
-           throw new Error("No hay sesión activa. Por favor recarga la página e inicia sesión nuevamente.");
-        }
+      if (sessionError || !session) {
+        throw new Error("Sesión expirada. Recarga la página.");
       }
 
-      // Volvemos a leer la sesión (ya sea la original o la refrescada)
-      const currentSession = (await supabase.auth.getSession()).data.session;
-      const token = currentSession?.access_token;
-
-      if (!token) throw new Error("Token de acceso no disponible.");
-
+      const token = session.access_token;
       const simpleDate = format(date, "yyyy-MM-dd");
-      console.log(`🚀 Ejecutando motor para: ${simpleDate}`);
-
-      // 2. INVOCAR CON TOKEN EXPLÍCITO
+      
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
         body: { date: simpleDate },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       });
 
-      // 3. MANEJO DE ERRORES HTTP
-      if (error) {
-        console.error("❌ RAW EDGE ERROR:", error);
-        
-        let errorBody = error.message;
-        try {
-          if (error && typeof error === 'object' && 'context' in error) {
-             const context = (error as any).context;
-             if (context && typeof context.json === 'function') {
-                const jsonBody = await context.json();
-                errorBody = `[${context.status}] ${jsonBody.message || jsonBody.error || JSON.stringify(jsonBody)}`;
-             } else if (context && typeof context.text === 'function') {
-                const textBody = await context.text();
-                errorBody = `[${context.status}] ${textBody}`;
-             }
-          }
-        } catch (e) {
-          // Fallback
-        }
-        throw new Error(errorBody);
-      }
+      if (error) throw new Error(error.message || "Error de conexión con el motor");
+      if (data && data.ok === false) throw new Error(data.message || "Error lógico en el motor");
 
-      // 4. MANEJO DE ERRORES LÓGICOS
-      if (data && data.ok === false) {
-        throw new Error(`[${data.code}] ${data.message}`);
-      }
-
-      console.log("✅ Éxito:", data);
       setLastResult({
         success: true,
-        message: data.message || "Proceso finalizado.",
-        details: data
+        message: data.message,
+        details: data // Guardamos todo el objeto de respuesta, incluido el diagnóstico
       });
 
-      toast({
-        title: "Ejecución Exitosa",
-        description: `Generadas: ${data.generated} | Omitidas: ${data.skipped}`,
-        className: "bg-green-50 border-green-200 text-green-800"
-      });
+      if (data.generated > 0) {
+        toast({ title: "Éxito", description: `Se crearon ${data.generated} tareas nuevas.`, className: "bg-green-50 text-green-800" });
+      } else {
+        toast({ title: "Proceso completado", description: "No se generaron tareas nuevas (ver detalles).", variant: "default" });
+      }
       
       if (simpleDate === getLocalDate()) fetchMetrics();
 
     } catch (error: any) {
-      console.error("🚨 Error capturado en UI:", error);
-      const msg = error.message || "Error desconocido";
-      setDebugError(msg);
-      
-      toast({
-        variant: "destructive",
-        title: "Error en el Motor",
-        description: "Revisa el detalle del error en pantalla."
-      });
+      setDebugError(error.message);
+      toast({ variant: "destructive", title: "Error", description: "Fallo en la ejecución." });
     } finally {
       setIsLoading(false);
     }
@@ -175,7 +126,7 @@ export default function CommandCenter() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {/* Card: Generador de Tareas */}
+        {/* Generador de Tareas */}
         <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -207,33 +158,57 @@ export default function CommandCenter() {
               {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : "Generar Tareas"}
             </Button>
 
-            {/* DEBUG ERROR DISPLAY */}
-            {debugError && (
-              <div className="mt-4 p-3 bg-red-100 border border-red-300 text-red-800 text-xs font-mono rounded overflow-x-auto">
-                <div className="flex items-center gap-2 mb-1 font-bold">
-                  <Terminal className="w-3 h-3" /> ERROR TÉCNICO:
+            {/* Resultado / Diagnóstico */}
+            {lastResult && (
+              <div className="mt-3 p-3 rounded-md bg-white border shadow-sm text-sm space-y-2">
+                <div className="flex items-center gap-2 font-medium text-green-700">
+                  <CheckCircle2 className="w-4 h-4" />
+                  {lastResult.message}
                 </div>
-                {debugError}
+                
+                {/* Panel de Diagnóstico si hay detalles */}
+                {lastResult.details?.diagnosis && (
+                  <div className="bg-slate-50 p-2 rounded text-xs text-slate-600 space-y-1 border border-slate-100">
+                    <div className="flex justify-between border-b pb-1 mb-1">
+                      <span>Total Asignaciones:</span>
+                      <strong>{lastResult.details.diagnosis.total_asignaciones}</strong>
+                    </div>
+                    {lastResult.details.diagnosis.razones_omitidas.no_toca_hoy > 0 && (
+                      <div className="flex justify-between text-orange-600">
+                        <span>No programadas hoy:</span>
+                        <span>{lastResult.details.diagnosis.razones_omitidas.no_toca_hoy}</span>
+                      </div>
+                    )}
+                    {lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv > 0 && (
+                      <div className="flex justify-between text-red-600 font-bold">
+                        <span>Sin responsable (PDV):</span>
+                        <span>{lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv}</span>
+                      </div>
+                    )}
+                    {lastResult.details.diagnosis.logs?.length > 0 && (
+                      <div className="pt-2 mt-2 border-t border-dashed">
+                        <p className="font-semibold mb-1">Alertas:</p>
+                        <ul className="list-disc pl-3 space-y-0.5 text-[10px] text-red-700">
+                          {lastResult.details.diagnosis.logs.map((log: string, i: number) => (
+                            <li key={i}>{log}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
-            {lastResult && (
-              <div className={`p-3 rounded-md border text-sm flex gap-2 items-start mt-2 ${lastResult.success ? 'bg-white border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                {lastResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
-                <div className="flex flex-col">
-                  <span className="font-medium">{lastResult.message}</span>
-                  {lastResult.details && (
-                    <span className="text-xs mt-1 opacity-80">
-                      Gen: {lastResult.details.generated} | Skip: {lastResult.details.skipped}
-                    </span>
-                  )}
-                </div>
+            {debugError && (
+              <div className="mt-2 p-2 bg-red-100 text-red-800 text-xs rounded border border-red-200">
+                <strong>Error:</strong> {debugError}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Stats y Cumplimiento */}
+        {/* Stats */}
         <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

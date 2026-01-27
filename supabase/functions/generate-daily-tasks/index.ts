@@ -12,138 +12,99 @@ serve(async (req) => {
   }
 
   try {
-    // Variables de entorno
+    // 1. SETUP CLIENTE
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
-      throw new Error('CONFIG_ERROR: Missing Supabase Env Variables')
+      throw new Error('CONFIG_ERROR: Missing Env Variables')
     }
 
-    // Header Auth
+    // 2. AUTH CHECK
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ ok: false, code: "AUTH_MISSING", message: "No Authorization header" }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return new Response(JSON.stringify({ ok: false, code: "AUTH_MISSING", message: "Missing Authorization header" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // --- AUTENTICACIÓN ---
-    let triggerSource = 'unknown'
-    let tenantIdArg = null
     const token = authHeader.replace('Bearer ', '')
-
-    // Cliente Admin para operaciones DB (Privilegiado)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+    let tenantIdArg = null
+    let requestUserEmail = 'cron'
 
-    // Caso A: Cron Job (Service Key)
-    if (token === supabaseServiceKey) {
-      triggerSource = 'cron'
-      console.log('🔒 Auth: Service Key (Cron Job)')
-    } 
-    // Caso B: Usuario (JWT)
-    else {
-      // FIX AUTH: Usar cliente scopeado con el header para validar sesión correctamente
-      const supabaseUserClient = createClient(
-        supabaseUrl, 
-        supabaseAnonKey, 
-        { global: { headers: { Authorization: authHeader } } }
-      )
-      
+    if (token !== supabaseServiceKey) {
+      // Scoped User Client para validar sesión
+      const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } })
       const { data: { user }, error: authError } = await supabaseUserClient.auth.getUser()
 
       if (authError || !user) {
-        console.error("❌ Auth Failed:", authError?.message)
-        return new Response(
-          JSON.stringify({ 
-            ok: false, 
-            code: "AUTH_INVALID", 
-            message: `Invalid Token: ${authError?.message || 'User not found'}` 
-          }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      // Validar permisos del usuario usando Admin Client
-      const { data: profile } = await supabaseAdmin
-        .from('profiles')
-        .select('role, tenant_id')
-        .eq('id', user.id)
-        .single()
-      
-      if (!profile) {
-        return new Response(
-          JSON.stringify({ ok: false, code: "PROFILE_NOT_FOUND", message: "User profile not found" }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-
-      // Permitir solo roles de gestión
-      if (!['director', 'lider', 'administrador'].includes(profile.role)) {
-         return new Response(
-          JSON.stringify({ ok: false, code: "FORBIDDEN", message: "Insufficient permissions" }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+        return new Response(JSON.stringify({ ok: false, code: "AUTH_INVALID", message: "Invalid Token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
       
-      triggerSource = user.id
+      requestUserEmail = user.email || 'unknown'
+      const { data: profile } = await supabaseAdmin.from('profiles').select('tenant_id, role').eq('id', user.id).single()
+      
+      if (!profile || !['director', 'lider', 'administrador'].includes(profile.role)) {
+         return new Response(JSON.stringify({ ok: false, code: "FORBIDDEN", message: "Insufficient permissions" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
       tenantIdArg = profile.tenant_id
-      console.log(`👤 Auth: Usuario ${user.email} (Tenant: ${tenantIdArg})`)
     }
 
-    // --- INPUT ---
+    // 3. DATE PARSING
     const body = await req.json().catch(() => ({}))
     let { date } = body
 
     if (!date) {
       const now = new Date()
-      // Ajuste manual UTC-5 para Colombia
-      const offsetMs = -5 * 60 * 60 * 1000
+      const offsetMs = -5 * 60 * 60 * 1000 // UTC-5 Colombia
       const nowCol = new Date(now.getTime() + offsetMs)
       date = nowCol.toISOString().split('T')[0]
     }
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return new Response(
-        JSON.stringify({ ok: false, code: "VALIDATION_ERROR", message: "Invalid date format. Use YYYY-MM-DD" }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    // Calcular datos de fecha
+    const [y, m, d] = date.split('-').map(Number)
+    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
+    const dayOfWeek = dateObj.getUTCDay() // 0=Dom, 1=Lun...
+    const dayOfMonth = dateObj.getUTCDate()
 
-    // --- LÓGICA MOTOR (Con supabaseAdmin) ---
-    // Usamos supabaseAdmin para todo lo siguiente para saltar RLS
-    
+    console.log(`[Motor] Procesando ${date} (DiaSemana: ${dayOfWeek}, DiaMes: ${dayOfMonth}) para Tenant: ${tenantIdArg || 'ALL'}`)
+
+    // 4. LÓGICA DE GENERACIÓN
     let tenantsQuery = supabaseAdmin.from('tenants').select('id')
-    if (tenantIdArg) {
-      tenantsQuery = tenantsQuery.eq('id', tenantIdArg)
-    } else {
-      tenantsQuery = tenantsQuery.eq('activo', true)
-    }
+    if (tenantIdArg) tenantsQuery = tenantsQuery.eq('id', tenantIdArg)
+    else tenantsQuery = tenantsQuery.eq('activo', true)
 
-    const { data: tenants, error: tenantsError } = await tenantsQuery
-    if (tenantsError) throw new Error(`DB Error fetching tenants: ${tenantsError.message}`)
-
+    const { data: tenants } = await tenantsQuery
+    
     let totalGenerated = 0
-    let totalSkipped = 0 
+    let totalAssignmentsFound = 0
+    
+    // Diagnóstico
+    const logs: string[] = []
+    const summary = {
+      assignments_found: 0,
+      skipped_wrong_day: 0,
+      skipped_no_responsible: 0,
+      skipped_absence: 0,
+      skipped_inactive_routine: 0
+    }
 
     for (const tenant of (tenants || [])) {
       const tId = tenant.id
 
-      // Obtener datos maestros
-      const [assignmentsResult, responsiblesResult, absencesResult] = await Promise.all([
+      // Fetch Data
+      const [assignmentsRes, responsiblesRes, absencesRes] = await Promise.all([
         supabaseAdmin.from('routine_assignments')
           .select(`
             id, pdv_id, rutina_id,
+            pdv (nombre),
             routine_templates (
-              id, frecuencia, dias_ejecucion, prioridad, hora_inicio, hora_limite,
+              id, nombre, frecuencia, dias_ejecucion, prioridad, hora_inicio, hora_limite,
               fechas_especificas, vencimiento_dia_mes, corte_1_limite, corte_2_limite, activo
             )
           `)
           .eq('tenant_id', tId)
-          .eq('estado', 'activa')
-          .eq('routine_templates.activo', true),
+          .eq('estado', 'activa'),
         
         supabaseAdmin.from('pdv_assignments')
           .select('pdv_id, user_id')
@@ -157,30 +118,33 @@ serve(async (req) => {
           .gte('fecha_hasta', date)
       ])
 
-      const assignments = assignmentsResult.data || []
-      
+      const assignments = assignmentsRes.data || []
       const respMap = new Map()
-      responsiblesResult.data?.forEach(r => respMap.set(r.pdv_id, r.user_id))
-      
+      responsiblesRes.data?.forEach(r => respMap.set(r.pdv_id, r.user_id))
       const absMap = new Map()
-      absencesResult.data?.forEach(a => absMap.set(a.user_id, a))
+      absencesRes.data?.forEach(a => absMap.set(a.user_id, a))
 
+      summary.assignments_found += assignments.length
       const tasksToInsert = []
-      
-      // Fecha Helper
-      const [y, m, d] = date.split('-').map(Number)
-      const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
-      const dayOfWeek = dateObj.getUTCDay() // 0-6
-      const dayOfMonth = dateObj.getUTCDate()
 
       for (const assign of assignments) {
         const r = assign.routine_templates
-        if (!r) continue
+        const pdvName = assign.pdv?.nombre || 'PDV?'
+        const routineName = r?.nombre || 'Rutina?'
 
+        // Validación 1: Rutina Activa
+        if (!r || !r.activo) {
+          summary.skipped_inactive_routine++
+          // logs.push(`Skip [${routineName}]: Rutina inactiva o borrada`)
+          continue
+        }
+
+        // Validación 2: Frecuencia (Día correcto)
         let shouldRun = false
         switch (r.frecuencia) {
           case 'diaria':
-            if (!r.dias_ejecucion?.length || r.dias_ejecucion.includes(dayOfWeek)) shouldRun = true
+            // Si el array está vacío [], asume todos los días. Si tiene datos, valida include.
+            if (!r.dias_ejecucion || r.dias_ejecucion.length === 0 || r.dias_ejecucion.includes(dayOfWeek)) shouldRun = true
             break
           case 'semanal':
             if (r.dias_ejecucion?.includes(dayOfWeek)) shouldRun = true
@@ -196,17 +160,34 @@ serve(async (req) => {
             break
         }
 
-        if (!shouldRun) continue
-
-        let userId = respMap.get(assign.pdv_id)
-        if (!userId) continue 
-
-        const absence = absMap.get(userId)
-        if (absence) {
-          if (absence.politica === 'omitir') continue
-          if (absence.politica === 'reasignar' && absence.receptor_id) userId = absence.receptor_id
+        if (!shouldRun) {
+          summary.skipped_wrong_day++
+          // logs.push(`Skip [${routineName} @ ${pdvName}]: No toca hoy (${r.frecuencia})`)
+          continue
         }
 
+        // Validación 3: Responsable
+        let userId = respMap.get(assign.pdv_id)
+        if (!userId) {
+          summary.skipped_no_responsible++
+          logs.push(`⚠️ Skip [${routineName} @ ${pdvName}]: PDV sin responsable vigente`)
+          continue 
+        }
+
+        // Validación 4: Ausencias
+        const absence = absMap.get(userId)
+        if (absence) {
+          if (absence.politica === 'omitir') {
+            summary.skipped_absence++
+            logs.push(`ℹ️ Skip [${routineName}]: Responsable ausente (Omitir)`)
+            continue
+          }
+          if (absence.politica === 'reasignar' && absence.receptor_id) {
+            userId = absence.receptor_id
+          }
+        }
+
+        // TODO OK -> Agregar
         tasksToInsert.push({
           tenant_id: tId,
           assignment_id: assign.id,
@@ -223,41 +204,45 @@ serve(async (req) => {
       }
 
       if (tasksToInsert.length > 0) {
-        const { error: insertError } = await supabaseAdmin
+        const { error, count } = await supabaseAdmin
           .from('task_instances')
           .upsert(tasksToInsert, { 
             onConflict: 'assignment_id,fecha_programada', 
-            ignoreDuplicates: true
+            ignoreDuplicates: true,
+            count: 'exact'
           })
         
-        if (insertError) {
-          console.error(`Error inserting tasks for tenant ${tId}:`, insertError)
-        } else {
-          totalGenerated += tasksToInsert.length
-        }
+        if (!error) totalGenerated += tasksToInsert.length // Aproximado, upsert retorna null count a veces
       }
     }
+
+    const message = totalGenerated > 0 
+      ? `Éxito. ${totalGenerated} tareas generadas.`
+      : `Proceso completado sin tareas nuevas.`;
 
     return new Response(
       JSON.stringify({
         ok: true,
         generated: totalGenerated,
-        skipped: totalSkipped,
         date: date,
-        message: `Proceso completado. ${totalGenerated} tareas creadas.`
+        message: message,
+        diagnosis: {
+          total_asignaciones: summary.assignments_found,
+          razones_omitidas: {
+            no_toca_hoy: summary.skipped_wrong_day,
+            sin_responsable_pdv: summary.skipped_no_responsible,
+            rutina_inactiva: summary.skipped_inactive_routine,
+            ausencia_usuario: summary.skipped_absence
+          },
+          logs: logs.slice(0, 10) // Top 10 logs de error
+        }
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (err: any) {
-    console.error("❌ FATAL EDGE ERROR:", err)
     return new Response(
-      JSON.stringify({ 
-        ok: false, 
-        code: "INTERNAL_ERROR", 
-        message: err.message, 
-        stack: err.stack 
-      }),
+      JSON.stringify({ ok: false, code: "INTERNAL_ERROR", message: err.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
