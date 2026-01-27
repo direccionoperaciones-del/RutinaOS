@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, Terminal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -15,6 +15,7 @@ export default function CommandCenter() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [lastResult, setLastResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
+  const [debugError, setDebugError] = useState<string | null>(null); // Estado para mostrar el error crudo en UI
   
   const [metrics, setMetrics] = useState({
     incidencias: 0,
@@ -67,78 +68,71 @@ export default function CommandCenter() {
     if (!date) return;
     setIsLoading(true);
     setLastResult(null);
+    setDebugError(null);
 
     try {
       const simpleDate = format(date, "yyyy-MM-dd");
-      console.log("🚀 Iniciando ejecución manual del motor para:", simpleDate);
+      console.log(`🚀 Iniciando motor para: ${simpleDate}`);
 
       // Invocación a Edge Function
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
         body: { date: simpleDate }
       });
 
-      // 1. Manejo de Errores HTTP (Supabase Wrapper)
+      // 1. MANEJO DE ERRORES HTTP (Captura robusta)
       if (error) {
-        console.error("❌ Error HTTP en Edge Function:", error);
+        console.error("❌ RAW ERROR FROM SUPABASE CLIENT:", error);
         
-        // Intentar extraer el mensaje real del cuerpo si existe
-        let errorBody = "Error desconocido";
+        // Intentar decodificar el cuerpo del error si existe
+        let errorDetails = error.message;
         try {
-          // A veces el error viene como string JSON en el mensaje
-          if (error instanceof Error) {
-             errorBody = error.message;
-             // Si el wrapper de supabase expone 'context' (depende version)
+          if (error && typeof error === 'object' && 'context' in error) {
              const context = (error as any).context;
-             if (context && context.json) {
-                const json = await context.json();
-                if (json.error) errorBody = `[${context.status}] ${json.error}`;
+             if (context && typeof context.json === 'function') {
+                const jsonBody = await context.json();
+                errorDetails = `Status: ${context.status} | Body: ${JSON.stringify(jsonBody)}`;
+             } else if (context && typeof context.text === 'function') {
+                const textBody = await context.text();
+                errorDetails = `Status: ${context.status} | Body: ${textBody}`;
              }
           }
-        } catch (parseError) {
-          console.warn("No se pudo parsear el error:", parseError);
+        } catch (e) {
+          errorDetails += " (No se pudo parsear el body del error)";
         }
 
-        throw new Error(errorBody);
+        throw new Error(errorDetails);
       }
 
-      // 2. Manejo de Errores Lógicos (200 OK pero success: false)
+      // 2. MANEJO DE RESPUESTA LÓGICA (200 OK pero success: false)
       if (data && data.ok === false) {
-        throw new Error(data.message || 'El motor reportó un error interno.');
+        throw new Error(`Error Lógico: ${data.message || 'Desconocido'} (Code: ${data.code})`);
       }
 
       // ÉXITO
-      console.log("✅ Motor finalizado con éxito:", data);
+      console.log("✅ Respuesta Exitosa:", data);
       setLastResult({
         success: true,
-        message: data.message || "Proceso completado.",
+        message: data.message || "Proceso finalizado.",
         details: data
       });
 
       toast({
-        title: "Ejecución Exitosa",
-        description: `Generadas: ${data.generated || 0} | Omitidas: ${data.skipped || 0}`,
+        title: "Motor ejecutado correctamente",
+        description: `Generadas: ${data.generated} | Omitidas: ${data.skipped}`,
         className: "bg-green-50 border-green-200 text-green-800"
       });
       
-      if (simpleDate === getLocalDate()) {
-        fetchMetrics();
-      }
+      if (simpleDate === getLocalDate()) fetchMetrics();
 
     } catch (error: any) {
-      console.error("🚨 CRITICAL ERROR EN MOTOR:", error);
+      console.error("🚨 CRITICAL UI ERROR:", error);
+      const msg = error.message || "Error desconocido";
+      setDebugError(msg); // Mostrar en UI para debug inmediato
       
-      const errorMsg = error.message || "Error fatal desconocido";
-      setLastResult({ success: false, message: errorMsg });
-
       toast({
         variant: "destructive",
-        title: "Fallo en el Motor",
-        description: (
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold">{errorMsg}</span>
-            <span className="text-xs opacity-80">Revisa la consola para el stacktrace completo.</span>
-          </div>
-        ),
+        title: "Fallo Crítico en Motor",
+        description: "Revisa el panel rojo para ver el error técnico real."
       });
     } finally {
       setIsLoading(false);
@@ -168,9 +162,7 @@ export default function CommandCenter() {
               <Play className="w-5 h-5 text-primary" />
               Motor de Tareas
             </CardTitle>
-            <CardDescription>
-              Generación manual de tareas diarias.
-            </CardDescription>
+            <CardDescription>Generación manual de tareas diarias.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -179,48 +171,40 @@ export default function CommandCenter() {
                 <PopoverTrigger asChild>
                   <Button
                     variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal bg-background",
-                      !date && "text-muted-foreground"
-                    )}
+                    className={cn("w-full justify-start text-left font-normal bg-background", !date && "text-muted-foreground")}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {date ? format(date, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    initialFocus
-                  />
+                  <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
                 </PopoverContent>
               </Popover>
             </div>
 
-            <Button 
-              className="w-full" 
-              onClick={runTaskEngine} 
-              disabled={isLoading || !date}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...
-                </>
-              ) : (
-                "Generar Tareas"
-              )}
+            <Button className="w-full" onClick={runTaskEngine} disabled={isLoading || !date}>
+              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : "Generar Tareas"}
             </Button>
 
+            {/* ERROR DEBUG BOX */}
+            {debugError && (
+              <div className="mt-4 p-3 bg-red-950 text-red-200 text-xs font-mono rounded border border-red-800 overflow-x-auto">
+                <div className="flex items-center gap-2 mb-1 font-bold text-red-100">
+                  <Terminal className="w-3 h-3" /> ERROR REAL DETECTADO:
+                </div>
+                {debugError}
+              </div>
+            )}
+
             {lastResult && (
-              <div className={`p-3 rounded-md border text-sm flex gap-2 items-start animate-in fade-in slide-in-from-top-2 ${lastResult.success ? 'bg-white border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              <div className={`p-3 rounded-md border text-sm flex gap-2 items-start mt-2 ${lastResult.success ? 'bg-white border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
                 {lastResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
                 <div className="flex flex-col">
                   <span className="font-medium">{lastResult.message}</span>
                   {lastResult.details && (
                     <span className="text-xs mt-1 opacity-80">
-                      Generated: {lastResult.details.generated}, Skipped: {lastResult.details.skipped}
+                      Gen: {lastResult.details.generated} | Skip: {lastResult.details.skipped}
                     </span>
                   )}
                 </div>

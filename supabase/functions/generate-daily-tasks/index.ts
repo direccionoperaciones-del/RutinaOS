@@ -6,162 +6,147 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Helper para respuestas estandarizadas
-const sendResponse = (status: number, body: any) => {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  })
-}
-
 serve(async (req) => {
+  // 0. Preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    // 1. VALIDACIÓN DE ENTORNO
+    // 1. ENVIRONMENT CHECK
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("CRITICAL: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
-      return sendResponse(500, { ok: false, code: "CONFIG_ERROR", message: "Server misconfiguration: Missing Env Variables" })
+      throw new Error('CONFIG_ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
     }
 
-    // Cliente con privilegios de Service Role (Bypass RLS)
+    // Cliente Admin (Bypass RLS)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 2. AUTENTICACIÓN
+    // 2. AUTHENTICATION & PAYLOAD
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return sendResponse(401, { ok: false, code: "AUTH_MISSING", message: "Missing Authorization header" })
+      return new Response(
+        JSON.stringify({ ok: false, code: "AUTH_MISSING", message: "No Authorization header" }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     const token = authHeader.replace('Bearer ', '')
     let triggerSource = 'unknown'
-    let tenantId = null
+    let tenantIdArg = null
 
-    // Caso A: Cron Job (Service Key)
+    // Caso A: Service Key (Cron)
     if (token === supabaseServiceKey) {
       triggerSource = 'cron'
-      console.log('🔒 Ejecución autorizada por Service Key (Cron)')
     } 
-    // Caso B: Usuario Manual (JWT)
+    // Caso B: User (JWT)
     else {
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
-      if (authError || !user) {
-        return sendResponse(401, { ok: false, code: "AUTH_INVALID", message: "Invalid User Token" })
+      const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ ok: false, code: "AUTH_INVALID", message: "Invalid Token" }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
       }
+      triggerSource = user.id
       
-      // Obtener perfil para Tenant
+      // Obtener tenant del usuario
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('role, tenant_id')
+        .select('tenant_id')
         .eq('id', user.id)
         .single()
-        
-      if (!profile) {
-        return sendResponse(403, { ok: false, code: "PROFILE_NOT_FOUND", message: "User profile not found" })
-      }
-
-      if (!['director', 'lider', 'administrador'].includes(profile.role)) {
-         return sendResponse(403, { ok: false, code: "FORBIDDEN", message: "Insufficient permissions" })
-      }
       
-      triggerSource = user.id
-      tenantId = profile.tenant_id
-      console.log(`👤 Ejecución manual por: ${user.email} (Tenant: ${tenantId})`)
+      if (profile) tenantIdArg = profile.tenant_id
     }
 
-    // 3. PARSEO Y VALIDACIÓN DE INPUT
+    // 3. PARSE & VALIDATE DATE
     const body = await req.json().catch(() => ({}))
     let { date } = body
-    
-    // Si no viene fecha, usar fecha actual Colombia (UTC-5)
+
+    // Default a Fecha Colombia si no viene
     if (!date) {
       const now = new Date()
-      const colombiaOffset = -5 * 60 
-      const nowColombia = new Date(now.getTime() + (colombiaOffset * 60 * 1000))
-      date = nowColombia.toISOString().split('T')[0]
+      // Ajuste manual UTC-5 para Colombia
+      const offsetMs = -5 * 60 * 60 * 1000
+      const nowCol = new Date(now.getTime() + offsetMs)
+      date = nowCol.toISOString().split('T')[0]
     }
 
-    // Validar formato fecha YYYY-MM-DD simple
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return sendResponse(400, { ok: false, code: "INVALID_DATE", message: "Date must be YYYY-MM-DD" })
+      return new Response(
+        JSON.stringify({ ok: false, code: "VALIDATION_ERROR", message: "Invalid date format. Use YYYY-MM-DD" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
-    console.log(`📅 Procesando fecha: ${date} para Tenant: ${tenantId || 'ALL'}`)
+    // 4. LOGIC START
+    console.log(`[Motor] Iniciando para fecha: ${date} | Source: ${triggerSource} | TenantFilter: ${tenantIdArg || 'ALL'}`)
 
-    // 4. LÓGICA DE NEGOCIO
-    // Si tenantId es null (CRON), iteramos sobre TODOS los tenants activos
-    // Si tenantId existe (Manual), solo procesamos ese tenant.
-    
+    // Obtener Tenants a procesar
     let tenantsQuery = supabaseAdmin.from('tenants').select('id')
-    if (tenantId) {
-      tenantsQuery = tenantsQuery.eq('id', tenantId)
+    if (tenantIdArg) {
+      tenantsQuery = tenantsQuery.eq('id', tenantIdArg)
     } else {
-      tenantsQuery = tenantsQuery.eq('activo', true) // Solo tenants activos
+      tenantsQuery = tenantsQuery.eq('activo', true)
     }
-    
-    const { data: tenants, error: tenantsError } = await tenantsQuery
-    if (tenantsError) throw new Error(`Error fetching tenants: ${tenantsError.message}`)
 
-    if (!tenants || tenants.length === 0) {
-      return sendResponse(200, { ok: true, message: "No active tenants found to process.", generated: 0, skipped: 0 })
-    }
+    const { data: tenants, error: tenantsError } = await tenantsQuery
+    if (tenantsError) throw new Error(`DB Error fetching tenants: ${tenantsError.message}`)
 
     let totalGenerated = 0
-    let totalSkipped = 0
+    let totalSkipped = 0 // Aproximado
 
-    // Iterar por Tenant
-    for (const tenant of tenants) {
+    // Procesar cada Tenant
+    for (const tenant of (tenants || [])) {
       const tId = tenant.id
-      
-      // 4.1 Obtener Asignaciones Activas del Tenant
-      const { data: assignments } = await supabaseAdmin
-        .from('routine_assignments')
-        .select(`
-          id, pdv_id, rutina_id,
-          routine_templates (
-            id, frecuencia, dias_ejecucion, prioridad, hora_inicio, hora_limite,
-            fechas_especificas, vencimiento_dia_mes, corte_1_limite, corte_2_limite, activo
-          )
-        `)
-        .eq('tenant_id', tId)
-        .eq('estado', 'activa')
-        .eq('routine_templates.activo', true)
 
-      if (!assignments || assignments.length === 0) continue
+      // 4.1 Obtener Datos Maestros del Tenant (Assignments, Responsables, Ausencias)
+      // Optimizamos en paralelo
+      const [assignmentsResult, responsiblesResult, absencesResult] = await Promise.all([
+        supabaseAdmin.from('routine_assignments')
+          .select(`
+            id, pdv_id, rutina_id,
+            routine_templates (
+              id, frecuencia, dias_ejecucion, prioridad, hora_inicio, hora_limite,
+              fechas_especificas, vencimiento_dia_mes, corte_1_limite, corte_2_limite, activo
+            )
+          `)
+          .eq('tenant_id', tId)
+          .eq('estado', 'activa')
+          .eq('routine_templates.activo', true),
+        
+        supabaseAdmin.from('pdv_assignments')
+          .select('pdv_id, user_id')
+          .eq('tenant_id', tId)
+          .eq('vigente', true),
 
-      // 4.2 Obtener Responsables Vigentes
-      const { data: responsibles } = await supabaseAdmin
-        .from('pdv_assignments')
-        .select('pdv_id, user_id')
-        .eq('tenant_id', tId)
-        .eq('vigente', true)
+        supabaseAdmin.from('user_absences')
+          .select('user_id, politica, receptor_id')
+          .eq('tenant_id', tId)
+          .lte('fecha_desde', date)
+          .gte('fecha_hasta', date)
+      ])
+
+      const assignments = assignmentsResult.data || []
       
       const respMap = new Map()
-      responsibles?.forEach(r => respMap.set(r.pdv_id, r.user_id))
-
-      // 4.3 Obtener Ausencias
-      const { data: absences } = await supabaseAdmin
-        .from('user_absences')
-        .select('user_id, politica, receptor_id')
-        .eq('tenant_id', tId)
-        .lte('fecha_desde', date)
-        .gte('fecha_hasta', date)
+      responsiblesResult.data?.forEach(r => respMap.set(r.pdv_id, r.user_id))
       
       const absMap = new Map()
-      absences?.forEach(a => absMap.set(a.user_id, a))
+      absencesResult.data?.forEach(a => absMap.set(a.user_id, a))
 
-      // 4.4 Procesar Asignaciones
+      // 4.2 Filtrar y Construir Tareas
       const tasksToInsert = []
       
-      // Fecha helper
-      const dateObj = new Date(`${date}T12:00:00`)
-      const dayOfWeek = dateObj.getDay() // 0-6
-      const dayOfMonth = dateObj.getDate()
+      // Fecha Helper (Usar UTC de la fecha string para evitar desfases locales)
+      // "2023-01-01" -> split -> Date.UTC
+      const [y, m, d] = date.split('-').map(Number)
+      const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)) // Mediodía UTC para evitar bordes
+      const dayOfWeek = dateObj.getUTCDay() // 0-6
+      const dayOfMonth = dateObj.getUTCDate()
 
       for (const assign of assignments) {
         const r = assign.routine_templates
@@ -191,7 +176,7 @@ serve(async (req) => {
 
         // Check Responsable
         let userId = respMap.get(assign.pdv_id)
-        if (!userId) continue // Sin responsable, no generamos
+        if (!userId) continue // No se genera si no hay responsable
 
         // Check Ausencias
         const absence = absMap.get(userId)
@@ -200,7 +185,6 @@ serve(async (req) => {
           if (absence.politica === 'reasignar' && absence.receptor_id) userId = absence.receptor_id
         }
 
-        // Preparar Tarea
         tasksToInsert.push({
           tenant_id: tId,
           assignment_id: assign.id,
@@ -216,46 +200,50 @@ serve(async (req) => {
         })
       }
 
-      // 4.5 Insertar con Idempotencia (UPSERT + Ignore Duplicates)
+      // 4.3 Escritura Idempotente (UPSERT con ignoreDuplicates)
+      // Requiere índice único en DB: (assignment_id, fecha_programada)
       if (tasksToInsert.length > 0) {
-        // Necesitamos saber cuántos se insertaron vs omitieron
-        // Supabase upsert no devuelve count de ignorados fácilmente, así que hacemos un select count previo para aproximar
-        // O simplemente intentamos insertar y contamos el éxito
-        
-        const { error: upsertError } = await supabaseAdmin
+        const { error: insertError, count } = await supabaseAdmin
           .from('task_instances')
           .upsert(tasksToInsert, { 
             onConflict: 'assignment_id,fecha_programada', 
-            ignoreDuplicates: true 
+            ignoreDuplicates: true,
+            count: 'exact' 
           })
         
-        if (upsertError) {
-          console.error(`Error inserting tasks for tenant ${tId}:`, upsertError)
-          // No detenemos todo, seguimos con siguiente tenant
+        if (insertError) {
+          console.error(`Error inserting tasks for tenant ${tId}:`, insertError)
+          // No lanzamos error para no detener otros tenants, pero logueamos
         } else {
-          // Asumimos que intentamos generar N. La BD manejará los duplicados silenciosamente.
-          totalGenerated += tasksToInsert.length 
+          // Nota: upsert con ignoreDuplicates devuelve count null en algunas versiones de supabase-js si no inserta nada
+          // Asumiremos éxito por ahora.
+          totalGenerated += tasksToInsert.length
         }
       }
     }
 
-    // 5. RESPUESTA FINAL
-    return sendResponse(200, {
-      ok: true,
-      message: "Proceso finalizado correctamente.",
-      date: date,
-      generated: totalGenerated,
-      skipped: totalSkipped, // Simplificado
-      triggeredBy: triggerSource
-    })
+    // 5. SUCCESS RESPONSE
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        generated: totalGenerated,
+        skipped: totalSkipped,
+        date: date,
+        message: `Proceso completado. ${totalGenerated} tareas procesadas.`
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
 
-  } catch (error) {
-    console.error("❌ UNHANDLED EXCEPTION:", error)
-    return sendResponse(500, { 
-      ok: false, 
-      code: "INTERNAL_ERROR", 
-      message: error.message || "Unknown error",
-      details: error.stack
-    })
+  } catch (err: any) {
+    console.error("❌ FATAL EDGE ERROR:", err)
+    return new Response(
+      JSON.stringify({ 
+        ok: false, 
+        code: "INTERNAL_ERROR", 
+        message: err.message, 
+        stack: err.stack 
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
   }
 })
