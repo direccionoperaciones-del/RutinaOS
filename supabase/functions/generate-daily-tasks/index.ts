@@ -21,20 +21,29 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
     }
     
-    // Create a temporary client to verify the user
-    const supabaseAnon = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '')
-    const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(authHeader.replace('Bearer ', ''))
+    const token = authHeader.replace('Bearer ', '')
+    let isAuthorized = false
 
-    // Allow if valid user (you can restrict to specific roles here) OR if it is a service call (check specific header/secret)
-    if (authError || !user) {
-       // Optional: allow CRON if you set a custom header in pg_cron
-       const cronSecret = req.headers.get('x-cron-secret')
-       if (cronSecret !== Deno.env.get('CRON_SECRET')) {
-         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-       }
+    // 1. Allow if Service Role Key (Automated Cron Job)
+    if (token === supabaseServiceKey) {
+      isAuthorized = true
+      console.log('[generate-daily-tasks] Authorized via Service Role Key (Cron)')
+    } 
+    // 2. Allow if Valid User (Manual Trigger from UI)
+    else {
+      const supabaseAnon = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '')
+      const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token)
+      if (user && !authError) {
+        isAuthorized = true
+        console.log(`[generate-daily-tasks] Authorized user: ${user.id}`)
+      }
     }
 
-    // Initialize admin client only after auth check
+    if (!isAuthorized) {
+       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+    }
+
+    // Initialize admin client
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // --- 1. DETERMINAR FECHA (COLOMBIA GMT-5) ---
@@ -47,6 +56,7 @@ serve(async (req) => {
       targetDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
     } else {
       const now = new Date();
+      // GMT-5 offset logic
       const colombiaOffset = -5;
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       targetDate = new Date(utc + (3600000 * colombiaOffset));
