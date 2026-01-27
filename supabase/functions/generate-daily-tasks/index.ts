@@ -7,24 +7,21 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // 0. Preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
   try {
-    // 1. ENVIRONMENT CHECK
+    // Variables de entorno
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('CONFIG_ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
+      throw new Error('CONFIG_ERROR: Missing Supabase Env Variables')
     }
 
-    // Cliente Admin (Bypass RLS)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
-
-    // 2. AUTHENTICATION & PAYLOAD
+    // Header Auth
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(
@@ -33,20 +30,32 @@ serve(async (req) => {
       )
     }
 
-    const token = authHeader.replace('Bearer ', '')
+    // --- AUTENTICACIÓN ---
     let triggerSource = 'unknown'
     let tenantIdArg = null
+    const token = authHeader.replace('Bearer ', '')
 
-    // Caso A: Service Key (Cron)
+    // Cliente Admin para operaciones DB (Privilegiado)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Caso A: Cron Job (Service Key)
     if (token === supabaseServiceKey) {
       triggerSource = 'cron'
+      console.log('🔒 Auth: Service Key (Cron Job)')
     } 
-    // Caso B: User (JWT)
+    // Caso B: Usuario (JWT)
     else {
-      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+      // FIX AUTH: Usar cliente scopeado con el header para validar sesión correctamente
+      const supabaseUserClient = createClient(
+        supabaseUrl, 
+        supabaseAnonKey, 
+        { global: { headers: { Authorization: authHeader } } }
+      )
       
+      const { data: { user }, error: authError } = await supabaseUserClient.auth.getUser()
+
       if (authError || !user) {
-        console.error("❌ Auth Error:", authError?.message)
+        console.error("❌ Auth Failed:", authError?.message)
         return new Response(
           JSON.stringify({ 
             ok: false, 
@@ -56,24 +65,38 @@ serve(async (req) => {
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
-      
-      triggerSource = user.id
-      
-      // Obtener tenant del usuario
+
+      // Validar permisos del usuario usando Admin Client
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('tenant_id')
+        .select('role, tenant_id')
         .eq('id', user.id)
         .single()
       
-      if (profile) tenantIdArg = profile.tenant_id
+      if (!profile) {
+        return new Response(
+          JSON.stringify({ ok: false, code: "PROFILE_NOT_FOUND", message: "User profile not found" }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Permitir solo roles de gestión
+      if (!['director', 'lider', 'administrador'].includes(profile.role)) {
+         return new Response(
+          JSON.stringify({ ok: false, code: "FORBIDDEN", message: "Insufficient permissions" }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      triggerSource = user.id
+      tenantIdArg = profile.tenant_id
+      console.log(`👤 Auth: Usuario ${user.email} (Tenant: ${tenantIdArg})`)
     }
 
-    // 3. PARSE & VALIDATE DATE
+    // --- INPUT ---
     const body = await req.json().catch(() => ({}))
     let { date } = body
 
-    // Default a Fecha Colombia si no viene
     if (!date) {
       const now = new Date()
       // Ajuste manual UTC-5 para Colombia
@@ -89,9 +112,9 @@ serve(async (req) => {
       )
     }
 
-    console.log(`[Motor] Iniciando para fecha: ${date} | Source: ${triggerSource} | TenantFilter: ${tenantIdArg || 'ALL'}`)
-
-    // Obtener Tenants a procesar
+    // --- LÓGICA MOTOR (Con supabaseAdmin) ---
+    // Usamos supabaseAdmin para todo lo siguiente para saltar RLS
+    
     let tenantsQuery = supabaseAdmin.from('tenants').select('id')
     if (tenantIdArg) {
       tenantsQuery = tenantsQuery.eq('id', tenantIdArg)
@@ -103,13 +126,12 @@ serve(async (req) => {
     if (tenantsError) throw new Error(`DB Error fetching tenants: ${tenantsError.message}`)
 
     let totalGenerated = 0
-    let totalSkipped = 0 // Aproximado
+    let totalSkipped = 0 
 
-    // Procesar cada Tenant
     for (const tenant of (tenants || [])) {
       const tId = tenant.id
 
-      // 4.1 Obtener Datos Maestros del Tenant (Assignments, Responsables, Ausencias)
+      // Obtener datos maestros
       const [assignmentsResult, responsiblesResult, absencesResult] = await Promise.all([
         supabaseAdmin.from('routine_assignments')
           .select(`
@@ -143,12 +165,11 @@ serve(async (req) => {
       const absMap = new Map()
       absencesResult.data?.forEach(a => absMap.set(a.user_id, a))
 
-      // 4.2 Filtrar y Construir Tareas
       const tasksToInsert = []
       
-      // Fecha Helper (Usar UTC de la fecha string para evitar desfases locales)
+      // Fecha Helper
       const [y, m, d] = date.split('-').map(Number)
-      const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)) // Mediodía UTC
+      const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
       const dayOfWeek = dateObj.getUTCDay() // 0-6
       const dayOfMonth = dateObj.getUTCDate()
 
@@ -156,7 +177,6 @@ serve(async (req) => {
         const r = assign.routine_templates
         if (!r) continue
 
-        // Check Frecuencia
         let shouldRun = false
         switch (r.frecuencia) {
           case 'diaria':
@@ -178,11 +198,9 @@ serve(async (req) => {
 
         if (!shouldRun) continue
 
-        // Check Responsable
         let userId = respMap.get(assign.pdv_id)
         if (!userId) continue 
 
-        // Check Ausencias
         const absence = absMap.get(userId)
         if (absence) {
           if (absence.politica === 'omitir') continue
@@ -204,7 +222,6 @@ serve(async (req) => {
         })
       }
 
-      // 4.3 Escritura Idempotente (UPSERT con ignoreDuplicates)
       if (tasksToInsert.length > 0) {
         const { error: insertError } = await supabaseAdmin
           .from('task_instances')
@@ -221,14 +238,13 @@ serve(async (req) => {
       }
     }
 
-    // 5. SUCCESS RESPONSE
     return new Response(
       JSON.stringify({
         ok: true,
         generated: totalGenerated,
         skipped: totalSkipped,
         date: date,
-        message: `Proceso completado. ${totalGenerated} tareas procesadas.`
+        message: `Proceso completado. ${totalGenerated} tareas creadas.`
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
