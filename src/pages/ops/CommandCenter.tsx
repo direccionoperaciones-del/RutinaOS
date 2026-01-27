@@ -15,7 +15,6 @@ export default function CommandCenter() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [isLoading, setIsLoading] = useState(false);
   const [lastResult, setLastResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
-  const [debugError, setDebugError] = useState<string | null>(null); // Estado para mostrar el error crudo en UI
   
   const [metrics, setMetrics] = useState({
     incidencias: 0,
@@ -68,71 +67,79 @@ export default function CommandCenter() {
     if (!date) return;
     setIsLoading(true);
     setLastResult(null);
-    setDebugError(null);
 
     try {
-      const simpleDate = format(date, "yyyy-MM-dd");
-      console.log(`🚀 Iniciando motor para: ${simpleDate}`);
+      // 1. OBTENER SESIÓN Y TOKEN REAL
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        throw new Error("Sesión expirada o inválida. Por favor, vuelve a iniciar sesión.");
+      }
 
-      // Invocación a Edge Function
+      const token = session.access_token;
+      const simpleDate = format(date, "yyyy-MM-dd");
+      
+      console.log(`🚀 Ejecutando motor para: ${simpleDate}`);
+      console.log(`🔑 Usando Token: Bearer ${token.substring(0, 10)}...`);
+
+      // 2. INVOCAR CON HEADER AUTHORIZATION EXPLÍCITO
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { date: simpleDate }
+        body: { date: simpleDate },
+        headers: {
+          Authorization: `Bearer ${token}` // Forzamos el token del usuario
+        }
       });
 
-      // 1. MANEJO DE ERRORES HTTP (Captura robusta)
+      // 3. MANEJO DE ERRORES HTTP/RED
       if (error) {
-        console.error("❌ RAW ERROR FROM SUPABASE CLIENT:", error);
+        console.error("❌ HTTP Error:", error);
         
-        // Intentar decodificar el cuerpo del error si existe
-        let errorDetails = error.message;
+        let errorBody = error.message;
         try {
           if (error && typeof error === 'object' && 'context' in error) {
              const context = (error as any).context;
              if (context && typeof context.json === 'function') {
                 const jsonBody = await context.json();
-                errorDetails = `Status: ${context.status} | Body: ${JSON.stringify(jsonBody)}`;
-             } else if (context && typeof context.text === 'function') {
-                const textBody = await context.text();
-                errorDetails = `Status: ${context.status} | Body: ${textBody}`;
+                errorBody = jsonBody.message || JSON.stringify(jsonBody);
+                if (jsonBody.code) errorBody = `[${jsonBody.code}] ${errorBody}`;
              }
           }
-        } catch (e) {
-          errorDetails += " (No se pudo parsear el body del error)";
-        }
+        } catch (e) { /* Fallback */ }
 
-        throw new Error(errorDetails);
+        throw new Error(errorBody);
       }
 
-      // 2. MANEJO DE RESPUESTA LÓGICA (200 OK pero success: false)
+      // 4. MANEJO DE ERRORES LÓGICOS DEL BACKEND
       if (data && data.ok === false) {
-        throw new Error(`Error Lógico: ${data.message || 'Desconocido'} (Code: ${data.code})`);
+        throw new Error(data.message || 'El motor reportó un error sin mensaje.');
       }
 
       // ÉXITO
-      console.log("✅ Respuesta Exitosa:", data);
+      console.log("✅ Motor OK:", data);
       setLastResult({
         success: true,
-        message: data.message || "Proceso finalizado.",
+        message: data.message || "Proceso completado.",
         details: data
       });
 
       toast({
-        title: "Motor ejecutado correctamente",
-        description: `Generadas: ${data.generated} | Omitidas: ${data.skipped}`,
+        title: "Ejecución Exitosa",
+        description: `Generadas: ${data.generated || 0} | Omitidas: ${data.skipped || 0}`,
         className: "bg-green-50 border-green-200 text-green-800"
       });
       
       if (simpleDate === getLocalDate()) fetchMetrics();
 
     } catch (error: any) {
-      console.error("🚨 CRITICAL UI ERROR:", error);
-      const msg = error.message || "Error desconocido";
-      setDebugError(msg); // Mostrar en UI para debug inmediato
+      console.error("🚨 Error ejecución:", error);
       
+      const errorMsg = error.message || "Error desconocido";
+      setLastResult({ success: false, message: errorMsg });
+
       toast({
         variant: "destructive",
-        title: "Fallo Crítico en Motor",
-        description: "Revisa el panel rojo para ver el error técnico real."
+        title: "Fallo en el Motor",
+        description: errorMsg,
       });
     } finally {
       setIsLoading(false);
@@ -162,7 +169,9 @@ export default function CommandCenter() {
               <Play className="w-5 h-5 text-primary" />
               Motor de Tareas
             </CardTitle>
-            <CardDescription>Generación manual de tareas diarias.</CardDescription>
+            <CardDescription>
+              Generación manual de tareas diarias.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -171,34 +180,42 @@ export default function CommandCenter() {
                 <PopoverTrigger asChild>
                   <Button
                     variant={"outline"}
-                    className={cn("w-full justify-start text-left font-normal bg-background", !date && "text-muted-foreground")}
+                    className={cn(
+                      "w-full justify-start text-left font-normal bg-background",
+                      !date && "text-muted-foreground"
+                    )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {date ? format(date, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={setDate}
+                    initialFocus
+                  />
                 </PopoverContent>
               </Popover>
             </div>
 
-            <Button className="w-full" onClick={runTaskEngine} disabled={isLoading || !date}>
-              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : "Generar Tareas"}
+            <Button 
+              className="w-full" 
+              onClick={runTaskEngine} 
+              disabled={isLoading || !date}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...
+                </>
+              ) : (
+                "Generar Tareas"
+              )}
             </Button>
 
-            {/* ERROR DEBUG BOX */}
-            {debugError && (
-              <div className="mt-4 p-3 bg-red-950 text-red-200 text-xs font-mono rounded border border-red-800 overflow-x-auto">
-                <div className="flex items-center gap-2 mb-1 font-bold text-red-100">
-                  <Terminal className="w-3 h-3" /> ERROR REAL DETECTADO:
-                </div>
-                {debugError}
-              </div>
-            )}
-
             {lastResult && (
-              <div className={`p-3 rounded-md border text-sm flex gap-2 items-start mt-2 ${lastResult.success ? 'bg-white border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              <div className={`p-3 rounded-md border text-sm flex gap-2 items-start animate-in fade-in slide-in-from-top-2 ${lastResult.success ? 'bg-white border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
                 {lastResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <XCircle className="w-4 h-4 mt-0.5 shrink-0" />}
                 <div className="flex flex-col">
                   <span className="font-medium">{lastResult.message}</span>

@@ -43,13 +43,20 @@ serve(async (req) => {
     } 
     // Caso B: User (JWT)
     else {
-      const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
-      if (userError || !user) {
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+      
+      if (authError || !user) {
+        console.error("❌ Auth Error:", authError?.message)
         return new Response(
-          JSON.stringify({ ok: false, code: "AUTH_INVALID", message: "Invalid Token" }),
+          JSON.stringify({ 
+            ok: false, 
+            code: "AUTH_INVALID", 
+            message: `Invalid Token: ${authError?.message || 'User not found'}` 
+          }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+      
       triggerSource = user.id
       
       // Obtener tenant del usuario
@@ -82,7 +89,6 @@ serve(async (req) => {
       )
     }
 
-    // 4. LOGIC START
     console.log(`[Motor] Iniciando para fecha: ${date} | Source: ${triggerSource} | TenantFilter: ${tenantIdArg || 'ALL'}`)
 
     // Obtener Tenants a procesar
@@ -104,7 +110,6 @@ serve(async (req) => {
       const tId = tenant.id
 
       // 4.1 Obtener Datos Maestros del Tenant (Assignments, Responsables, Ausencias)
-      // Optimizamos en paralelo
       const [assignmentsResult, responsiblesResult, absencesResult] = await Promise.all([
         supabaseAdmin.from('routine_assignments')
           .select(`
@@ -142,9 +147,8 @@ serve(async (req) => {
       const tasksToInsert = []
       
       // Fecha Helper (Usar UTC de la fecha string para evitar desfases locales)
-      // "2023-01-01" -> split -> Date.UTC
       const [y, m, d] = date.split('-').map(Number)
-      const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)) // Mediodía UTC para evitar bordes
+      const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)) // Mediodía UTC
       const dayOfWeek = dateObj.getUTCDay() // 0-6
       const dayOfMonth = dateObj.getUTCDate()
 
@@ -176,7 +180,7 @@ serve(async (req) => {
 
         // Check Responsable
         let userId = respMap.get(assign.pdv_id)
-        if (!userId) continue // No se genera si no hay responsable
+        if (!userId) continue 
 
         // Check Ausencias
         const absence = absMap.get(userId)
@@ -201,22 +205,17 @@ serve(async (req) => {
       }
 
       // 4.3 Escritura Idempotente (UPSERT con ignoreDuplicates)
-      // Requiere índice único en DB: (assignment_id, fecha_programada)
       if (tasksToInsert.length > 0) {
-        const { error: insertError, count } = await supabaseAdmin
+        const { error: insertError } = await supabaseAdmin
           .from('task_instances')
           .upsert(tasksToInsert, { 
             onConflict: 'assignment_id,fecha_programada', 
-            ignoreDuplicates: true,
-            count: 'exact' 
+            ignoreDuplicates: true
           })
         
         if (insertError) {
           console.error(`Error inserting tasks for tenant ${tId}:`, insertError)
-          // No lanzamos error para no detener otros tenants, pero logueamos
         } else {
-          // Nota: upsert con ignoreDuplicates devuelve count null en algunas versiones de supabase-js si no inserta nada
-          // Asumiremos éxito por ahora.
           totalGenerated += tasksToInsert.length
         }
       }
