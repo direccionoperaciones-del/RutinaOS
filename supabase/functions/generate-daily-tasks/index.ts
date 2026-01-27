@@ -7,6 +7,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -15,10 +16,13 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     
-    // SECURITY CHECK
+    // Initialize Admin Client immediately
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // --- SECURITY CHECK ---
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders })
     }
     
     const token = authHeader.replace('Bearer ', '')
@@ -31,20 +35,20 @@ serve(async (req) => {
     } 
     // 2. Allow if Valid User (Manual Trigger from UI)
     else {
-      const supabaseAnon = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '')
-      const { data: { user }, error: authError } = await supabaseAnon.auth.getUser(token)
+      // Use the admin client to verify the user token
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+      
       if (user && !authError) {
         isAuthorized = true
         console.log(`[generate-daily-tasks] Authorized user: ${user.id}`)
+      } else {
+        console.error('[generate-daily-tasks] Auth failed:', authError)
       }
     }
 
     if (!isAuthorized) {
-       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+       return new Response(JSON.stringify({ error: 'Unauthorized: Invalid token' }), { status: 401, headers: corsHeaders })
     }
-
-    // Initialize admin client
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // --- 1. DETERMINAR FECHA (COLOMBIA GMT-5) ---
     const { date } = await req.json().catch(() => ({ date: null }))
