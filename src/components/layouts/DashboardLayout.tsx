@@ -103,6 +103,8 @@ const NAV_CONFIG = [
   }
 ];
 
+const DEFAULT_LOGO = "https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg";
+
 const DashboardLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -124,7 +126,7 @@ const DashboardLayout = () => {
 
         const { data: profile, error } = await supabase
           .from('profiles')
-          .select('*, tenants(nombre)')
+          .select('*, tenants(nombre, logo_url)')
           .eq('id', session.user.id)
           .single();
         
@@ -163,14 +165,17 @@ const DashboardLayout = () => {
     return roles.includes(userProfile.role);
   };
 
+  const appLogo = userProfile?.tenants?.logo_url || DEFAULT_LOGO;
+  const appName = userProfile?.tenants?.logo_url ? userProfile.tenants.nombre : "Movacheck";
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-movacheck-navy">
         <div className="flex flex-col items-center gap-4">
           <div className="h-20 w-20 rounded-full overflow-hidden shadow-lg shadow-blue-500/20">
              <img 
-               src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
-               alt="Movacheck" 
+               src={DEFAULT_LOGO} 
+               alt="Loading..." 
                className="h-full w-full object-cover" 
              />
           </div>
@@ -201,14 +206,16 @@ const DashboardLayout = () => {
         {/* Logo Area (Sidebar) */}
         <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/5 bg-movacheck-navy">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 overflow-hidden rounded-lg">
+            <div className="h-9 w-9 overflow-hidden rounded-lg bg-white/5 p-0.5 border border-white/10">
               <img 
-                src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
-                alt="Movacheck" 
-                className="h-full w-full object-cover" 
+                src={appLogo} 
+                alt="Logo" 
+                className="h-full w-full object-contain rounded-md" 
               />
             </div>
-            <span className="text-lg font-bold tracking-tight text-white">Movacheck</span>
+            <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]">
+              {appName}
+            </span>
           </div>
         </div>
 
@@ -277,11 +284,11 @@ const DashboardLayout = () => {
             {/* Mobile/Tablet Brand (Visible when sidebar is hidden) */}
             <div className="lg:hidden flex items-center gap-2">
                 <img 
-                  src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
-                  alt="Movacheck" 
-                  className="h-8 w-8 rounded-full object-cover" 
+                  src={appLogo} 
+                  alt="Brand" 
+                  className="h-8 w-8 rounded-md object-contain border bg-white/10" 
                 />
-                <span className="font-bold text-lg tracking-tight">Movacheck</span>
+                <span className="font-bold text-lg tracking-tight truncate max-w-[120px]">{appName}</span>
             </div>
           </div>
 

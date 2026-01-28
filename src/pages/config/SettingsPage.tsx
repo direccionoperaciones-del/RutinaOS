@@ -119,7 +119,7 @@ export default function SettingsPage() {
       // Usamos el ID del tenant como carpeta o prefijo
       const filePath = `tenant_${profile.tenant_id}/${Date.now()}.${fileExt}`;
 
-      // 1. Subir al bucket 'logos'
+      // 1. Subir al bucket 'logos' (upsert true para sobrescribir si es necesario)
       const { error: uploadError } = await supabase.storage
         .from('logos')
         .upload(filePath, file, { upsert: true });
@@ -141,6 +141,9 @@ export default function SettingsPage() {
 
       setCompanyLogoUrl(publicUrl);
       toast({ title: "Logo actualizado", description: "La imagen de la organización se ha guardado." });
+      
+      // Recargar para que el layout tome el nuevo logo
+      setTimeout(() => window.location.reload(), 1000);
       
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error al subir logo", description: error.message });
@@ -346,7 +349,7 @@ export default function SettingsPage() {
                 <div className="flex-1 space-y-1 text-center sm:text-left pt-2">
                   <h3 className="font-medium">Logo Corporativo</h3>
                   <p className="text-sm text-muted-foreground">
-                    Sube el logo de tu empresa (PNG transparente recomendado). Se mostrará en el encabezado de las tareas y reportes.
+                    Sube el logo de tu empresa (PNG transparente recomendado). Se mostrará en la barra principal y en Mis Tareas.
                   </p>
                 </div>
               </div>
