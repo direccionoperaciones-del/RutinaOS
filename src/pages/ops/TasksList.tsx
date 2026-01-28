@@ -46,13 +46,14 @@ const getStatusBadge = (task: any) => {
   const deadline = calculateTaskDeadline(task);
   const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
-  if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200">A Tiempo</Badge>;
-  if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Vencida</Badge>;
-  if (task.estado === 'incumplida') return <Badge className="bg-red-100 text-red-700 border-red-200">Incumplida</Badge>;
+  if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200 hover:bg-green-100">A Tiempo</Badge>;
+  if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100">Vencida</Badge>;
+  if (task.estado === 'incumplida') return <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100">Incumplida</Badge>;
   
-  if (isLate) return <Badge className="bg-red-50 text-red-600 border-red-100 animate-pulse">¡Vencida!</Badge>;
+  if (isLate) return <Badge className="bg-red-50 text-red-600 border-red-100 animate-pulse hover:bg-red-50">¡Vencida!</Badge>;
   
-  return <Badge variant="outline" className="bg-white">Pendiente</Badge>;
+  // FIX CONTRASTE: Usar slate-100 fondo y slate-800 texto para garantizar legibilidad
+  return <Badge className="bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200">Pendiente</Badge>;
 };
 
 const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void }) => {
