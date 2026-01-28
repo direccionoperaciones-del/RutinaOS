@@ -12,8 +12,19 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    
+    // Security Check: Verify Authorization header matches Service Role Key
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader || authHeader.replace('Bearer ', '') !== supabaseServiceKey) {
+      console.error("[mark-missed-tasks] Unauthorized access attempt")
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Obtener fecha actual en Colombia (UTC-5)
