@@ -55,7 +55,7 @@ serve(async (req) => {
     // 3. Obtener Tarea y Detalles (PDV, Rutina)
     const { data: task, error: taskError } = await supabase
       .from('task_instances')
-      .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre), tenant_id')
+      .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre), tenant_id, pdv_id')
       .eq('id', taskId)
       .single()
 
@@ -67,6 +67,23 @@ serve(async (req) => {
     if (task.tenant_id !== profile.tenant_id) {
       console.error(`User ${auditor.id} (Tenant: ${profile.tenant_id}) attempted to audit task ${taskId} (Tenant: ${task.tenant_id})`)
       return new Response(JSON.stringify({ error: 'Forbidden: Tenant mismatch' }), { status: 403, headers: corsHeaders })
+    }
+
+    // 3.2 Verificar Asignación de PDV para Líderes (Security Fix)
+    // Los líderes solo pueden auditar tareas de PDVs donde tienen asignación vigente
+    if (profile.role === 'lider') {
+      const { data: assignment } = await supabase
+        .from('pdv_assignments')
+        .select('id')
+        .eq('pdv_id', task.pdv_id)
+        .eq('user_id', auditor.id)
+        .eq('vigente', true)
+        .maybeSingle()
+
+      if (!assignment) {
+        console.error(`Leader ${auditor.id} attempted to audit PDV ${task.pdv_id} without active assignment.`)
+        return new Response(JSON.stringify({ error: 'Forbidden: No tiene asignación vigente en este PDV.' }), { status: 403, headers: corsHeaders })
+      }
     }
 
     // 4. Actualizar Tarea
