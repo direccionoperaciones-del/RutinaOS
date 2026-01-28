@@ -158,12 +158,12 @@ export default function CommandCenter() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
         {/* Generador de Tareas */}
-        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10">
+        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 h-full">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Play className="w-5 h-5 text-primary" />
+            <CardTitle className="flex items-center gap-2 text-primary">
+              <Play className="w-5 h-5" />
               Motor de Tareas
             </CardTitle>
             <CardDescription>Generación manual de tareas diarias.</CardDescription>
@@ -230,21 +230,21 @@ export default function CommandCenter() {
         </Card>
 
         {/* Cierre Nocturno */}
-        <Card className="border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-900/20">
+        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 h-full">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Moon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <CardTitle className="flex items-center gap-2 text-primary">
+              <Moon className="w-5 h-5" />
               Cierre de Día
             </CardTitle>
-            <CardDescription className="dark:text-indigo-300">Marca como "Incumplidas" las tareas vencidas.</CardDescription>
+            <CardDescription>Marca como "Incumplidas" las tareas vencidas.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="text-sm p-3 rounded border bg-white/50 border-indigo-100 text-indigo-900 dark:bg-indigo-950/50 dark:border-indigo-800 dark:text-indigo-200">
+            <div className="text-sm p-3 rounded border bg-background/50 border-primary/10 text-muted-foreground">
               <p>Este proceso corre automáticamente a las 23:59. Úsalo aquí para forzar el cierre de tareas pendientes de días anteriores.</p>
             </div>
             
             <Button 
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500" 
+              className="w-full" 
               onClick={runNightlyClose} 
               disabled={isClosing}
             >
@@ -255,7 +255,7 @@ export default function CommandCenter() {
 
         {/* Stats */}
         <div className="flex flex-col gap-4">
-          <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30 dark:bg-red-900/10 dark:border-red-800" : ""}>
+          <Card className={`h-full ${metrics.incidencias > 0 ? "border-red-200 bg-red-50/30 dark:bg-red-900/10 dark:border-red-800" : ""}`}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
