@@ -83,14 +83,7 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
     fetchProductsAndInit();
 
     return () => { isMounted = false; };
-    // Dependencias: Solo recargar si cambian las categorías. 
-    // Quitamos savedData para evitar el loop. La hidratación inicial ocurre en el fetch.
   }, [JSON.stringify(categoriesIds)]); 
-
-  // Escuchar cambios en savedData SOLO si llegan después (ej. carga asíncrona tardía del padre)
-  // pero con cuidado de no sobrescribir si el usuario ya editó.
-  // En este diseño, asumimos que el padre carga todo antes de montar o al mismo tiempo.
-  // Para evitar complejidad y bugs de sobreescritura, confiamos en la carga inicial.
 
   const groupedProducts = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -156,73 +149,75 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
             <Badge variant="outline" className="text-[10px] bg-background">{items.length} items</Badge>
           </div>
           
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[40%]">Producto</TableHead>
-                <TableHead className="w-[10%] text-center">Unidad</TableHead>
-                <TableHead className="w-[20%] text-center bg-blue-50/50 text-blue-800 border-r border-l border-blue-100">
-                  Físico
-                </TableHead>
-                <TableHead className="w-[20%] text-center bg-gray-50 text-gray-800">
-                  Sistema
-                </TableHead>
-                <TableHead className="w-[10%] text-right">Dif.</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((prod) => {
-                const count = counts[prod.id] || { fisico: "", esperado: "" };
-                const fisNum = count.fisico === "" ? 0 : Number(count.fisico);
-                const espNum = count.esperado === "" ? 0 : Number(count.esperado);
-                const diff = fisNum - espNum;
-                const showDiff = count.fisico !== "" && count.esperado !== "";
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent text-[10px] sm:text-xs">
+                  <TableHead className="w-[30%] min-w-[100px]">Producto</TableHead>
+                  <TableHead className="w-[10%] text-center p-1">Unid</TableHead>
+                  <TableHead className="w-[25%] min-w-[70px] text-center bg-blue-50/50 text-blue-800 border-r border-l border-blue-100 p-1">
+                    Físico
+                  </TableHead>
+                  <TableHead className="w-[25%] min-w-[70px] text-center bg-gray-50 text-gray-800 p-1">
+                    Sistema
+                  </TableHead>
+                  <TableHead className="w-[10%] text-right p-1">Dif.</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((prod) => {
+                  const count = counts[prod.id] || { fisico: "", esperado: "" };
+                  const fisNum = count.fisico === "" ? 0 : Number(count.fisico);
+                  const espNum = count.esperado === "" ? 0 : Number(count.esperado);
+                  const diff = fisNum - espNum;
+                  const showDiff = count.fisico !== "" && count.esperado !== "";
 
-                return (
-                  <TableRow key={prod.id} className="hover:bg-muted/30">
-                    <TableCell className="font-medium text-xs py-2">
-                      <div className="line-clamp-2">{prod.nombre}</div>
-                      <div className="text-[10px] text-muted-foreground font-mono">{prod.codigo_sku}</div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground text-center py-2">{prod.unidad}</TableCell>
-                    <TableCell className="p-1 bg-blue-50/30 border-r border-l border-blue-100">
-                      <Input 
-                        type="number" 
-                        min="0"
-                        className="h-8 text-center bg-white border-blue-200 focus-visible:ring-blue-400 font-medium"
-                        placeholder="0"
-                        value={count.fisico}
-                        onChange={(e) => handleInputChange(prod.id, 'fisico', e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell className="p-1 bg-gray-50/50">
-                      <Input 
-                        type="number" 
-                        min="0"
-                        className="h-8 text-center bg-white border-gray-200 focus-visible:ring-gray-400"
-                        placeholder="0"
-                        value={count.esperado}
-                        onChange={(e) => handleInputChange(prod.id, 'esperado', e.target.value)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right py-2">
-                      {showDiff ? (
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${
-                          diff < 0 ? 'text-red-600 bg-red-100' : 
-                          diff > 0 ? 'text-blue-600 bg-blue-100' : 
-                          'text-gray-500 bg-gray-100'
-                        }`}>
-                          {diff > 0 ? '+' : ''}{diff}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground text-[10px]">-</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                  return (
+                    <TableRow key={prod.id} className="hover:bg-muted/30">
+                      <TableCell className="font-medium text-[10px] sm:text-xs py-2 leading-tight">
+                        <div className="line-clamp-2">{prod.nombre}</div>
+                        <div className="text-[9px] text-muted-foreground font-mono mt-0.5">{prod.codigo_sku}</div>
+                      </TableCell>
+                      <TableCell className="text-[10px] sm:text-xs text-muted-foreground text-center py-2 px-1">{prod.unidad}</TableCell>
+                      <TableCell className="p-1 bg-blue-50/30 border-r border-l border-blue-100">
+                        <Input 
+                          type="number" 
+                          min="0"
+                          className="h-8 text-center bg-white border-blue-200 focus-visible:ring-blue-400 font-medium text-xs px-1"
+                          placeholder="0"
+                          value={count.fisico}
+                          onChange={(e) => handleInputChange(prod.id, 'fisico', e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell className="p-1 bg-gray-50/50">
+                        <Input 
+                          type="number" 
+                          min="0"
+                          className="h-8 text-center bg-white border-gray-200 focus-visible:ring-gray-400 text-xs px-1"
+                          placeholder="0"
+                          value={count.esperado}
+                          onChange={(e) => handleInputChange(prod.id, 'esperado', e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right py-2 px-1">
+                        {showDiff ? (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            diff < 0 ? 'text-red-600 bg-red-100' : 
+                            diff > 0 ? 'text-blue-600 bg-blue-100' : 
+                            'text-gray-500 bg-gray-100'
+                          }`}>
+                            {diff > 0 ? '+' : ''}{diff}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-[10px]">-</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </Card>
       ))}
 
