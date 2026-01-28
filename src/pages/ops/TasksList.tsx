@@ -321,7 +321,9 @@ export default function TasksList() {
   return (
     <div className="space-y-6 pb-24">
       <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold tracking-tight">Mis Tareas</h2>
+        <h2 className="text-3xl font-bold tracking-tight">
+          {profile?.nombre ? `${profile.nombre}, tus actividades del día` : 'Tus actividades del día'}
+        </h2>
         <div className="flex justify-between items-center"><p className="text-muted-foreground capitalize text-lg font-medium">{displayDate}</p></div>
       </div>
 
