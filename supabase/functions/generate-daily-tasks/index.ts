@@ -32,6 +32,7 @@ serve(async (req) => {
     let tenantIdArg = null
     let requestUserEmail = 'cron'
 
+    // Verify if it's NOT the Cron Job (Service Role)
     if (token !== supabaseServiceKey) {
       const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } })
       const { data: { user }, error: authError } = await supabaseUserClient.auth.getUser()
@@ -43,8 +44,10 @@ serve(async (req) => {
       requestUserEmail = user.email || 'unknown'
       const { data: profile } = await supabaseAdmin.from('profiles').select('tenant_id, role').eq('id', user.id).single()
       
-      if (!profile || !['director', 'lider', 'administrador'].includes(profile.role)) {
-         return new Response(JSON.stringify({ ok: false, code: "FORBIDDEN", message: "Insufficient permissions" }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      // SECURITY FIX: Only allow 'director' to manually trigger generation
+      if (!profile || !['director'].includes(profile.role)) {
+         console.warn(`[Security] Unauthorized execution attempt by user ${user.id} (${requestUserEmail}) with role ${profile?.role}`);
+         return new Response(JSON.stringify({ ok: false, code: "FORBIDDEN", message: "Insufficient permissions. Only Directors can trigger manual generation." }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
       tenantIdArg = profile.tenant_id
     }
@@ -209,9 +212,8 @@ serve(async (req) => {
           })
         
         if (error) {
-          // CRITICAL FIX: Reportar error de DB al frontend
           console.error("DB Insert Error:", error)
-          logs.push(`❌ DB Error: ${error.message}. (Verificar constraint unique)`)
+          logs.push(`❌ DB Error: ${error.message}`)
         } else {
           totalGenerated += tasksToInsert.length
         }
