@@ -320,11 +320,18 @@ export default function TasksList() {
 
   return (
     <div className="space-y-6 pb-24">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-3xl font-bold tracking-tight">
-          {profile?.nombre ? `${profile.nombre}, tus actividades del día` : 'Tus actividades del día'}
+      <div className="flex flex-col gap-1">
+        <h2 className="text-3xl font-bold tracking-tight text-foreground">
+          {profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}
         </h2>
-        <div className="flex justify-between items-center"><p className="text-muted-foreground capitalize text-lg font-medium">{displayDate}</p></div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <p className="text-lg text-muted-foreground font-medium">
+              Estas son tus actividades del día
+            </p>
+            <p className="text-primary capitalize text-sm font-semibold bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full w-fit">
+              {displayDate}
+            </p>
+        </div>
       </div>
 
       {activeAbsence && (
