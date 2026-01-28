@@ -435,6 +435,17 @@ CREATE POLICY "tasks_audit_update"
     tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid())
     AND (SELECT role FROM profiles WHERE id = auth.uid()) IN ('auditor', 'lider', 'director')
   );
+
+-- Log de Auditoría: Solo director puede leer
+CREATE POLICY "audit_read_director_only" ON system_audit_log
+FOR SELECT TO authenticated
+USING (
+  tenant_id IN (
+    SELECT tenant_id FROM profiles 
+    WHERE id = auth.uid() 
+    AND role = 'director'
+  )
+);
 ```
 
 ---
