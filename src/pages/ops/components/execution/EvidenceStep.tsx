@@ -1,8 +1,10 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X, Aperture } from "lucide-react";
+import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { validateFileSecurity } from "@/utils/file-validation";
+import { useToast } from "@/hooks/use-toast";
 
 interface EvidenceStepProps {
   type: 'foto' | 'archivo';
@@ -25,6 +27,7 @@ export function EvidenceStep({
   onFilesAdded, 
   onDelete 
 }: EvidenceStepProps) {
+  const { toast } = useToast();
   
   const isPhoto = type === 'foto';
   const Icon = isPhoto ? Camera : Paperclip;
@@ -39,10 +42,29 @@ export function EvidenceStep({
     return data.publicUrl;
   };
 
-  // Manejar selección de archivos input tradicional
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Manejar selección de archivos input tradicional con validación
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFilesAdded(Array.from(e.target.files));
+      const selectedFiles = Array.from(e.target.files);
+      const validFiles: File[] = [];
+      
+      for (const file of selectedFiles) {
+        const { valid, error } = await validateFileSecurity(file, type);
+        if (valid) {
+          validFiles.push(file);
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Archivo rechazado",
+            description: `${file.name}: ${error}`
+          });
+        }
+      }
+
+      if (validFiles.length > 0) {
+        onFilesAdded(validFiles);
+      }
+      
       e.target.value = ''; // Reset
     }
   };
@@ -91,8 +113,16 @@ export function EvidenceStep({
           if (blob) {
             const fileName = `foto_camara_${Date.now()}.jpg`;
             const file = new File([blob], fileName, { type: "image/jpeg" });
-            onFilesAdded([file]);
-            stopCamera();
+            
+            // Validar incluso la foto de cámara por consistencia
+            validateFileSecurity(file, 'foto').then(({ valid }) => {
+              if (valid) {
+                onFilesAdded([file]);
+                stopCamera();
+              } else {
+                toast({ variant: "destructive", title: "Error", description: "Error procesando la foto." });
+              }
+            });
           }
         }, 'image/jpeg', 0.8);
       }
