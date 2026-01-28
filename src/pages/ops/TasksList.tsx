@@ -13,7 +13,8 @@ import {
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
   Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
-  Calendar as CalendarIcon, CheckCircle2, X, Eye
+  Calendar as CalendarIcon, CheckCircle2, X, Eye, 
+  CheckSquare, XCircle, AlertTriangle, Circle
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -52,7 +53,6 @@ const getStatusBadge = (task: any) => {
   
   if (isLate) return <Badge className="bg-red-50 text-red-600 border-red-100 animate-pulse hover:bg-red-50">¡Vencida!</Badge>;
   
-  // FIX CONTRASTE: Usar slate-100 fondo y slate-800 texto para garantizar legibilidad
   return <Badge className="bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200">Pendiente</Badge>;
 };
 
@@ -72,7 +72,6 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
             {task.prioridad_snapshot}
           </Badge>
           
-          {/* BADGE DE AUDITORÍA (NUEVO) */}
           {task.audit_status === 'aprobado' && (
             <Badge className="bg-green-500 text-white border-green-600 gap-1 px-1.5 text-[10px]">
               <ShieldCheck className="w-3 h-3" /> Aprobada
@@ -169,6 +168,96 @@ const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction }: { items: 
   );
 };
 
+// Componente para la barra segmentada
+const SegmentedProgressBar = ({ 
+  total, 
+  onTime, 
+  late, 
+  missed, 
+  pending 
+}: { 
+  total: number, 
+  onTime: number, 
+  late: number, 
+  missed: number, 
+  pending: number 
+}) => {
+  const pctOnTime = total > 0 ? (onTime / total) * 100 : 0;
+  const pctLate = total > 0 ? (late / total) * 100 : 0;
+  const pctMissed = total > 0 ? (missed / total) * 100 : 0;
+  
+  // Progress total visible (excluye pendiente para el número grande)
+  const totalCompletedPct = total > 0 ? Math.round(((onTime + late) / total) * 100) : 0;
+
+  return (
+    <div className="bg-card border rounded-xl p-5 shadow-sm mb-6">
+      <div className="flex justify-between items-end mb-3">
+        <div className="flex flex-col">
+          <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Cumplimiento Global</span>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-3xl font-bold ${totalCompletedPct >= 80 ? 'text-emerald-600' : 'text-foreground'}`}>
+              {totalCompletedPct}%
+            </span>
+            <span className="text-xs text-muted-foreground">de {total} tareas</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Barra Gruesa Segmentada */}
+      <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
+        <div 
+          style={{ width: `${pctOnTime}%` }} 
+          className="bg-emerald-500 h-full transition-all duration-700 ease-out hover:bg-emerald-400" 
+          title={`A Tiempo: ${onTime}`}
+        />
+        <div 
+          style={{ width: `${pctLate}%` }} 
+          className="bg-amber-500 h-full transition-all duration-700 ease-out hover:bg-amber-400" 
+          title={`Vencidas: ${late}`}
+        />
+        <div 
+          style={{ width: `${pctMissed}%` }} 
+          className="bg-rose-500 h-full transition-all duration-700 ease-out hover:bg-rose-400" 
+          title={`Incumplidas: ${missed}`}
+        />
+        {/* El espacio restante es el background (Pendientes) */}
+      </div>
+
+      {/* Leyenda Detallada */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-3 border-t border-dashed">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
+          <div className="flex flex-col leading-none">
+            <span className="text-xs font-semibold text-foreground">A Tiempo</span>
+            <span className="text-[10px] text-muted-foreground">{onTime} tareas</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-amber-500 shrink-0" />
+          <div className="flex flex-col leading-none">
+            <span className="text-xs font-semibold text-foreground">Vencidas</span>
+            <span className="text-[10px] text-muted-foreground">{late} tareas</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-rose-500 shrink-0" />
+          <div className="flex flex-col leading-none">
+            <span className="text-xs font-semibold text-foreground">Incumplidas</span>
+            <span className="text-[10px] text-muted-foreground">{missed} tareas</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-slate-200 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 shrink-0" />
+          <div className="flex flex-col leading-none">
+            <span className="text-xs font-semibold text-foreground">Pendientes</span>
+            <span className="text-[10px] text-muted-foreground">{pending} tareas</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function TasksList() {
   const { user, profile } = useCurrentUser();
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -207,11 +296,19 @@ export default function TasksList() {
   const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
   const completedTasks = filteredTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
 
-  const totalFiltered = filteredTasks.length;
-  const totalDone = completedTasks.length;
-  const progressPercentage = totalFiltered > 0 ? Math.round((totalDone / totalFiltered) * 100) : 0;
+  // Stats for Progress Bar
+  const stats = useMemo(() => {
+    return {
+      total: filteredTasks.length,
+      onTime: filteredTasks.filter(t => t.estado === 'completada_a_tiempo' || t.estado === 'completada').length,
+      late: filteredTasks.filter(t => t.estado === 'completada_vencida').length,
+      missed: filteredTasks.filter(t => t.estado === 'incumplida').length,
+      pending: filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length
+    };
+  }, [filteredTasks]);
+
   const todayStr = getLocalDate();
-  const showCongratulation = totalFiltered > 0 && pendingTasks.length === 0 && dateTo <= todayStr && !activeAbsence; 
+  const showCongratulation = stats.total > 0 && stats.pending === 0 && dateTo <= todayStr && !activeAbsence; 
 
   const clearFilters = () => { const today = getLocalDate(); setDateFrom(today); setDateTo(today); setSelectedPdvs([]); setSelectedRoutines([]); setSelectedUsers([]); };
   const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
@@ -288,13 +385,17 @@ export default function TasksList() {
         </CardContent>
       </Card>
 
-      <div className="bg-card border rounded-lg p-3 shadow-sm">
-        <div className="flex justify-between text-xs font-medium mb-1"><span>Progreso</span><span className={progressPercentage < 100 ? "text-primary" : "text-green-600"}>{progressPercentage}%</span></div>
-        <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${progressPercentage < 50 ? 'bg-orange-500' : 'bg-green-500'}`} style={{ width: `${progressPercentage}%` }} /></div>
-      </div>
+      {/* SEGMENTED PROGRESS BAR */}
+      <SegmentedProgressBar 
+        total={stats.total} 
+        onTime={stats.onTime} 
+        late={stats.late} 
+        missed={stats.missed} 
+        pending={stats.pending} 
+      />
 
       {showCongratulation && !isLoading && (
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden">
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden mb-6">
           <div className="absolute top-0 right-0 opacity-10"><PartyPopper className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-green-600" /></div>
           <div className="flex flex-col items-center gap-2 relative z-10">
             <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce"><Trophy className="h-6 w-6 text-green-600" /></div>
