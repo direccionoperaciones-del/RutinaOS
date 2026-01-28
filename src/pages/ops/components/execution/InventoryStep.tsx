@@ -141,24 +141,24 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
   return (
     <div className="space-y-6">
       {Object.entries(groupedProducts).map(([category, items]) => (
-        <Card key={category} className="overflow-hidden border-none shadow-sm bg-muted/10">
-          <div className="bg-primary/5 px-4 py-2 border-b border-primary/10 flex justify-between items-center">
+        <Card key={category} className="overflow-hidden border-none shadow-sm bg-muted/10 dark:bg-slate-900/50">
+          <div className="bg-primary/5 dark:bg-primary/10 px-4 py-2 border-b border-primary/10 flex justify-between items-center">
             <h4 className="font-semibold text-sm text-primary flex items-center gap-2">
               <Package className="w-4 h-4" /> {category}
             </h4>
-            <Badge variant="outline" className="text-[10px] bg-background">{items.length} items</Badge>
+            <Badge variant="outline" className="text-[10px] bg-background dark:bg-slate-800">{items.length} items</Badge>
           </div>
           
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow className="hover:bg-transparent text-[10px] sm:text-xs">
+                <TableRow className="hover:bg-transparent text-[10px] sm:text-xs border-b-0">
                   <TableHead className="w-[30%] min-w-[100px]">Producto</TableHead>
                   <TableHead className="w-[10%] text-center p-1">Unid</TableHead>
-                  <TableHead className="w-[25%] min-w-[70px] text-center bg-blue-50/50 text-blue-800 border-r border-l border-blue-100 p-1">
+                  <TableHead className="w-[25%] min-w-[70px] text-center bg-blue-50/50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 border-r border-l border-blue-100 dark:border-blue-900 p-1">
                     Físico
                   </TableHead>
-                  <TableHead className="w-[25%] min-w-[70px] text-center bg-gray-50 text-gray-800 p-1">
+                  <TableHead className="w-[25%] min-w-[70px] text-center bg-gray-50 dark:bg-slate-800 text-gray-800 dark:text-slate-300 p-1">
                     Sistema
                   </TableHead>
                   <TableHead className="w-[10%] text-right p-1">Dif.</TableHead>
@@ -173,27 +173,27 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
                   const showDiff = count.fisico !== "" && count.esperado !== "";
 
                   return (
-                    <TableRow key={prod.id} className="hover:bg-muted/30">
+                    <TableRow key={prod.id} className="hover:bg-muted/30 border-b border-slate-100 dark:border-slate-800">
                       <TableCell className="font-medium text-[10px] sm:text-xs py-2 leading-tight">
-                        <div className="line-clamp-2">{prod.nombre}</div>
+                        <div className="line-clamp-2 dark:text-slate-200">{prod.nombre}</div>
                         <div className="text-[9px] text-muted-foreground font-mono mt-0.5">{prod.codigo_sku}</div>
                       </TableCell>
                       <TableCell className="text-[10px] sm:text-xs text-muted-foreground text-center py-2 px-1">{prod.unidad}</TableCell>
-                      <TableCell className="p-1 bg-blue-50/30 border-r border-l border-blue-100">
+                      <TableCell className="p-1 bg-blue-50/30 dark:bg-blue-900/10 border-r border-l border-blue-100 dark:border-blue-900">
                         <Input 
                           type="number" 
                           min="0"
-                          className="h-8 text-center bg-white border-blue-200 focus-visible:ring-blue-400 font-medium text-xs px-1"
+                          className="h-8 text-center bg-white dark:bg-slate-950 border-blue-200 dark:border-blue-800 focus-visible:ring-blue-400 font-medium text-xs px-1 text-foreground"
                           placeholder="0"
                           value={count.fisico}
                           onChange={(e) => handleInputChange(prod.id, 'fisico', e.target.value)}
                         />
                       </TableCell>
-                      <TableCell className="p-1 bg-gray-50/50">
+                      <TableCell className="p-1 bg-gray-50/50 dark:bg-slate-800/30">
                         <Input 
                           type="number" 
                           min="0"
-                          className="h-8 text-center bg-white border-gray-200 focus-visible:ring-gray-400 text-xs px-1"
+                          className="h-8 text-center bg-white dark:bg-slate-950 border-gray-200 dark:border-slate-700 focus-visible:ring-gray-400 text-xs px-1 text-foreground"
                           placeholder="0"
                           value={count.esperado}
                           onChange={(e) => handleInputChange(prod.id, 'esperado', e.target.value)}
@@ -202,9 +202,9 @@ export function InventoryStep({ categoriesIds, savedData, onChange }: InventoryS
                       <TableCell className="text-right py-2 px-1">
                         {showDiff ? (
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            diff < 0 ? 'text-red-600 bg-red-100' : 
-                            diff > 0 ? 'text-blue-600 bg-blue-100' : 
-                            'text-gray-500 bg-gray-100'
+                            diff < 0 ? 'text-red-600 bg-red-100 dark:bg-red-900/50 dark:text-red-300' : 
+                            diff > 0 ? 'text-blue-600 bg-blue-100 dark:bg-blue-900/50 dark:text-blue-300' : 
+                            'text-gray-500 bg-gray-100 dark:bg-slate-700 dark:text-slate-300'
                           }`}>
                             {diff > 0 ? '+' : ''}{diff}
                           </span>

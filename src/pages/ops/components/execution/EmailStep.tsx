@@ -20,8 +20,8 @@ export function EmailStep({
   if (!requiresSend && !requiresRespond) return null;
 
   return (
-    <div className="p-4 rounded-lg border bg-blue-50/50 border-blue-100 space-y-4">
-      <h4 className="font-semibold flex items-center gap-2 text-sm text-blue-900">
+    <div className="p-4 rounded-lg border bg-blue-50/50 dark:bg-slate-800/60 border-blue-100 dark:border-slate-700 space-y-4">
+      <h4 className="font-semibold flex items-center gap-2 text-sm text-blue-900 dark:text-blue-400">
         <Mail className="w-4 h-4" /> Gestión de Correos
       </h4>
       
@@ -31,12 +31,13 @@ export function EmailStep({
             id="chk-send-email" 
             checked={sentConfirmed}
             onCheckedChange={(c) => onUpdate('sent', !!c)}
+            className="border-slate-400 dark:border-slate-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
           />
           <div className="grid gap-1.5 leading-none">
-            <label htmlFor="chk-send-email" className="text-sm font-medium leading-none cursor-pointer">
+            <label htmlFor="chk-send-email" className="text-sm font-medium leading-none cursor-pointer text-foreground">
               Confirmar envío de correo
             </label>
-            <p className="text-sm text-muted-foreground">He enviado el correo solicitado.</p>
+            <p className="text-sm text-muted-foreground dark:text-slate-400">He enviado el correo solicitado.</p>
           </div>
         </div>
       )}
@@ -47,12 +48,13 @@ export function EmailStep({
             id="chk-respond-email"
             checked={respondedConfirmed}
             onCheckedChange={(c) => onUpdate('responded', !!c)}
+            className="border-slate-400 dark:border-slate-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
           />
           <div className="grid gap-1.5 leading-none">
-            <label htmlFor="chk-respond-email" className="text-sm font-medium leading-none cursor-pointer">
+            <label htmlFor="chk-respond-email" className="text-sm font-medium leading-none cursor-pointer text-foreground">
               Confirmar respuesta de correo
             </label>
-            <p className="text-sm text-muted-foreground">He respondido los correos pendientes.</p>
+            <p className="text-sm text-muted-foreground dark:text-slate-400">He respondido los correos pendientes.</p>
           </div>
         </div>
       )}
