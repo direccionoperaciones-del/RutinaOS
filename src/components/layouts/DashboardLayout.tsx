@@ -246,24 +246,39 @@ const DashboardLayout = () => {
           })}
         </div>
 
-        {/* User Profile */}
-        <div className="border-t border-white/5 p-4 bg-black/20">
-          <div className="flex items-center gap-3 rounded-lg bg-white/5 p-3 hover:bg-white/10 transition-colors cursor-pointer group" onClick={handleLogout}>
-            <Avatar className="h-9 w-9 border border-white/10">
-              <AvatarImage src={userProfile?.avatar_url} />
-              <AvatarFallback className="bg-slate-800 text-white font-bold text-xs">
-                {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium text-white group-hover:text-movacheck-blue transition-colors">
-                {userProfile?.nombre}
-              </p>
-              <p className="truncate text-xs text-slate-400 capitalize">
-                {userProfile?.role}
-              </p>
+        {/* User Profile & Branding */}
+        <div className="border-t border-white/5 bg-black/20">
+          <div className="p-4">
+            <div className="flex items-center gap-3 rounded-lg bg-white/5 p-3 hover:bg-white/10 transition-colors cursor-pointer group" onClick={handleLogout}>
+              <Avatar className="h-9 w-9 border border-white/10">
+                <AvatarImage src={userProfile?.avatar_url} />
+                <AvatarFallback className="bg-slate-800 text-white font-bold text-xs">
+                  {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 overflow-hidden">
+                <p className="truncate text-sm font-medium text-white group-hover:text-movacheck-blue transition-colors">
+                  {userProfile?.nombre}
+                </p>
+                <p className="truncate text-xs text-slate-400 capitalize">
+                  {userProfile?.role}
+                </p>
+              </div>
+              <LogOut className="h-4 w-4 text-slate-500 group-hover:text-white transition-colors" />
             </div>
-            <LogOut className="h-4 w-4 text-slate-500 group-hover:text-white transition-colors" />
+          </div>
+          
+          {/* BRANDING FOOTER */}
+          <div className="pb-4 pt-0 flex items-center justify-center gap-2 opacity-50 hover:opacity-100 transition-opacity duration-300 select-none cursor-default">
+            <span className="text-[10px] text-slate-400 font-medium">Powered by</span>
+            <div className="flex items-center gap-1.5">
+               <img 
+                src={DEFAULT_LOGO} 
+                alt="Movacheck" 
+                className="h-4 w-4 rounded-full object-cover border border-white/10" 
+              />
+              <span className="text-[10px] font-bold text-slate-300 tracking-wide uppercase">Movacheck</span>
+            </div>
           </div>
         </div>
       </aside>
