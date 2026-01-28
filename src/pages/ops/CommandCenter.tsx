@@ -6,17 +6,23 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, Terminal, Info } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, Terminal, Info, Moon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
 export default function CommandCenter() {
   const { toast } = useToast();
   const [date, setDate] = useState<Date | undefined>(new Date());
+  
+  // States Generador
   const [isLoading, setIsLoading] = useState(false);
   const [lastResult, setLastResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
   const [debugError, setDebugError] = useState<string | null>(null);
   
+  // States Cierre
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Metrics
   const [metrics, setMetrics] = useState({
     incidencias: 0,
     totalHoy: 0,
@@ -91,7 +97,7 @@ export default function CommandCenter() {
       setLastResult({
         success: true,
         message: data.message,
-        details: data // Guardamos todo el objeto de respuesta, incluido el diagnóstico
+        details: data 
       });
 
       if (data.generated > 0) {
@@ -107,6 +113,33 @@ export default function CommandCenter() {
       toast({ variant: "destructive", title: "Error", description: "Fallo en la ejecución." });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const runNightlyClose = async () => {
+    setIsClosing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Cierre Ejecutado", 
+        description: data.message || `Se marcaron ${data.updated} tareas como incumplidas.`,
+        className: "bg-blue-50 text-blue-900 border-blue-200"
+      });
+      
+      fetchMetrics();
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error en Cierre", description: error.message });
+    } finally {
+      setIsClosing(false);
     }
   };
 
@@ -158,15 +191,13 @@ export default function CommandCenter() {
               {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : "Generar Tareas"}
             </Button>
 
-            {/* Resultado / Diagnóstico */}
             {lastResult && (
-              <div className="mt-3 p-3 rounded-md bg-white border shadow-sm text-sm space-y-2">
+              <div className="mt-3 p-3 rounded-md bg-white border shadow-sm text-sm space-y-2 animate-in fade-in">
                 <div className="flex items-center gap-2 font-medium text-green-700">
                   <CheckCircle2 className="w-4 h-4" />
                   {lastResult.message}
                 </div>
                 
-                {/* Panel de Diagnóstico si hay detalles */}
                 {lastResult.details?.diagnosis && (
                   <div className="bg-slate-50 p-2 rounded text-xs text-slate-600 space-y-1 border border-slate-100">
                     <div className="flex justify-between border-b pb-1 mb-1">
@@ -185,16 +216,6 @@ export default function CommandCenter() {
                         <span>{lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv}</span>
                       </div>
                     )}
-                    {lastResult.details.diagnosis.logs?.length > 0 && (
-                      <div className="pt-2 mt-2 border-t border-dashed">
-                        <p className="font-semibold mb-1">Alertas:</p>
-                        <ul className="list-disc pl-3 space-y-0.5 text-[10px] text-red-700">
-                          {lastResult.details.diagnosis.logs.map((log: string, i: number) => (
-                            <li key={i}>{log}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -208,49 +229,75 @@ export default function CommandCenter() {
           </CardContent>
         </Card>
 
-        {/* Stats */}
-        <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
+        {/* Cierre Nocturno */}
+        <Card className="border-indigo-200 bg-indigo-50/30">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
-              Incidencias Hoy
+              <Moon className="w-5 h-5 text-indigo-600" />
+              Cierre de Día
             </CardTitle>
-            <CardDescription>Rechazos, vencimientos y tareas críticas.</CardDescription>
+            <CardDescription>Marca como "Incumplidas" las tareas vencidas.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600" : ""}`}>
-              {metrics.incidencias}
+          <CardContent className="space-y-4">
+            <div className="text-sm text-muted-foreground p-3 bg-white/50 rounded border border-indigo-100">
+              <p>Este proceso corre automáticamente a las 23:59. Úsalo aquí para forzar el cierre de tareas pendientes de días anteriores.</p>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {metrics.incidencias === 0 ? "Sin problemas detectados" : "Requieren atención inmediata"}
-            </p>
+            
+            <Button 
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" 
+              onClick={runNightlyClose} 
+              disabled={isClosing}
+            >
+              {isClosing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cerrando...</> : "Ejecutar Cierre Ahora"}
+            </Button>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-500" />
-              Cumplimiento Hoy
-            </CardTitle>
-            <CardDescription>Avance de la operación diaria.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-baseline gap-2">
-              <div className="text-4xl font-bold">{metrics.porcentaje}%</div>
-              <span className="text-sm text-muted-foreground">completado</span>
-            </div>
-            <div className="w-full bg-secondary h-2 rounded-full mt-2 overflow-hidden">
-              <div 
-                className="bg-green-500 h-full transition-all duration-500" 
-                style={{ width: `${metrics.porcentaje}%` }} 
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              {metrics.completadasHoy} de {metrics.totalHoy} tareas finalizadas
-            </p>
-          </CardContent>
-        </Card>
+        {/* Stats */}
+        <div className="flex flex-col gap-4">
+          <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
+                Incidencias Hoy
+              </CardTitle>
+              <CardDescription>Rechazos, vencimientos y tareas críticas.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600" : ""}`}>
+                {metrics.incidencias}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {metrics.incidencias === 0 ? "Sin problemas detectados" : "Requieren atención inmediata"}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                Cumplimiento Hoy
+              </CardTitle>
+              <CardDescription>Avance de la operación diaria.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-2">
+                <div className="text-4xl font-bold">{metrics.porcentaje}%</div>
+                <span className="text-sm text-muted-foreground">completado</span>
+              </div>
+              <div className="w-full bg-secondary h-2 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-green-500 h-full transition-all duration-500" 
+                  style={{ width: `${metrics.porcentaje}%` }} 
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {metrics.completadasHoy} de {metrics.totalHoy} tareas finalizadas
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
