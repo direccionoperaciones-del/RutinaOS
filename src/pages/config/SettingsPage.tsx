@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function SettingsPage() {
@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
 
   // Cargar datos cuando el perfil esté listo
   useEffect(() => {
@@ -35,6 +36,10 @@ export default function SettingsPage() {
         apellido: profile.apellido || ""
       });
       setAvatarUrl(profile.avatar_url);
+      // El perfil trae la info del tenant gracias al hook useCurrentUser
+      if (profile.tenants?.logo_url) {
+        setCompanyLogoUrl(profile.tenants.logo_url);
+      }
     }
   }, [profile]);
 
@@ -52,7 +57,7 @@ export default function SettingsPage() {
       if (error) throw error;
 
       toast({ title: "Perfil actualizado", description: "Tus datos personales han sido guardados." });
-      // Forzar recarga de página para actualizar el contexto global si es necesario
+      // Forzar recarga de página para actualizar el contexto global
       setTimeout(() => window.location.reload(), 1000);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -72,19 +77,16 @@ export default function SettingsPage() {
       const fileExt = file.name.split('.').pop();
       const filePath = `${profile.id}/${Math.random()}.${fileExt}`;
 
-      // 1. Subir imagen
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Obtener URL pública
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // 3. Actualizar perfil
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -94,12 +96,54 @@ export default function SettingsPage() {
 
       setAvatarUrl(publicUrl);
       toast({ title: "Foto actualizada", description: "Tu nueva foto de perfil se ha guardado." });
-      
-      // Recargar página para ver cambios en sidebar
       setTimeout(() => window.location.reload(), 800);
 
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error al subir imagen", description: error.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleCompanyLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!profile?.tenant_id) throw new Error("No tienes una organización asignada.");
+      
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) {
+        throw new Error('Debes seleccionar una imagen.');
+      }
+
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      // Usamos el ID del tenant como carpeta o prefijo
+      const filePath = `tenant_${profile.tenant_id}/${Date.now()}.${fileExt}`;
+
+      // 1. Subir al bucket 'logos'
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Obtener URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('logos')
+        .getPublicUrl(filePath);
+
+      // 3. Actualizar tabla tenants
+      const { error: updateError } = await supabase
+        .from('tenants')
+        .update({ logo_url: publicUrl })
+        .eq('id', profile.tenant_id);
+
+      if (updateError) throw updateError;
+
+      setCompanyLogoUrl(publicUrl);
+      toast({ title: "Logo actualizado", description: "La imagen de la organización se ha guardado." });
+      
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al subir logo", description: error.message });
     } finally {
       setUploading(false);
     }
@@ -271,7 +315,42 @@ export default function SettingsPage() {
               <CardTitle>Datos de la Empresa</CardTitle>
               <CardDescription>Información del Tenant asignado a tu usuario.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              
+              {/* Logo Upload Section */}
+              <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
+                <div className="relative group shrink-0">
+                  <div className="w-32 h-32 border-2 border-dashed border-muted-foreground/25 rounded-lg flex items-center justify-center bg-muted/10 overflow-hidden">
+                    {companyLogoUrl ? (
+                      <img src={companyLogoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
+                    ) : (
+                      <ImageIcon className="w-10 h-10 text-muted-foreground/50" />
+                    )}
+                  </div>
+                  <label 
+                    htmlFor="logo-upload" 
+                    className="absolute -bottom-2 -right-2 p-2 bg-white dark:bg-slate-800 text-primary rounded-full cursor-pointer shadow-md border hover:bg-slate-50 transition-colors"
+                    title="Subir logo"
+                  >
+                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                  </label>
+                  <input 
+                    id="logo-upload" 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleCompanyLogoUpload}
+                    disabled={uploading}
+                  />
+                </div>
+                <div className="flex-1 space-y-1 text-center sm:text-left pt-2">
+                  <h3 className="font-medium">Logo Corporativo</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Sube el logo de tu empresa (PNG transparente recomendado). Se mostrará en el encabezado de las tareas y reportes.
+                  </p>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label>Nombre de la Organización</Label>
                 <div className="flex items-center gap-2">
