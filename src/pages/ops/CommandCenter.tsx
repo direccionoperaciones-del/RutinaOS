@@ -160,7 +160,7 @@ export default function CommandCenter() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {/* Generador de Tareas */}
-        <Card className="border-primary/20 bg-primary/5">
+        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Play className="w-5 h-5 text-primary" />
@@ -192,26 +192,26 @@ export default function CommandCenter() {
             </Button>
 
             {lastResult && (
-              <div className="mt-3 p-3 rounded-md bg-white border shadow-sm text-sm space-y-2 animate-in fade-in">
-                <div className="flex items-center gap-2 font-medium text-green-700">
+              <div className="mt-3 p-3 rounded-md bg-white dark:bg-slate-900 border shadow-sm text-sm space-y-2 animate-in fade-in">
+                <div className="flex items-center gap-2 font-medium text-green-700 dark:text-green-400">
                   <CheckCircle2 className="w-4 h-4" />
                   {lastResult.message}
                 </div>
                 
                 {lastResult.details?.diagnosis && (
-                  <div className="bg-slate-50 p-2 rounded text-xs text-slate-600 space-y-1 border border-slate-100">
-                    <div className="flex justify-between border-b pb-1 mb-1">
+                  <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded text-xs text-slate-600 dark:text-slate-300 space-y-1 border border-slate-100 dark:border-slate-700">
+                    <div className="flex justify-between border-b dark:border-slate-600 pb-1 mb-1">
                       <span>Total Asignaciones:</span>
                       <strong>{lastResult.details.diagnosis.total_asignaciones}</strong>
                     </div>
                     {lastResult.details.diagnosis.razones_omitidas.no_toca_hoy > 0 && (
-                      <div className="flex justify-between text-orange-600">
+                      <div className="flex justify-between text-orange-600 dark:text-orange-400">
                         <span>No programadas hoy:</span>
                         <span>{lastResult.details.diagnosis.razones_omitidas.no_toca_hoy}</span>
                       </div>
                     )}
                     {lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv > 0 && (
-                      <div className="flex justify-between text-red-600 font-bold">
+                      <div className="flex justify-between text-red-600 dark:text-red-400 font-bold">
                         <span>Sin responsable (PDV):</span>
                         <span>{lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv}</span>
                       </div>
@@ -222,7 +222,7 @@ export default function CommandCenter() {
             )}
 
             {debugError && (
-              <div className="mt-2 p-2 bg-red-100 text-red-800 text-xs rounded border border-red-200">
+              <div className="mt-2 p-2 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded border border-red-200 dark:border-red-800">
                 <strong>Error:</strong> {debugError}
               </div>
             )}
@@ -230,21 +230,21 @@ export default function CommandCenter() {
         </Card>
 
         {/* Cierre Nocturno */}
-        <Card className="border-indigo-200 bg-indigo-50/30">
+        <Card className="border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-900/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Moon className="w-5 h-5 text-indigo-600" />
+              <Moon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               Cierre de Día
             </CardTitle>
-            <CardDescription>Marca como "Incumplidas" las tareas vencidas.</CardDescription>
+            <CardDescription className="dark:text-indigo-300">Marca como "Incumplidas" las tareas vencidas.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="text-sm text-muted-foreground p-3 bg-white/50 rounded border border-indigo-100">
+            <div className="text-sm p-3 rounded border bg-white/50 border-indigo-100 text-indigo-900 dark:bg-indigo-950/50 dark:border-indigo-800 dark:text-indigo-200">
               <p>Este proceso corre automáticamente a las 23:59. Úsalo aquí para forzar el cierre de tareas pendientes de días anteriores.</p>
             </div>
             
             <Button 
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" 
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white dark:bg-indigo-600 dark:hover:bg-indigo-500" 
               onClick={runNightlyClose} 
               disabled={isClosing}
             >
@@ -255,7 +255,7 @@ export default function CommandCenter() {
 
         {/* Stats */}
         <div className="flex flex-col gap-4">
-          <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}>
+          <Card className={metrics.incidencias > 0 ? "border-red-200 bg-red-50/30 dark:bg-red-900/10 dark:border-red-800" : ""}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
@@ -264,7 +264,7 @@ export default function CommandCenter() {
               <CardDescription>Rechazos, vencimientos y tareas críticas.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600" : ""}`}>
+              <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600 dark:text-red-400" : ""}`}>
                 {metrics.incidencias}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
