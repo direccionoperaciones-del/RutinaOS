@@ -113,7 +113,8 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("[audit-execution] Unhandled Error:", error)
+    return new Response(JSON.stringify({ error: "An internal server error occurred." }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })

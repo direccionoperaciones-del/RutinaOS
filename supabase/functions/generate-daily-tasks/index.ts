@@ -245,8 +245,9 @@ serve(async (req) => {
     )
 
   } catch (err: any) {
+    console.error("[generate-daily-tasks] Unhandled Error:", err)
     return new Response(
-      JSON.stringify({ ok: false, code: "INTERNAL_ERROR", message: err.message }),
+      JSON.stringify({ ok: false, code: "INTERNAL_ERROR", message: "An internal server error occurred." }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

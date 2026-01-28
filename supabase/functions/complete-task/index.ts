@@ -190,7 +190,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error(`[complete-task] Critical Error:`, error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "An internal server error occurred." }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })
