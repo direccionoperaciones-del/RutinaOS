@@ -110,34 +110,47 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: 'foto' | 'archivo') => {
-    const files = event.target.files; 
+  // ✅ Modificado para aceptar File[] directamente en lugar de ChangeEvent
+  const handleFilesAdded = async (files: File[], type: 'foto' | 'archivo') => {
     if (!files || files.length === 0 || !task) return;
+    
     setIsUploading(true);
     try {
-      const uploadPromises = Array.from(files).map(async (file) => {
+      const uploadPromises = files.map(async (file) => {
         const fileExt = file.name.split('.').pop();
+        // Generar nombre único pero manteniendo extensión
         const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
+        
         const { error: uploadError } = await supabase.storage.from('evidence').upload(fileName, file);
         if (uploadError) throw uploadError;
+        
         await supabase.from('evidence_files').insert({
           task_id: task.id,
           tipo: type,
-          filename: file.name,
+          filename: file.name, // Nombre original o generado por la cámara
           storage_path: fileName,
           size_bytes: file.size,
           mime_type: file.type
         });
       });
+
       await Promise.all(uploadPromises);
+      
+      // Recargar lista de archivos
       const { data: newFiles } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
-      setFormData(prev => ({ ...prev, files: newFiles?.filter(f => f.tipo === 'archivo') || [], photos: newFiles?.filter(f => f.tipo === 'foto') || [] }));
-      toast({ title: "Subida completada", description: "Archivos guardados." });
+      
+      setFormData(prev => ({ 
+        ...prev, 
+        files: newFiles?.filter(f => f.tipo === 'archivo') || [], 
+        photos: newFiles?.filter(f => f.tipo === 'foto') || [] 
+      }));
+      
+      toast({ title: "Carga completada", description: type === 'foto' ? "Foto guardada." : "Archivo adjuntado." });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: "No se pudo subir el archivo: " + error.message });
     } finally {
       setIsUploading(false);
-      event.target.value = ""; 
     }
   };
 
@@ -201,8 +214,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     switch (field.type) {
       case 'location': return <LocationStep key={field.id} pdv={pdv} required={field.required} onLocationVerified={(lat, lng, valid) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid } }))} />;
       case 'email_check': return <EmailStep key={field.id} requiresSend={field.id === 'email_send'} requiresRespond={field.id === 'email_respond'} sentConfirmed={formData.email_send} respondedConfirmed={formData.email_respond} onUpdate={(k, v) => setFormData(prev => ({ ...prev, [k === 'sent' ? 'email_send' : 'email_respond']: v }))} />;
-      case 'file': return <EvidenceStep key={field.id} type="archivo" label={field.label} required={field.required} files={formData.files} isUploading={isUploading} onUpload={handleFileUpload} onDelete={handleDeleteEvidence} />;
-      case 'photo': return <EvidenceStep key={field.id} type="foto" label={field.label} required={field.required} minCount={field.constraints?.min} files={formData.photos} isUploading={isUploading} onUpload={handleFileUpload} onDelete={handleDeleteEvidence} />;
+      case 'file': return <EvidenceStep key={field.id} type="archivo" label={field.label} required={field.required} files={formData.files} isUploading={isUploading} onFilesAdded={(files) => handleFilesAdded(files, 'archivo')} onDelete={handleDeleteEvidence} />;
+      case 'photo': return <EvidenceStep key={field.id} type="foto" label={field.label} required={field.required} minCount={field.constraints?.min} files={formData.photos} isUploading={isUploading} onFilesAdded={(files) => handleFilesAdded(files, 'foto')} onDelete={handleDeleteEvidence} />;
       case 'inventory': return <InventoryStep key={field.id} categoriesIds={field.constraints?.categories || []} savedData={formData.inventory} onChange={(data) => setFormData(prev => ({ ...prev, inventory: data }))} />;
       case 'text': return <div key={field.id} className="space-y-2"><div className="flex justify-between"><Label>{field.label}</Label>{field.required && <span className="text-xs text-destructive">*</span>}</div><Textarea placeholder="Escribe aquí..." value={formData.comments} onChange={(e) => setFormData(prev => ({ ...prev, comments: e.target.value }))} /></div>;
       default: return null;
