@@ -16,8 +16,8 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
   const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
             Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c;
 }
@@ -49,7 +49,18 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Task ID required' }), { status: 400, headers: corsHeaders })
     }
 
-    // 2. Fetch Task Context (Routine Rules + PDV Location)
+    // 2. Fetch User Profile for Security Checks (Tenant & Role)
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('tenant_id, role')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile) {
+      return new Response(JSON.stringify({ error: 'Profile not found' }), { status: 403, headers: corsHeaders })
+    }
+
+    // 3. Fetch Task Context (Routine Rules + PDV Location)
     const { data: task, error: taskError } = await supabase
       .from('task_instances')
       .select(`
@@ -64,10 +75,31 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Task not found' }), { status: 404, headers: corsHeaders })
     }
 
+    // 4. SECURITY: Authorization Check
+    // 4.1 Tenant Isolation
+    if (task.tenant_id !== profile.tenant_id) {
+        console.error(`[complete-task] Security Violation: Tenant mismatch. User ${user.id} (${profile.tenant_id}) tried to access Task ${taskId} (${task.tenant_id})`);
+        return new Response(JSON.stringify({ error: 'Unauthorized: Access denied' }), { status: 403, headers: corsHeaders })
+    }
+
+    // 4.2 Role/Ownership Check
+    // Allowed if:
+    // - User is the assigned responsible
+    // - User is the one who already completed it (editing)
+    // - User has an admin role (director, lider, auditor)
+    const isAssigned = task.responsable_id === user.id;
+    const isExecutor = task.completado_por === user.id; // In case they are editing
+    const isAdmin = ['director', 'lider', 'auditor'].includes(profile.role);
+
+    if (!isAssigned && !isExecutor && !isAdmin) {
+        console.error(`[complete-task] Security Violation: User ${user.id} is not authorized to complete Task ${taskId}`);
+        return new Response(JSON.stringify({ error: 'Unauthorized: You do not have permission to complete this task' }), { status: 403, headers: corsHeaders })
+    }
+
     const routine = task.routine_templates
     const pdv = task.pdv
 
-    // 3. Security Check: GPS Validation
+    // 5. Logic: GPS Validation
     let gps_en_rango = false; 
     
     if (routine.gps_obligatorio) {
@@ -99,7 +131,7 @@ serve(async (req) => {
         }
     }
 
-    // 4. Calculate Status (Server-side Deadline Check)
+    // 6. Calculate Status (Server-side Deadline Check)
     // Convert deadline to UTC for comparison (Colombia is UTC-5)
     const deadlineStr = `${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:59'}`;
     const [dDate, dTime] = deadlineStr.split('T');
@@ -117,8 +149,8 @@ serve(async (req) => {
         newStatus = nowUTC.getTime() > deadlineDate.getTime() ? 'completada_vencida' : 'completada_a_tiempo';
     }
 
-    // 5. Perform Database Updates
-    // 5.1 Inventory
+    // 7. Perform Database Updates
+    // 7.1 Inventory
     if (inventory && inventory.length > 0) {
         await supabase.from('inventory_submission_rows').delete().eq('task_id', taskId)
         
@@ -132,13 +164,13 @@ serve(async (req) => {
         if (invError) throw new Error(`Inventory error: ${invError.message}`)
     }
 
-    // 5.2 Task Instance
+    // 7.2 Task Instance
     const nextAuditStatus = task.audit_status === 'rechazado' ? 'pendiente' : task.audit_status;
     
     const updatePayload = {
         estado: newStatus,
         completado_at: isTaskPending ? new Date().toISOString() : task.completado_at,
-        completado_por: task.completado_por || user.id,
+        completado_por: task.completado_por || user.id, // Keep original executor if editing
         gps_latitud: gpsData?.lat,
         gps_longitud: gpsData?.lng,
         gps_en_rango: gps_en_rango,
