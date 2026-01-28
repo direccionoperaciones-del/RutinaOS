@@ -7,12 +7,12 @@ import { calculateDistance } from "@/utils/geo";
 interface LocationStepProps {
   pdv: any;
   required: boolean;
-  onLocationVerified: (lat: number, lng: number, isValid: boolean) => void;
+  onLocationVerified: (lat: number, lng: number, valid: boolean, accuracy: number) => void;
 }
 
 export function LocationStep({ pdv, required, onLocationVerified }: LocationStepProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, accuracy: number} | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isValid, setIsValid] = useState(false);
@@ -33,8 +33,9 @@ export function LocationStep({ pdv, required, onLocationVerified }: LocationStep
       (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
+        const accuracy = position.coords.accuracy;
         
-        setCurrentLocation({ lat, lng });
+        setCurrentLocation({ lat, lng, accuracy });
 
         if (pdv?.latitud && pdv?.longitud) {
           const dist = calculateDistance(lat, lng, pdv.latitud, pdv.longitud);
@@ -42,7 +43,7 @@ export function LocationStep({ pdv, required, onLocationVerified }: LocationStep
           
           const valid = dist <= pdvRadio;
           setIsValid(valid);
-          onLocationVerified(lat, lng, valid);
+          onLocationVerified(lat, lng, valid, accuracy);
           
           if (!valid) {
             setError(`Estás a ${Math.round(dist)}m. Máximo: ${pdvRadio}m.`);
@@ -50,7 +51,7 @@ export function LocationStep({ pdv, required, onLocationVerified }: LocationStep
         } else {
           if (required) {
             setError("El PDV no tiene coordenadas configuradas.");
-            onLocationVerified(lat, lng, false);
+            onLocationVerified(lat, lng, false, accuracy);
           }
         }
         setIsLoading(false);
@@ -79,6 +80,7 @@ export function LocationStep({ pdv, required, onLocationVerified }: LocationStep
         {currentLocation ? (
           <>
             <p>Posición: {currentLocation.lat.toFixed(5)}, {currentLocation.lng.toFixed(5)}</p>
+            <p className="text-xs">Precisión: ±{Math.round(currentLocation.accuracy)}m</p>
             {distance !== null && <p className="font-medium mt-1">Distancia: {distance}m</p>}
           </>
         ) : (

@@ -35,7 +35,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const [isUploading, setIsUploading] = useState(false);
   
   const [formData, setFormData] = useState<{
-    gps: { lat: number, lng: number, valid: boolean } | null;
+    gps: { lat: number, lng: number, valid: boolean, accuracy: number } | null;
     email_send: boolean;
     email_respond: boolean;
     files: any[];
@@ -94,7 +94,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
       }
 
       setFormData({
-        gps: task.gps_latitud ? { lat: task.gps_latitud, lng: task.gps_longitud, valid: task.gps_en_rango } : null,
+        gps: task.gps_latitud ? { lat: task.gps_latitud, lng: task.gps_longitud, valid: task.gps_en_rango, accuracy: task.gps_accuracy || 0 } : null,
         email_send: false,
         email_respond: false,
         files: filesData?.filter(f => f.tipo === 'archivo') || [],
@@ -110,7 +110,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     }
   };
 
-  // ✅ Modificado para aceptar File[] directamente en lugar de ChangeEvent
   const handleFilesAdded = async (files: File[], type: 'foto' | 'archivo') => {
     if (!files || files.length === 0 || !task) return;
     
@@ -118,7 +117,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     try {
       const uploadPromises = files.map(async (file) => {
         const fileExt = file.name.split('.').pop();
-        // Generar nombre único pero manteniendo extensión
         const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
         
         const { error: uploadError } = await supabase.storage.from('evidence').upload(fileName, file);
@@ -127,7 +125,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         await supabase.from('evidence_files').insert({
           task_id: task.id,
           tipo: type,
-          filename: file.name, // Nombre original o generado por la cámara
+          filename: file.name,
           storage_path: fileName,
           size_bytes: file.size,
           mime_type: file.type
@@ -136,7 +134,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
       await Promise.all(uploadPromises);
       
-      // Recargar lista de archivos
       const { data: newFiles } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
       
       setFormData(prev => ({ 
@@ -164,7 +161,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleComplete = async () => {
-    // 1. Validaciones en Cliente (UX)
     for (const field of schema) {
       let valueToValidate;
       switch (field.id) {
@@ -182,7 +178,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
     setIsProcessing(true);
     try {
-      // 2. Invocación Segura al Edge Function
       const { data, error } = await supabase.functions.invoke('complete-task', {
         body: {
           taskId: task.id,
@@ -212,7 +207,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
   const renderField = (field: TaskField) => {
     switch (field.type) {
-      case 'location': return <LocationStep key={field.id} pdv={pdv} required={field.required} onLocationVerified={(lat, lng, valid) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid } }))} />;
+      case 'location': return <LocationStep key={field.id} pdv={pdv} required={field.required} onLocationVerified={(lat, lng, valid, accuracy) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid, accuracy } }))} />;
       case 'email_check': return <EmailStep key={field.id} requiresSend={field.id === 'email_send'} requiresRespond={field.id === 'email_respond'} sentConfirmed={formData.email_send} respondedConfirmed={formData.email_respond} onUpdate={(k, v) => setFormData(prev => ({ ...prev, [k === 'sent' ? 'email_send' : 'email_respond']: v }))} />;
       case 'file': return <EvidenceStep key={field.id} type="archivo" label={field.label} required={field.required} files={formData.files} isUploading={isUploading} onFilesAdded={(files) => handleFilesAdded(files, 'archivo')} onDelete={handleDeleteEvidence} />;
       case 'photo': return <EvidenceStep key={field.id} type="foto" label={field.label} required={field.required} minCount={field.constraints?.min} files={formData.photos} isUploading={isUploading} onFilesAdded={(files) => handleFilesAdded(files, 'foto')} onDelete={handleDeleteEvidence} />;
@@ -227,8 +222,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-full h-full max-h-none rounded-none sm:rounded-lg sm:h-auto sm:max-h-[90vh] sm:max-w-[700px] overflow-y-auto p-0 gap-0 flex flex-col">
-        
-        {/* Header */}
         <DialogHeader className="p-4 sm:p-6 border-b sticky top-0 bg-background z-10 shadow-sm">
           <div className="flex justify-between items-start gap-4">
             <div>
@@ -244,10 +237,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           </div>
         </DialogHeader>
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          
-          {/* --- AUDIT STATUS SECTION --- */}
           {task.audit_status && task.audit_status !== 'pendiente' && (
             <div className={`mb-6 p-4 rounded-lg border ${task.audit_status === 'aprobado' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
               <div className="flex items-center gap-2 mb-2">
@@ -288,7 +278,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           )}
         </div>
 
-        {/* Footer */}
         <DialogFooter className="p-4 border-t bg-background mt-auto sticky bottom-0 z-10 gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
             {canPerformAction ? 'Cancelar' : 'Cerrar'}

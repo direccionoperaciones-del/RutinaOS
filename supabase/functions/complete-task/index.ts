@@ -32,6 +32,9 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
+    // Capture Client IP for audit
+    const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown';
+
     // 1. Authenticate User
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -83,12 +86,8 @@ serve(async (req) => {
     }
 
     // 4.2 Role/Ownership Check
-    // Allowed if:
-    // - User is the assigned responsible
-    // - User is the one who already completed it (editing)
-    // - User has an admin role (director, lider, auditor)
     const isAssigned = task.responsable_id === user.id;
-    const isExecutor = task.completado_por === user.id; // In case they are editing
+    const isExecutor = task.completado_por === user.id; 
     const isAdmin = ['director', 'lider', 'auditor'].includes(profile.role);
 
     if (!isAssigned && !isExecutor && !isAdmin) {
@@ -132,13 +131,11 @@ serve(async (req) => {
     }
 
     // 6. Calculate Status (Server-side Deadline Check)
-    // Convert deadline to UTC for comparison (Colombia is UTC-5)
     const deadlineStr = `${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:59'}`;
     const [dDate, dTime] = deadlineStr.split('T');
     const [dYear, dMonth, dDay] = dDate.split('-').map(Number);
     const [dHour, dMin, dSec] = dTime.split(':').map(Number);
     
-    // Deadline Date Object (Adjusted for UTC-5)
     const deadlineDate = new Date(Date.UTC(dYear, dMonth - 1, dDay, dHour + 5, dMin, dSec || 0));
     const nowUTC = new Date();
     
@@ -150,7 +147,6 @@ serve(async (req) => {
     }
 
     // 7. Perform Database Updates
-    // 7.1 Inventory
     if (inventory && inventory.length > 0) {
         await supabase.from('inventory_submission_rows').delete().eq('task_id', taskId)
         
@@ -164,18 +160,20 @@ serve(async (req) => {
         if (invError) throw new Error(`Inventory error: ${invError.message}`)
     }
 
-    // 7.2 Task Instance
+    // 7.2 Task Instance Update with Security Metadata
     const nextAuditStatus = task.audit_status === 'rechazado' ? 'pendiente' : task.audit_status;
     
     const updatePayload = {
         estado: newStatus,
         completado_at: isTaskPending ? new Date().toISOString() : task.completado_at,
-        completado_por: task.completado_por || user.id, // Keep original executor if editing
+        completado_por: task.completado_por || user.id, 
         gps_latitud: gpsData?.lat,
         gps_longitud: gpsData?.lng,
         gps_en_rango: gps_en_rango,
         comentario: comments,
-        audit_status: nextAuditStatus
+        audit_status: nextAuditStatus,
+        submission_ip: clientIp, // <-- Added Audit Field
+        gps_accuracy: gpsData?.accuracy // <-- Added Audit Field
     }
 
     const { error: updateError } = await supabase
