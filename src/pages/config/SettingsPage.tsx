@@ -14,10 +14,18 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const { profile, loading: loadingProfile } = useCurrentUser();
   
+  // Estado para datos personales
   const [formData, setFormData] = useState({
     nombre: "",
     apellido: "",
   });
+
+  // Estado para datos de la organización
+  const [orgData, setOrgData] = useState({
+    nombre: ""
+  });
+
+  // Estado para contraseña
   const [passwordData, setPasswordData] = useState({
     password: "",
     confirm: ""
@@ -31,18 +39,22 @@ export default function SettingsPage() {
   // Cargar datos cuando el perfil esté listo
   useEffect(() => {
     if (profile) {
+      // Datos personales
       setFormData({
         nombre: profile.nombre || "",
         apellido: profile.apellido || ""
       });
       setAvatarUrl(profile.avatar_url);
-      // El perfil trae la info del tenant gracias al hook useCurrentUser
-      if (profile.tenants?.logo_url) {
+      
+      // Datos de organización
+      if (profile.tenants) {
         setCompanyLogoUrl(profile.tenants.logo_url);
+        setOrgData({ nombre: profile.tenants.nombre });
       }
     }
   }, [profile]);
 
+  // Guardar Perfil Usuario
   const handleUpdateProfile = async () => {
     setSaving(true);
     try {
@@ -57,7 +69,29 @@ export default function SettingsPage() {
       if (error) throw error;
 
       toast({ title: "Perfil actualizado", description: "Tus datos personales han sido guardados." });
-      // Forzar recarga de página para actualizar el contexto global
+      setTimeout(() => window.location.reload(), 1000);
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Guardar Datos Organización
+  const handleUpdateOrganization = async () => {
+    setSaving(true);
+    try {
+      if (!profile?.tenant_id) throw new Error("No tienes una organización asignada.");
+
+      const { error } = await supabase
+        .from('tenants')
+        .update({ nombre: orgData.nombre })
+        .eq('id', profile.tenant_id);
+
+      if (error) throw error;
+
+      toast({ title: "Organización actualizada", description: "El nombre de la empresa ha sido guardado." });
+      // Recargamos para que el nombre se actualice en la barra lateral
       setTimeout(() => window.location.reload(), 1000);
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -358,15 +392,25 @@ export default function SettingsPage() {
                 <Label>Nombre de la Organización</Label>
                 <div className="flex items-center gap-2">
                   <Building className="w-4 h-4 text-muted-foreground" />
-                  <Input value={profile?.tenants?.nombre || ''} readOnly />
+                  <Input 
+                    value={orgData.nombre} 
+                    onChange={(e) => setOrgData({ ...orgData, nombre: e.target.value })}
+                    placeholder="Nombre de tu empresa"
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Código de Tenant</Label>
                 <Input value={profile?.tenants?.codigo || ''} disabled className="bg-muted font-mono" />
-                <p className="text-xs text-muted-foreground">Este código identifica tu base de datos aislada.</p>
+                <p className="text-xs text-muted-foreground">Este código identifica tu base de datos aislada. No se puede cambiar.</p>
               </div>
             </CardContent>
+            <CardFooter>
+              <Button onClick={handleUpdateOrganization} disabled={saving}>
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Guardar Datos de Organización
+              </Button>
+            </CardFooter>
           </Card>
         </TabsContent>
       </Tabs>
