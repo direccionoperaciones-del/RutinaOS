@@ -175,10 +175,9 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
 };
 
 const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction, onCancel, canCancel }: any) => {
-  if (loading) return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed">
+      <div className="flex flex-col items-center justify-center py-16 bg-muted/20 rounded-lg border-2 border-dashed animate-in fade-in zoom-in duration-500">
         <CheckCircle2 className="w-12 h-12 mb-3 text-muted-foreground/50" />
         <h3 className="text-lg font-medium">Sin tareas</h3>
         <p className="text-muted-foreground text-sm mb-4">{emptyMessage}</p>
@@ -201,6 +200,40 @@ const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction, onCancel, c
   );
 };
 
+// Skeleton Loader para la lista completa
+const TasksListSkeleton = () => (
+  <div className="space-y-6 animate-pulse">
+    {/* Profile Header */}
+    <div className="flex items-center gap-4 mb-2">
+      <Skeleton className="h-16 w-16 shrink-0 rounded-lg" />
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-5 w-64" />
+      </div>
+    </div>
+    
+    {/* Alert Area */}
+    <Skeleton className="h-16 w-full rounded-lg" />
+    
+    {/* Filters Card */}
+    <Skeleton className="h-32 w-full rounded-xl" />
+    
+    {/* Progress Bar */}
+    <Skeleton className="h-24 w-full rounded-xl" />
+    
+    {/* Tabs & Grid */}
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Skeleton className="h-10 w-24 rounded-md" />
+        <Skeleton className="h-10 w-24 rounded-md" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        {[1,2,3,4].map(i => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+      </div>
+    </div>
+  </div>
+);
+
 const SegmentedProgressBar = ({ 
   total, 
   onTime, 
@@ -216,18 +249,11 @@ const SegmentedProgressBar = ({
   pending: number,
   rejected: number
 }) => {
-  // Ajuste: Calculamos el total de completadas ÚNICAS.
-  // Si una tarea está rechazada, ya está contada en 'onTime' o 'late' (porque fue ejecutada),
-  // así que NO la sumamos de nuevo al calcular el % de avance.
-  const executedCount = onTime + late + missed; // Tareas que ya tuvieron un intento final (o cierre)
-  
+  const executedCount = onTime + late + missed; 
   const totalCompletedPct = total > 0 ? Math.round((executedCount / total) * 100) : 0;
 
   const pctOnTime = total > 0 ? (onTime / total) * 100 : 0;
   const pctLate = total > 0 ? (late / total) * 100 : 0;
-  // Nota: Rejected no se dibuja como un segmento nuevo porque es un estado de calidad sobre una tarea ya ejecutada
-  // Pero para visualización, podemos mostrar qué parte de lo ejecutado está rechazado superponiendo o separando.
-  // Para simplificar y evitar >100%, mostramos rejected como un indicador aparte en la barra o simplemente en la leyenda.
   const pctMissed = total > 0 ? (missed / total) * 100 : 0;
 
   return (
@@ -376,30 +402,25 @@ export default function TasksList() {
   const userOptions = useMemo(() => { const map = new Map(); tasks.forEach(t => { if (t.profiles) map.set(t.profiles.id, `${t.profiles.nombre} ${t.profiles.apellido}`); }); return Array.from(map.entries()).map(([value, label]) => ({ value, label })).sort((a,b) => a.label.localeCompare(b.label)); }, [tasks]);
   const displayDate = useMemo(() => { if (!dateFrom || !dateTo) return "Cargando..."; if (dateFrom === dateTo) { return format(parseLocalDate(dateFrom), "EEEE, d 'de' MMMM", { locale: es }); } return "Rango seleccionado"; }, [dateFrom, dateTo]);
 
+  // Si está cargando datos iniciales, mostramos el Skeleton completo para evitar saltos
+  if (isLoading || loadingProfile) {
+    return <TasksListSkeleton />;
+  }
+
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-24 animate-in fade-in duration-500">
       <div className="flex flex-col gap-1">
-        {loadingProfile ? (
-          <div className="flex items-center gap-4 mb-2 animate-pulse">
-            <Skeleton className="h-16 w-16 shrink-0 rounded-lg" />
-            <div className="space-y-2">
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-5 w-64" />
+        <div className="flex items-center gap-4 mb-2">
+          {profile?.tenants?.logo_url && (
+            <div className="h-16 w-16 shrink-0 rounded-lg overflow-hidden border bg-white dark:bg-white/5 flex items-center justify-center p-1">
+              <img src={profile.tenants.logo_url} alt="Logo Empresa" className="max-h-full max-w-full object-contain" />
             </div>
+          )}
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight text-foreground">{profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}</h2>
+            <p className="text-lg text-muted-foreground font-medium mt-1">Estas son tus actividades del día</p>
           </div>
-        ) : (
-          <div className="flex items-center gap-4 mb-2 animate-in fade-in duration-500">
-            {profile?.tenants?.logo_url && (
-              <div className="h-16 w-16 shrink-0 rounded-lg overflow-hidden border bg-white dark:bg-white/5 flex items-center justify-center p-1">
-                <img src={profile.tenants.logo_url} alt="Logo Empresa" className="max-h-full max-w-full object-contain" />
-              </div>
-            )}
-            <div>
-              <h2 className="text-3xl font-bold tracking-tight text-foreground">{profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}</h2>
-              <p className="text-lg text-muted-foreground font-medium mt-1">Estas son tus actividades del día</p>
-            </div>
-          </div>
-        )}
+        </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
             <p className="text-primary capitalize text-sm font-semibold bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full w-fit">
@@ -410,9 +431,9 @@ export default function TasksList() {
 
       {/* ALERTA DE TAREAS RECHAZADAS */}
       {stats.rejected > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 animate-pulse cursor-pointer shadow-sm hover:shadow-md transition-all" onClick={() => setActiveTab('rejected')}>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 animate-in slide-in-from-top-4 duration-500 cursor-pointer shadow-sm hover:shadow-md transition-all" onClick={() => setActiveTab('rejected')}>
           <div className="bg-red-100 p-2 rounded-full text-red-600 shrink-0">
-            <ShieldAlert className="w-6 h-6" />
+            <ShieldAlert className="w-6 h-6 animate-pulse" />
           </div>
           <div className="flex-1">
             <h4 className="font-bold text-red-900 text-lg">Tienes {stats.rejected} tarea(s) rechazada(s)</h4>
@@ -423,7 +444,7 @@ export default function TasksList() {
       )}
 
       {activeAbsence && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 animate-in slide-in-from-top-4 duration-500">
           <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0"><Coffee className="w-6 h-6" /></div>
           <div>
             <h4 className="font-bold text-blue-900 text-lg">Tienes una novedad: {activeAbsence.absence_types?.nombre}</h4>
@@ -490,26 +511,26 @@ export default function TasksList() {
         </TabsList>
 
         <TabsContent value="pending" className="mt-0">
-          <TaskGrid items={pendingTasks} loading={isLoading} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+          <TaskGrid items={pendingTasks} loading={false} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
         </TabsContent>
         
         <TabsContent value="rejected" className="mt-0">
-          <TaskGrid items={rejectedTasks} loading={isLoading} onRetry={refetch} emptyMessage="¡Excelente! No tienes tareas rechazadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} />
+          <TaskGrid items={rejectedTasks} loading={false} onRetry={refetch} emptyMessage="¡Excelente! No tienes tareas rechazadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} />
         </TabsContent>
 
         <TabsContent value="completed" className="mt-0">
-          <TaskGrid items={completedTasks} loading={isLoading} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+          <TaskGrid items={completedTasks} loading={false} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
         </TabsContent>
         
         <TabsContent value="all" className="mt-0">
-          <TaskGrid items={activeTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+          <TaskGrid items={activeTasks} loading={false} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
         </TabsContent>
         
         {/* Pestaña oculta para canceladas, solo accesible si se cambia la lógica de tabs o se agrega un filtro específico en el futuro */}
         {cancelledTasks.length > 0 && canCancel && activeTab === 'all' && (
            <div className="mt-8 pt-8 border-t">
              <h3 className="text-sm font-medium text-muted-foreground mb-4">Tareas Canceladas</h3>
-             <TaskGrid items={cancelledTasks} loading={isLoading} onRetry={refetch} emptyMessage="" onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} />
+             <TaskGrid items={cancelledTasks} loading={false} onRetry={refetch} emptyMessage="" onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} />
            </div>
         )}
       </Tabs>
