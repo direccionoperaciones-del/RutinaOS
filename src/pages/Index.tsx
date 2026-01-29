@@ -60,8 +60,8 @@ const Index = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              {/* FIX: Grid adaptable para fechas: 1col (mobile/desktop sidebar) - 2col (tablet) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-4">
+              {/* GRID RESPONSIVE: Stacked on mobile, 1 col sidebar */}
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1.5 w-full min-w-0">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
                   <div className="relative w-full">

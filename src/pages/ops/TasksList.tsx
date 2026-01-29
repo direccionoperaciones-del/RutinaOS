@@ -391,10 +391,10 @@ export default function TasksList() {
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          {/* Layout Responsive: 1 columna en móvil, 2 en tablet (md), 5 en desktop grande (lg) */}
+          {/* LAYOUT GRID RESPONSIVE CORREGIDO */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             
-            {/* Campo Fecha Desde - W-FULL en móvil */}
+            {/* Campo Fecha Desde - 100% Mobile */}
             <div className="space-y-1 w-full min-w-0">
               <Label className="text-xs">Desde</Label>
               <div className="relative w-full">
@@ -410,7 +410,7 @@ export default function TasksList() {
               </div>
             </div>
 
-            {/* Campo Fecha Hasta - W-FULL en móvil */}
+            {/* Campo Fecha Hasta - 100% Mobile */}
             <div className="space-y-1 w-full min-w-0">
               <Label className="text-xs">Hasta</Label>
               <div className="relative w-full">

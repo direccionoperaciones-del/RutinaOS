@@ -217,7 +217,7 @@ export default function ReportsPage() {
             <CalendarRange className="w-4 h-4" /> Rango de Fechas
           </CardTitle>
         </CardHeader>
-        {/* FIX: Layout 1 col en mobile, 2 cols en desktop */}
+        {/* GRID RESPONSIVE: 1 col mobile, 2 col desktop */}
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
           <div className="space-y-2 w-full min-w-0">
             <Label>Desde</Label>
