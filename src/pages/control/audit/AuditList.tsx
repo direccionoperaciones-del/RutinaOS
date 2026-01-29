@@ -3,7 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -14,7 +13,7 @@ import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { AuditReviewModal } from "./AuditReviewModal";
 import { calculateTaskDeadline } from "@/pages/ops/logic/task-deadline";
-import { openDatePicker } from "@/lib/utils";
+import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 export default function AuditList() {
   const { toast } = useToast();
@@ -146,38 +145,16 @@ export default function AuditList() {
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4">
                 <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1 w-full min-w-0">
-                    <Label className="text-xs">Desde</Label>
-                    <div className="relative w-full">
-                      <CalendarIcon 
-                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 pointer-events-none" 
-                      />
-                      <Input 
-                        id="date-from-audit-m"
-                        type="date" 
-                        className="h-9 pl-8 w-full block bg-background min-w-0" 
-                        value={dateFrom} 
-                        onChange={(e) => setDateFrom(e.target.value)} 
-                        onClick={() => openDatePicker('date-from-audit-m')}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1 w-full min-w-0">
-                    <Label className="text-xs">Hasta</Label>
-                    <div className="relative w-full">
-                      <CalendarIcon 
-                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 pointer-events-none" 
-                      />
-                      <Input 
-                        id="date-to-audit-m"
-                        type="date" 
-                        className="h-9 pl-8 w-full block bg-background min-w-0" 
-                        value={dateTo} 
-                        onChange={(e) => setDateTo(e.target.value)} 
-                        onClick={() => openDatePicker('date-to-audit-m')}
-                      />
-                    </div>
-                  </div>
+                  
+                  {/* MOBILE DATE PICKER - COMPACTO */}
+                  <DateRangePicker 
+                    dateFrom={dateFrom}
+                    setDateFrom={setDateFrom}
+                    dateTo={dateTo}
+                    setDateTo={setDateTo}
+                    compact={true}
+                  />
+
                   <div className="space-y-1">
                     <Label className="text-xs">Estado Auditoría</Label>
                     <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />
@@ -209,38 +186,16 @@ export default function AuditList() {
             )}
           </div>
           <div className="grid grid-cols-6 gap-3">
-            <div className="space-y-1 w-full min-w-0">
-              <Label className="text-xs">Desde</Label>
-              <div className="relative w-full">
-                <CalendarIcon 
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none" 
-                />
-                <Input 
-                  id="date-from-audit"
-                  type="date" 
-                  className="h-8 pl-8 text-xs bg-background w-full block min-w-0" 
-                  value={dateFrom} 
-                  onChange={(e) => setDateFrom(e.target.value)} 
-                  onClick={() => openDatePicker('date-from-audit')}
-                />
-              </div>
-            </div>
-            <div className="space-y-1 w-full min-w-0">
-              <Label className="text-xs">Hasta</Label>
-              <div className="relative w-full">
-                <CalendarIcon 
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none" 
-                />
-                <Input 
-                  id="date-to-audit"
-                  type="date" 
-                  className="h-8 pl-8 text-xs bg-background w-full block min-w-0" 
-                  value={dateTo} 
-                  onChange={(e) => setDateTo(e.target.value)} 
-                  onClick={() => openDatePicker('date-to-audit')}
-                />
-              </div>
-            </div>
+            
+            {/* DESKTOP DATE PICKER - GRID */}
+            <DateRangePicker 
+              dateFrom={dateFrom}
+              setDateFrom={setDateFrom}
+              dateTo={dateTo}
+              setDateTo={setDateTo}
+              className="col-span-2" // Ocupa 2 columnas de 6
+            />
+
             <div className="space-y-1">
               <Label className="text-xs">Estado Auditoría</Label>
               <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />

@@ -4,8 +4,6 @@ import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
@@ -14,8 +12,7 @@ import {
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
   Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
-  Calendar as CalendarIcon, CheckCircle2, X, Eye, 
-  Trash2, Ban
+  CheckCircle2, X, Eye, Trash2, Ban
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -24,8 +21,10 @@ import { TaskExecutionModal } from "./TaskExecutionModal";
 import { CancelTaskModal } from "./components/CancelTaskModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
-import { getLocalDate, parseLocalDate, openDatePicker } from "@/lib/utils";
+import { getLocalDate, parseLocalDate } from "@/lib/utils";
 import { calculateTaskDeadline } from "./logic/task-deadline";
+import { Label } from "@/components/ui/label";
+import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 const getPriorityStyles = (priority: string) => {
   switch (priority) {
@@ -391,40 +390,17 @@ export default function TasksList() {
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          {/* LAYOUT GRID RESPONSIVE CORREGIDO */}
+          {/* LAYOUT GRID RESPONSIVE: DateRange col-span-2 en desktop, col-span-1 en móvil */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             
-            {/* Campo Fecha Desde - 100% Mobile */}
-            <div className="space-y-1 w-full min-w-0">
-              <Label className="text-xs">Desde</Label>
-              <div className="relative w-full">
-                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors pointer-events-none" />
-                <Input 
-                  id="date-from-task" 
-                  type="date" 
-                  className="h-10 pl-9 text-sm bg-background w-full min-w-0 block" 
-                  value={dateFrom} 
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  onClick={(e) => openDatePicker('date-from-task')}
-                />
-              </div>
-            </div>
-
-            {/* Campo Fecha Hasta - 100% Mobile */}
-            <div className="space-y-1 w-full min-w-0">
-              <Label className="text-xs">Hasta</Label>
-              <div className="relative w-full">
-                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors pointer-events-none" />
-                <Input 
-                  id="date-to-task" 
-                  type="date" 
-                  className="h-10 pl-9 text-sm bg-background w-full min-w-0 block" 
-                  value={dateTo} 
-                  onChange={(e) => setDateTo(e.target.value)} 
-                  onClick={(e) => openDatePicker('date-to-task')}
-                />
-              </div>
-            </div>
+            {/* Componente Reutilizable de Fechas */}
+            <DateRangePicker 
+              dateFrom={dateFrom}
+              setDateFrom={setDateFrom}
+              dateTo={dateTo}
+              setDateTo={setDateTo}
+              className="col-span-1 md:col-span-2 lg:col-span-2"
+            />
 
             <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
             <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>

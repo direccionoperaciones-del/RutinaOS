@@ -1,9 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Activity, BarChart3, Clock, AlertOctagon, Filter, X, Search, Calendar as CalendarIcon } from "lucide-react";
+import { Activity, BarChart3, Clock, AlertOctagon, Filter, X, Search } from "lucide-react";
 import { useDashboardData } from "./dashboard/hooks/useDashboardData";
 import { StatCard } from "./dashboard/components/StatCard";
 import { TrendChart } from "./dashboard/components/TrendChart";
@@ -12,7 +11,7 @@ import { StatusChart } from "./dashboard/components/StatusChart";
 import { RoutineChart } from "./dashboard/components/RoutineChart";
 import { UserRanking } from "./dashboard/components/UserRanking";
 import { RecentActivityList } from "./dashboard/components/RecentActivityList";
-import { openDatePicker } from "@/lib/utils";
+import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 const Index = () => {
   const { 
@@ -60,41 +59,16 @@ const Index = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              {/* GRID RESPONSIVE: Stacked on mobile, 1 col sidebar */}
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-1.5 w-full min-w-0">
-                  <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
-                  <div className="relative w-full">
-                    <CalendarIcon 
-                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
-                    />
-                    <Input 
-                      id="date-from-dash"
-                      type="date" 
-                      className="h-10 pl-10 text-sm w-full block bg-background min-w-0" 
-                      value={dateFrom} 
-                      onChange={(e) => setDateFrom(e.target.value)} 
-                      onClick={() => openDatePicker('date-from-dash')} 
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5 w-full min-w-0">
-                  <Label className="text-xs font-bold text-slate-500 uppercase">Hasta</Label>
-                  <div className="relative w-full">
-                    <CalendarIcon 
-                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
-                    />
-                    <Input 
-                      id="date-to-dash"
-                      type="date" 
-                      className="h-10 pl-10 text-sm w-full block bg-background min-w-0" 
-                      value={dateTo} 
-                      onChange={(e) => setDateTo(e.target.value)} 
-                      onClick={() => openDatePicker('date-to-dash')} 
-                    />
-                  </div>
-                </div>
-              </div>
+              
+              {/* DATE PICKER COMPACTO (Siempre stackeado en sidebar) */}
+              <DateRangePicker 
+                dateFrom={dateFrom}
+                setDateFrom={setDateFrom}
+                dateTo={dateTo}
+                setDateTo={setDateTo}
+                compact={true}
+              />
+
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-slate-500 uppercase">Punto de Venta</Label>
                 <MultiSelect options={options.pdvs} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />

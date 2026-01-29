@@ -2,11 +2,10 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2, Calendar as CalendarIcon } from "lucide-react";
+import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getLocalDate, openDatePicker } from "@/lib/utils";
+import { getLocalDate } from "@/lib/utils";
+import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 export default function ReportsPage() {
   const { toast } = useToast();
@@ -217,40 +216,13 @@ export default function ReportsPage() {
             <CalendarRange className="w-4 h-4" /> Rango de Fechas
           </CardTitle>
         </CardHeader>
-        {/* GRID RESPONSIVE: 1 col mobile, 2 col desktop */}
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
-          <div className="space-y-2 w-full min-w-0">
-            <Label>Desde</Label>
-            <div className="relative w-full">
-              <CalendarIcon 
-                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
-              />
-              <Input 
-                id="date-from-report"
-                type="date" 
-                className="pl-10 h-10 w-full block bg-background min-w-0" 
-                value={dateFrom} 
-                onChange={(e) => setDateFrom(e.target.value)}
-                onClick={() => openDatePicker('date-from-report')} 
-              />
-            </div>
-          </div>
-          <div className="space-y-2 w-full min-w-0">
-            <Label>Hasta</Label>
-            <div className="relative w-full">
-              <CalendarIcon 
-                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
-              />
-              <Input 
-                id="date-to-report"
-                type="date" 
-                className="pl-10 h-10 w-full block bg-background min-w-0" 
-                value={dateTo} 
-                onChange={(e) => setDateTo(e.target.value)}
-                onClick={() => openDatePicker('date-to-report')} 
-              />
-            </div>
-          </div>
+        <CardContent className="max-w-lg">
+          <DateRangePicker 
+            dateFrom={dateFrom}
+            setDateFrom={setDateFrom}
+            dateTo={dateTo}
+            setDateTo={setDateTo}
+          />
         </CardContent>
       </Card>
 
