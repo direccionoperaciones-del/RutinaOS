@@ -129,13 +129,23 @@ const Login = () => {
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
         redirectTo: window.location.origin + "/settings",
       });
+      
       if (error) throw error;
       
       toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada para restablecer la contraseña." });
       setIsResetOpen(false);
       setResetEmail("");
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      let message = error.message;
+      
+      // Traducción de errores comunes de Supabase Auth
+      if (message.includes("rate limit")) {
+        message = "Demasiados intentos. Por favor espera unos minutos antes de intentar de nuevo.";
+      } else if (message.includes("Invalid email")) {
+        message = "El formato del correo no es válido.";
+      }
+
+      toast({ variant: "destructive", title: "Error", description: message });
     } finally {
       setIsResetting(false);
     }
