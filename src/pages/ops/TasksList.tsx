@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Clock, MapPin, Camera, Mail, 
   MessageSquareText, Box, FileText,
@@ -277,7 +278,7 @@ const SegmentedProgressBar = ({
 };
 
 export default function TasksList() {
-  const { user, profile } = useCurrentUser();
+  const { user, profile, loading: loadingProfile } = useCurrentUser();
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [taskToCancel, setTaskToCancel] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
@@ -352,17 +353,27 @@ export default function TasksList() {
   return (
     <div className="space-y-6 pb-24">
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-4 mb-2">
-          {profile?.tenants?.logo_url && (
-            <div className="h-16 w-16 shrink-0 rounded-lg overflow-hidden border bg-white dark:bg-white/5 flex items-center justify-center p-1">
-              <img src={profile.tenants.logo_url} alt="Logo Empresa" className="max-h-full max-w-full object-contain" />
+        {loadingProfile ? (
+          <div className="flex items-center gap-4 mb-2 animate-pulse">
+            <Skeleton className="h-16 w-16 shrink-0 rounded-lg" />
+            <div className="space-y-2">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-5 w-64" />
             </div>
-          )}
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight text-foreground">{profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}</h2>
-            <p className="text-lg text-muted-foreground font-medium mt-1">Estas son tus actividades del día</p>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-4 mb-2 animate-in fade-in duration-500">
+            {profile?.tenants?.logo_url && (
+              <div className="h-16 w-16 shrink-0 rounded-lg overflow-hidden border bg-white dark:bg-white/5 flex items-center justify-center p-1">
+                <img src={profile.tenants.logo_url} alt="Logo Empresa" className="max-h-full max-w-full object-contain" />
+              </div>
+            )}
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight text-foreground">{profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}</h2>
+              <p className="text-lg text-muted-foreground font-medium mt-1">Estas son tus actividades del día</p>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
             <p className="text-primary capitalize text-sm font-semibold bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full w-fit">
