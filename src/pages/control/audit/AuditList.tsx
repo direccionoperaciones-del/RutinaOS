@@ -146,35 +146,35 @@ export default function AuditList() {
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4">
                 <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1">
+                  <div className="space-y-1 w-full min-w-0">
                     <Label className="text-xs">Desde</Label>
-                    <div className="relative">
+                    <div className="relative w-full">
                       <CalendarIcon 
-                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
-                        onClick={() => openDatePicker('date-from-audit-m')} 
+                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 pointer-events-none" 
                       />
                       <Input 
                         id="date-from-audit-m"
                         type="date" 
-                        className="h-9 pl-8 w-full block bg-background" 
+                        className="h-9 pl-8 w-full block bg-background min-w-0" 
                         value={dateFrom} 
                         onChange={(e) => setDateFrom(e.target.value)} 
+                        onClick={() => openDatePicker('date-from-audit-m')}
                       />
                     </div>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1 w-full min-w-0">
                     <Label className="text-xs">Hasta</Label>
-                    <div className="relative">
+                    <div className="relative w-full">
                       <CalendarIcon 
-                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10" 
-                        onClick={() => openDatePicker('date-to-audit-m')} 
+                        className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 pointer-events-none" 
                       />
                       <Input 
                         id="date-to-audit-m"
                         type="date" 
-                        className="h-9 pl-8 w-full block bg-background" 
+                        className="h-9 pl-8 w-full block bg-background min-w-0" 
                         value={dateTo} 
                         onChange={(e) => setDateTo(e.target.value)} 
+                        onClick={() => openDatePicker('date-to-audit-m')}
                       />
                     </div>
                   </div>
@@ -209,35 +209,35 @@ export default function AuditList() {
             )}
           </div>
           <div className="grid grid-cols-6 gap-3">
-            <div className="space-y-1">
+            <div className="space-y-1 w-full min-w-0">
               <Label className="text-xs">Desde</Label>
-              <div className="relative">
+              <div className="relative w-full">
                 <CalendarIcon 
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
-                  onClick={() => openDatePicker('date-from-audit')} 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none" 
                 />
                 <Input 
                   id="date-from-audit"
                   type="date" 
-                  className="h-8 pl-8 text-xs bg-background w-full block" 
+                  className="h-8 pl-8 text-xs bg-background w-full block min-w-0" 
                   value={dateFrom} 
                   onChange={(e) => setDateFrom(e.target.value)} 
+                  onClick={() => openDatePicker('date-from-audit')}
                 />
               </div>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 w-full min-w-0">
               <Label className="text-xs">Hasta</Label>
-              <div className="relative">
+              <div className="relative w-full">
                 <CalendarIcon 
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary" 
-                  onClick={() => openDatePicker('date-to-audit')} 
+                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none" 
                 />
                 <Input 
                   id="date-to-audit"
                   type="date" 
-                  className="h-8 pl-8 text-xs bg-background w-full block" 
+                  className="h-8 pl-8 text-xs bg-background w-full block min-w-0" 
                   value={dateTo} 
                   onChange={(e) => setDateTo(e.target.value)} 
+                  onClick={() => openDatePicker('date-to-audit')}
                 />
               </div>
             </div>

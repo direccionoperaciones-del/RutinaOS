@@ -202,7 +202,6 @@ const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction, onCancel, c
   );
 };
 
-// Componente para la barra segmentada
 const SegmentedProgressBar = ({ 
   total, 
   onTime, 
@@ -216,11 +215,9 @@ const SegmentedProgressBar = ({
   missed: number, 
   pending: number 
 }) => {
-  // Ajuste: total aquí ya viene sin las canceladas
   const pctOnTime = total > 0 ? (onTime / total) * 100 : 0;
   const pctLate = total > 0 ? (late / total) * 100 : 0;
   const pctMissed = total > 0 ? (missed / total) * 100 : 0;
-  
   const totalCompletedPct = total > 0 ? Math.round(((onTime + late) / total) * 100) : 0;
 
   return (
@@ -308,11 +305,8 @@ export default function TasksList() {
   const handleStartTask = (task: any) => { setSelectedTask(task); setIsExecutionOpen(true); };
   const handleCancelTask = (task: any) => { setTaskToCancel(task); setIsCancelOpen(true); };
 
-  // Filtrado visual
   const filteredTasks = tasks.filter(t => {
-    // Si no soy Director ni Lider, NO muestro las canceladas (desaparecen para el operador)
     if (t.estado === 'cancelada' && !['director', 'lider'].includes(profile?.role || '')) return false;
-    
     if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
     if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
     if (selectedUsers.length > 0 && (!t.profiles || !selectedUsers.includes(t.profiles.id))) return false;
@@ -320,15 +314,11 @@ export default function TasksList() {
   });
 
   const canCancel = ['director', 'lider'].includes(profile?.role || '');
-
-  // Sub-listas
-  const activeTasks = filteredTasks.filter(t => t.estado !== 'cancelada'); // Para las pestañas operativas
-  
+  const activeTasks = filteredTasks.filter(t => t.estado !== 'cancelada');
   const pendingTasks = activeTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
   const completedTasks = activeTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
   const cancelledTasks = filteredTasks.filter(t => t.estado === 'cancelada');
 
-  // Stats for Progress Bar (EXCLUYENDO CANCELADAS)
   const stats = useMemo(() => {
     return {
       total: activeTasks.length,
@@ -401,36 +391,44 @@ export default function TasksList() {
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="space-y-1">
+          {/* Layout Responsive: 1 columna en móvil, 2 en tablet (md), 5 en desktop grande (lg) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            
+            {/* Campo Fecha Desde - W-FULL en móvil */}
+            <div className="space-y-1 w-full min-w-0">
               <Label className="text-xs">Desde</Label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-from-task')} />
+              <div className="relative w-full">
+                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors pointer-events-none" />
                 <Input 
                   id="date-from-task" 
                   type="date" 
-                  className="h-10 pl-10 text-sm bg-background w-full block" 
+                  className="h-10 pl-9 text-sm bg-background w-full min-w-0 block" 
                   value={dateFrom} 
-                  onChange={(e) => setDateFrom(e.target.value)} 
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  onClick={(e) => openDatePicker('date-from-task')}
                 />
               </div>
             </div>
-            <div className="space-y-1">
+
+            {/* Campo Fecha Hasta - W-FULL en móvil */}
+            <div className="space-y-1 w-full min-w-0">
               <Label className="text-xs">Hasta</Label>
-              <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-to-task')} />
+              <div className="relative w-full">
+                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors pointer-events-none" />
                 <Input 
                   id="date-to-task" 
                   type="date" 
-                  className="h-10 pl-10 text-sm bg-background w-full block" 
+                  className="h-10 pl-9 text-sm bg-background w-full min-w-0 block" 
                   value={dateTo} 
                   onChange={(e) => setDateTo(e.target.value)} 
+                  onClick={(e) => openDatePicker('date-to-task')}
                 />
               </div>
             </div>
-            <div className="space-y-1"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
-            <div className="space-y-1"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>
-            {profile?.role !== 'administrador' && (<div className="space-y-1"><Label className="text-xs">Usuarios</Label><MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" /></div>)}
+
+            <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
+            <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>
+            {profile?.role !== 'administrador' && (<div className="space-y-1 w-full min-w-0"><Label className="text-xs">Usuarios</Label><MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" /></div>)}
           </div>
           {hasActiveFilters && (<div className="mt-3 flex justify-end"><Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs h-7 text-destructive hover:bg-destructive/10"><X className="w-3 h-3 mr-1" /> Restablecer</Button></div>)}
         </CardContent>

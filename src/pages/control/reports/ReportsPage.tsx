@@ -217,37 +217,37 @@ export default function ReportsPage() {
             <CalendarRange className="w-4 h-4" /> Rango de Fechas
           </CardTitle>
         </CardHeader>
-        {/* Cambiado: md:grid-cols-2 para que en móviles sea 1 columna */}
+        {/* FIX: Layout 1 col en mobile, 2 cols en desktop */}
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
-          <div className="space-y-2">
+          <div className="space-y-2 w-full min-w-0">
             <Label>Desde</Label>
-            <div className="relative">
+            <div className="relative w-full">
               <CalendarIcon 
-                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                onClick={() => openDatePicker('date-from-report')} 
+                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
               />
               <Input 
                 id="date-from-report"
                 type="date" 
-                className="pl-10 h-10 w-full block bg-background" 
+                className="pl-10 h-10 w-full block bg-background min-w-0" 
                 value={dateFrom} 
-                onChange={(e) => setDateFrom(e.target.value)} 
+                onChange={(e) => setDateFrom(e.target.value)}
+                onClick={() => openDatePicker('date-from-report')} 
               />
             </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 w-full min-w-0">
             <Label>Hasta</Label>
-            <div className="relative">
+            <div className="relative w-full">
               <CalendarIcon 
-                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                onClick={() => openDatePicker('date-to-report')} 
+                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
               />
               <Input 
                 id="date-to-report"
                 type="date" 
-                className="pl-10 h-10 w-full block bg-background" 
+                className="pl-10 h-10 w-full block bg-background min-w-0" 
                 value={dateTo} 
-                onChange={(e) => setDateTo(e.target.value)} 
+                onChange={(e) => setDateTo(e.target.value)}
+                onClick={() => openDatePicker('date-to-report')} 
               />
             </div>
           </div>

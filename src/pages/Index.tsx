@@ -60,37 +60,37 @@ const Index = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              {/* Stack on mobile, side-by-side on larger screens if desired, but 1 col is safer for filters */}
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-1.5">
+              {/* FIX: Grid adaptable para fechas: 1col (mobile/desktop sidebar) - 2col (tablet) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-4">
+                <div className="space-y-1.5 w-full min-w-0">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
-                  <div className="relative">
+                  <div className="relative w-full">
                     <CalendarIcon 
-                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                      onClick={() => openDatePicker('date-from-dash')} 
+                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
                     />
                     <Input 
                       id="date-from-dash"
                       type="date" 
-                      className="h-10 pl-10 text-sm w-full block bg-background" 
+                      className="h-10 pl-10 text-sm w-full block bg-background min-w-0" 
                       value={dateFrom} 
                       onChange={(e) => setDateFrom(e.target.value)} 
+                      onClick={() => openDatePicker('date-from-dash')} 
                     />
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 w-full min-w-0">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Hasta</Label>
-                  <div className="relative">
+                  <div className="relative w-full">
                     <CalendarIcon 
-                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
-                      onClick={() => openDatePicker('date-to-dash')} 
+                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
                     />
                     <Input 
                       id="date-to-dash"
                       type="date" 
-                      className="h-10 pl-10 text-sm w-full block bg-background" 
+                      className="h-10 pl-10 text-sm w-full block bg-background min-w-0" 
                       value={dateTo} 
                       onChange={(e) => setDateTo(e.target.value)} 
+                      onClick={() => openDatePicker('date-to-dash')} 
                     />
                   </div>
                 </div>
