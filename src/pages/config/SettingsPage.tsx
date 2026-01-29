@@ -7,12 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon, Bell, BellRing, Smartphone } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { usePushSubscription } from "@/hooks/use-push-subscription";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const { profile, loading: loadingProfile } = useCurrentUser();
+  const { isSupported, isSubscribed, subscribeToPush, loading: pushLoading, error: pushError, sendTestPush } = usePushSubscription();
   
   // Estado para datos personales
   const [formData, setFormData] = useState({
@@ -150,22 +152,18 @@ export default function SettingsPage() {
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      // Usamos el ID del tenant como carpeta o prefijo
       const filePath = `tenant_${profile.tenant_id}/${Date.now()}.${fileExt}`;
 
-      // 1. Subir al bucket 'logos' (upsert true para sobrescribir si es necesario)
       const { error: uploadError } = await supabase.storage
         .from('logos')
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // 2. Obtener URL
       const { data: { publicUrl } } = supabase.storage
         .from('logos')
         .getPublicUrl(filePath);
 
-      // 3. Actualizar tabla tenants
       const { error: updateError } = await supabase
         .from('tenants')
         .update({ logo_url: publicUrl })
@@ -175,8 +173,6 @@ export default function SettingsPage() {
 
       setCompanyLogoUrl(publicUrl);
       toast({ title: "Logo actualizado", description: "La imagen de la organización se ha guardado." });
-      
-      // Recargar para que el layout tome el nuevo logo
       setTimeout(() => window.location.reload(), 1000);
       
     } catch (error: any) {
@@ -213,10 +209,19 @@ export default function SettingsPage() {
     }
   };
 
+  const handleSubscribe = async () => {
+    const success = await subscribeToPush();
+    if (success) {
+      toast({ title: "Notificaciones activadas", description: "Recibirás alertas en este dispositivo." });
+    } else {
+      toast({ variant: "destructive", title: "Error", description: "No se pudieron activar las notificaciones. Verifica permisos del navegador." });
+    }
+  };
+
   if (loadingProfile) return <div className="p-8 flex justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col gap-2">
         <h2 className="text-3xl font-bold tracking-tight">Ajustes y Perfil</h2>
         <p className="text-muted-foreground">Gestiona tu información personal y seguridad.</p>
@@ -229,6 +234,55 @@ export default function SettingsPage() {
         </TabsList>
 
         <TabsContent value="account" className="space-y-6">
+          
+          {/* NOTIFICACIONES PWA - NUEVA SECCIÓN */}
+          <Card className={`border ${isSubscribed ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BellRing className={`w-5 h-5 ${isSubscribed ? 'text-green-600' : 'text-blue-600'}`} /> 
+                Notificaciones Móviles
+              </CardTitle>
+              <CardDescription>Recibe alertas instantáneas en tu dispositivo.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Smartphone className="w-8 h-8 opacity-50" />
+                  <div>
+                    {isSupported ? (
+                      isSubscribed ? (
+                        <span className="text-green-700 font-medium">✅ Dispositivo conectado y activo.</span>
+                      ) : (
+                        <span>Activa las notificaciones para no perder tareas urgentes.</span>
+                      )
+                    ) : (
+                      <span className="text-red-500">Tu navegador no soporta notificaciones Push. Usa Chrome o Safari (iOS instalado).</span>
+                    )}
+                  </div>
+                </div>
+                
+                {isSupported && (
+                  <div className="flex gap-2">
+                    {isSubscribed && (
+                      <Button variant="outline" size="sm" onClick={sendTestPush}>
+                        Probar
+                      </Button>
+                    )}
+                    <Button 
+                      onClick={handleSubscribe} 
+                      disabled={isSubscribed || pushLoading} 
+                      className={isSubscribed ? "bg-green-600 hover:bg-green-700" : ""}
+                    >
+                      {pushLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      {isSubscribed ? "Activado" : "Activar Notificaciones"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {pushError && <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded border border-red-100">{pushError}</p>}
+            </CardContent>
+          </Card>
+
           {/* Datos Personales */}
           <Card>
             <CardHeader>
