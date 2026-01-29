@@ -18,6 +18,7 @@ import { InventoryStep } from "./components/execution/InventoryStep";
 // Logic
 import { buildTaskSchema, TaskField } from "./logic/task-schema";
 
+// [Update] Added support for rejected tasks correction
 interface TaskExecutionModalProps {
   task: any;
   open: boolean;
