@@ -216,16 +216,18 @@ const SegmentedProgressBar = ({
   pending: number,
   rejected: number
 }) => {
-  // Ajustamos el total para incluir rechazadas en el cálculo si es necesario, 
-  // pero generalmente son un subconjunto de "completadas" que requieren acción.
-  // Visualmente vamos a separar "Rechazadas" como una categoría urgente.
+  // Ajuste: Calculamos el total de completadas ÚNICAS.
+  // Si una tarea está rechazada, ya está contada en 'onTime' o 'late' (porque fue ejecutada),
+  // así que NO la sumamos de nuevo al calcular el % de avance.
+  const executedCount = onTime + late + missed; // Tareas que ya tuvieron un intento final (o cierre)
   
-  // % Completado global (incluye a tiempo + vencidas + rechazadas, ya que se ejecutaron)
-  const totalCompletedPct = total > 0 ? Math.round(((onTime + late + rejected) / total) * 100) : 0;
+  const totalCompletedPct = total > 0 ? Math.round((executedCount / total) * 100) : 0;
 
   const pctOnTime = total > 0 ? (onTime / total) * 100 : 0;
   const pctLate = total > 0 ? (late / total) * 100 : 0;
-  const pctRejected = total > 0 ? (rejected / total) * 100 : 0;
+  // Nota: Rejected no se dibuja como un segmento nuevo porque es un estado de calidad sobre una tarea ya ejecutada
+  // Pero para visualización, podemos mostrar qué parte de lo ejecutado está rechazado superponiendo o separando.
+  // Para simplificar y evitar >100%, mostramos rejected como un indicador aparte en la barra o simplemente en la leyenda.
   const pctMissed = total > 0 ? (missed / total) * 100 : 0;
 
   return (
@@ -245,7 +247,6 @@ const SegmentedProgressBar = ({
       <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
         <div style={{ width: `${pctOnTime}%` }} className="bg-emerald-500 h-full hover:bg-emerald-400 transition-all" title={`A Tiempo: ${onTime}`} />
         <div style={{ width: `${pctLate}%` }} className="bg-amber-500 h-full hover:bg-amber-400 transition-all" title={`Vencidas: ${late}`} />
-        <div style={{ width: `${pctRejected}%` }} className="bg-red-600 h-full hover:bg-red-500 transition-all animate-pulse" title={`Rechazadas: ${rejected}`} />
         <div style={{ width: `${pctMissed}%` }} className="bg-gray-400 h-full hover:bg-gray-300 transition-all" title={`Incumplidas: ${missed}`} />
       </div>
 
@@ -479,7 +480,7 @@ export default function TasksList() {
       {error && <div className="p-4 rounded border border-red-200 bg-red-50 text-red-700 flex items-center gap-2"><AlertCircle className="w-5 h-5" /><span>Error cargando tareas.</span></div>}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-6">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6 h-auto gap-2 md:gap-0 p-1 bg-muted/50 md:bg-muted">
           <TabsTrigger value="pending">Pendientes ({stats.pending})</TabsTrigger>
           <TabsTrigger value="rejected" className="data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:font-bold text-red-600 dark:text-red-400">
             Rechazadas ({stats.rejected})
