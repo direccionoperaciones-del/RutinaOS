@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ServerCog, Clock, Moon } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ServerCog, Clock, Moon, Bug } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -16,7 +16,7 @@ export default function CommandCenter() {
   // State para Fecha de Generación
   const [date, setDate] = useState<Date | undefined>(new Date());
   
-  // State para Fecha de Cierre (Nuevo)
+  // State para Fecha de Cierre
   const [closeDate, setCloseDate] = useState<Date | undefined>(new Date());
   
   const [isLoadingGen, setIsLoadingGen] = useState(false);
@@ -97,6 +97,7 @@ export default function CommandCenter() {
     fetchAllData();
   }, []);
 
+  // --- FUNCIÓN MANUAL CON DIAGNÓSTICO PROFUNDO ---
   const runTaskEngine = async () => {
     if (!date) return;
     setIsLoadingGen(true);
@@ -104,25 +105,70 @@ export default function CommandCenter() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
+      
+      if (!token) throw new Error("No hay sesión activa. Por favor inicia sesión nuevamente.");
+
       const simpleDate = format(date, "yyyy-MM-dd");
       
-      const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { date: simpleDate, triggered_by: 'manual_admin', force: true },
-        headers: { Authorization: `Bearer ${token}` }
+      // Construimos URL manualmente para tener control total del fetch
+      // Nota: Vite expone VITE_SUPABASE_URL. En producción esto debe apuntar a la URL correcta.
+      const projectUrl = import.meta.env.VITE_SUPABASE_URL;
+      const functionUrl = `${projectUrl}/functions/v1/generate-daily-tasks`;
+
+      console.log(`[Manual Trigger] Llamando a: ${functionUrl} para fecha ${simpleDate}`);
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          date: simpleDate, 
+          triggered_by: 'manual_admin', 
+          force: true 
+        })
       });
 
-      if (error) throw new Error(error.message);
-      if (data && data.ok === false) throw new Error(data.message);
+      // 1. Loguear Status y Headers (Requisito Obligatorio)
+      console.log(`[Engine Status] ${response.status} ${response.statusText}`);
+      response.headers.forEach((val, key) => console.log(`[Header] ${key}: ${val}`));
 
+      // 2. Obtener Body como texto primero para no fallar en JSON parse
+      const bodyText = await response.text();
+      console.log(`[Engine Body Raw]`, bodyText);
+
+      let data;
+      try {
+        data = JSON.parse(bodyText);
+      } catch (e) {
+        // Si no es JSON, es un error crudo (HTML de nginx, texto plano, etc)
+        throw new Error(`Error Motor (Status ${response.status}): ${bodyText.slice(0, 100)}...`);
+      }
+
+      // 3. Manejar errores HTTP
+      if (!response.ok) {
+        const errorMsg = data.error || data.message || "Error desconocido en el motor";
+        const details = JSON.stringify(data, null, 2);
+        throw new Error(`Error Motor (${response.status}): ${errorMsg}\n${details}`);
+      }
+
+      // Éxito
       toast({ 
         title: "Generación Finalizada", 
-        description: data.message || `Tareas generadas para ${simpleDate}.` 
+        description: data.message || `Tareas generadas: ${data.generated || 0} para ${simpleDate}.` 
       });
       
       fetchAllData();
 
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error("[Manual Trigger Error]", error);
+      toast({ 
+        variant: "destructive", 
+        title: "Fallo en Ejecución", 
+        description: error.message,
+        duration: 10000 // Duración larga para leer el error
+      });
     } finally {
       setIsLoadingGen(false);
     }
@@ -130,27 +176,20 @@ export default function CommandCenter() {
 
   const runDayClose = async () => {
     if (!closeDate) return;
-    
     const simpleDate = format(closeDate, "yyyy-MM-dd");
-    const confirmMsg = `¿Cerrar operación del día ${simpleDate}?\n\nTodas las tareas pendientes hasta esa fecha se marcarán como INCUMPLIDAS.`;
-    
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(`¿Cerrar operación del día ${simpleDate}?`)) return;
     
     setIsLoadingClose(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
       const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
-        body: { date: simpleDate },
-        headers: { Authorization: `Bearer ${token}` }
+        body: { date: simpleDate }
       });
 
       if (error) throw new Error(error.message);
       
       toast({ 
         title: "Cierre Completado", 
-        description: data.message || "Las tareas vencidas han sido marcadas." 
+        description: data.message || "Tareas vencidas marcadas." 
       });
       
       fetchAllData();
@@ -220,7 +259,7 @@ export default function CommandCenter() {
                 </div>
 
                 {lastRun.error_message && (
-                  <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded border border-red-100">
+                  <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded border border-red-100 break-words">
                     {lastRun.error_message}
                   </div>
                 )}
@@ -268,8 +307,12 @@ export default function CommandCenter() {
                   </PopoverContent>
                 </Popover>
                 
-                <Button onClick={runTaskEngine} disabled={isLoadingGen || !date} size="sm" className="w-[100px]">
-                  {isLoadingGen ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generar"}
+                <Button onClick={runTaskEngine} disabled={isLoadingGen || !date} size="sm" className="w-[120px]">
+                  {isLoadingGen ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                    <>
+                      <Bug className="w-3 h-3 mr-2 opacity-70" /> Generar
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
