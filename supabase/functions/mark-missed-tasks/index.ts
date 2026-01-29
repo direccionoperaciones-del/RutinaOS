@@ -53,29 +53,37 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Obtener fecha actual en Colombia (UTC-5) para determinar qué cerrar
-    const now = new Date()
-    const colombiaOffset = -5 * 60 * 60 * 1000
-    const nowColombia = new Date(now.getTime() + colombiaOffset)
-    const todayStr = nowColombia.toISOString().split('T')[0]
+    // Obtener fecha target: Si viene en el body, se usa. Si no, se calcula hoy (COL).
+    const body = await req.json().catch(() => ({}))
+    const manualDate = body.date;
 
-    console.log(`[mark-missed-tasks] Ejecutando cierre (${triggeredBy}) para: ${todayStr}`)
+    let targetDateStr = manualDate;
 
-    // Actualizar tareas pendientes que vencieron hoy o antes
+    if (!targetDateStr) {
+      // Cálculo automático (Hoy en Colombia UTC-5)
+      const now = new Date()
+      const colombiaOffset = -5 * 60 * 60 * 1000
+      const nowColombia = new Date(now.getTime() + colombiaOffset)
+      targetDateStr = nowColombia.toISOString().split('T')[0]
+    }
+
+    console.log(`[mark-missed-tasks] Ejecutando cierre (${triggeredBy}) para fecha (<=): ${targetDateStr}`)
+
+    // Actualizar tareas pendientes que vencieron en la fecha target o antes
     const { data, error } = await supabase
       .from('task_instances')
       .update({ estado: 'incumplida' })
       .eq('estado', 'pendiente')
-      .lte('fecha_programada', todayStr)
+      .lte('fecha_programada', targetDateStr)
       .select('id')
 
     if (error) throw error
 
-    const message = `Cierre exitoso. Se marcaron ${data.length} tareas como incumplidas.`
+    const message = `Cierre exitoso para ${targetDateStr}. Se marcaron ${data.length} tareas como incumplidas.`
     console.log(`[mark-missed-tasks] Success: ${message}`)
 
     return new Response(
-      JSON.stringify({ success: true, message, updated: data.length }),
+      JSON.stringify({ success: true, message, updated: data.length, date: targetDateStr }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 

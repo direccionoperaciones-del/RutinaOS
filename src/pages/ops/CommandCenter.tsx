@@ -12,7 +12,12 @@ import { cn, getLocalDate } from "@/lib/utils";
 
 export default function CommandCenter() {
   const { toast } = useToast();
+  
+  // State para Fecha de Generación
   const [date, setDate] = useState<Date | undefined>(new Date());
+  
+  // State para Fecha de Cierre (Nuevo)
+  const [closeDate, setCloseDate] = useState<Date | undefined>(new Date());
   
   const [isLoadingGen, setIsLoadingGen] = useState(false);
   const [isLoadingClose, setIsLoadingClose] = useState(false);
@@ -124,7 +129,12 @@ export default function CommandCenter() {
   };
 
   const runDayClose = async () => {
-    if (!confirm("¿Seguro que deseas cerrar el día? Esto marcará como INCUMPLIDAS todas las tareas pendientes vencidas.")) return;
+    if (!closeDate) return;
+    
+    const simpleDate = format(closeDate, "yyyy-MM-dd");
+    const confirmMsg = `¿Cerrar operación del día ${simpleDate}?\n\nTodas las tareas pendientes hasta esa fecha se marcarán como INCUMPLIDAS.`;
+    
+    if (!confirm(confirmMsg)) return;
     
     setIsLoadingClose(true);
     try {
@@ -132,6 +142,7 @@ export default function CommandCenter() {
       const token = session?.access_token;
 
       const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
+        body: { date: simpleDate },
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -207,12 +218,19 @@ export default function CommandCenter() {
                     </span>
                   </div>
                 </div>
+
+                {lastRun.error_message && (
+                  <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded border border-red-100">
+                    {lastRun.error_message}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <Clock className="w-8 h-8 text-muted-foreground/30 mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  Aún no se ha ejecutado hoy.
+                  Aún no se ha ejecutado hoy.<br/>
+                  <span className="text-xs opacity-70">Programado para 05:00 AM</span>
                 </p>
               </div>
             )}
@@ -261,15 +279,31 @@ export default function CommandCenter() {
             {/* Cierre de Día */}
             <div className="space-y-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Cierre de Operación</span>
-              <div className="flex items-center gap-3">
-                <p className="text-xs text-muted-foreground flex-1">
-                  Marca como <strong>incumplidas</strong> las tareas pendientes vencidas.
-                </p>
-                <Button onClick={runDayClose} disabled={isLoadingClose} size="sm" variant="secondary" className="border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700">
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      size="sm"
+                      className={cn("flex-1 justify-start text-left font-normal", !closeDate && "text-muted-foreground")}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {closeDate ? format(closeDate, "P", { locale: es }) : <span>Fecha Cierre</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={closeDate} onSelect={setCloseDate} initialFocus />
+                  </PopoverContent>
+                </Popover>
+
+                <Button onClick={runDayClose} disabled={isLoadingClose || !closeDate} size="sm" variant="secondary" className="w-[100px] border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700">
                   {isLoadingClose ? <Loader2 className="w-4 h-4 animate-spin" /> : <Moon className="w-4 h-4 mr-2" />}
-                  Cerrar Día
+                  Cerrar
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Marca como <strong>incumplidas</strong> las tareas pendientes hasta la fecha seleccionada (inclusive).
+              </p>
             </div>
 
           </CardContent>
