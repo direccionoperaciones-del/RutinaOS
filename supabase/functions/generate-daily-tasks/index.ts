@@ -11,243 +11,198 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders })
   }
 
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
   try {
-    // 1. SETUP CLIENTE
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-
-    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
-      throw new Error('CONFIG_ERROR: Missing Env Variables')
-    }
-
-    // 2. AUTH CHECK
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ ok: false, code: "AUTH_MISSING", message: "Missing Authorization header" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
-    let tenantIdArg = null
-    let requestUserEmail = 'cron'
-
-    // Verify if it's NOT the Cron Job (Service Role)
-    if (token !== supabaseServiceKey) {
-      const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } })
-      const { data: { user }, error: authError } = await supabaseUserClient.auth.getUser()
-
-      if (authError || !user) {
-        return new Response(JSON.stringify({ ok: false, code: "AUTH_INVALID", message: "Invalid Token" }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      }
-      
-      requestUserEmail = user.email || 'unknown'
-      const { data: profile } = await supabaseAdmin.from('profiles').select('tenant_id, role').eq('id', user.id).single()
-      
-      // SECURITY FIX: Only allow 'director' to manually trigger generation
-      if (!profile || !['director'].includes(profile.role)) {
-         console.warn(`[Security] Unauthorized execution attempt by user ${user.id} (${requestUserEmail}) with role ${profile?.role}`);
-         return new Response(JSON.stringify({ ok: false, code: "FORBIDDEN", message: "Insufficient permissions. Only Directors can trigger manual generation." }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      }
-      tenantIdArg = profile.tenant_id
-    }
-
-    // 3. DATE PARSING
     const body = await req.json().catch(() => ({}))
-    let { date } = body
+    const triggeredBy = body.triggered_by || 'manual';
+    const force = body.force || false; // Para reintentar manualmente si falló
 
-    if (!date) {
-      const now = new Date()
-      const offsetMs = -5 * 60 * 60 * 1000 // UTC-5 Colombia
-      const nowCol = new Date(now.getTime() + offsetMs)
-      date = nowCol.toISOString().split('T')[0]
+    // 1. CALCULAR "HOY" EN ZONA HORARIA DE OPERACIÓN (Colombia GMT-5)
+    // Esto es crítico para que el Cron (UTC) calcule bien el día
+    const now = new Date();
+    const colombiaOffset = -5 * 60 * 60 * 1000;
+    const nowColombia = new Date(now.getTime() + colombiaOffset);
+    const targetDate = body.date || nowColombia.toISOString().split('T')[0];
+
+    console.log(`[Job] Iniciando para fecha: ${targetDate}. Trigger: ${triggeredBy}`);
+
+    // 2. IDEMPOTENCIA: Verificar si ya existe una corrida exitosa para hoy
+    if (!force) {
+      const { data: existingRun } = await supabaseAdmin
+        .from('task_generation_runs')
+        .select('*')
+        .eq('fecha', targetDate)
+        .maybeSingle();
+
+      if (existingRun && existingRun.status === 'success') {
+        console.log(`[Job] Skip: Ya existe ejecución exitosa para ${targetDate}`);
+        return new Response(
+          JSON.stringify({ 
+            ok: true, 
+            skipped: true, 
+            message: `Ya se generaron las tareas del ${targetDate} previamente.` 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    // Calcular datos de fecha
-    const [y, m, d] = date.split('-').map(Number)
-    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0))
-    const dayOfWeek = dateObj.getUTCDay() // 0=Dom, 1=Lun...
-    const dayOfMonth = dateObj.getUTCDate()
+    // 3. REGISTRAR INICIO (Running)
+    // Usamos upsert para manejar reintentos sobre el mismo día
+    const { data: runRecord, error: runError } = await supabaseAdmin
+      .from('task_generation_runs')
+      .upsert({
+        fecha: targetDate,
+        status: 'running',
+        started_at: new Date().toISOString(),
+        triggered_by: triggeredBy,
+        error_message: null
+      }, { onConflict: 'fecha' })
+      .select()
+      .single();
 
-    console.log(`[Motor] Procesando ${date} (DiaSemana: ${dayOfWeek}, DiaMes: ${dayOfMonth}) para Tenant: ${tenantIdArg || 'ALL'}`)
+    if (runError) throw new Error(`Error iniciando log de corrida: ${runError.message}`);
 
-    // 4. LÓGICA DE GENERACIÓN
-    let tenantsQuery = supabaseAdmin.from('tenants').select('id')
-    if (tenantIdArg) tenantsQuery = tenantsQuery.eq('id', tenantIdArg)
-    else tenantsQuery = tenantsQuery.eq('activo', true)
-
-    const { data: tenants } = await tenantsQuery
+    // --- LÓGICA CORE DE GENERACIÓN ---
     
-    let totalGenerated = 0
-    let totalAssignmentsFound = 0
+    // Obtener tenants activos
+    const { data: tenants } = await supabaseAdmin.from('tenants').select('id').eq('activo', true);
     
-    // Diagnóstico
-    const logs: string[] = []
-    const summary = {
-      assignments_found: 0,
-      skipped_wrong_day: 0,
-      skipped_no_responsible: 0,
-      skipped_absence: 0,
-      skipped_inactive_routine: 0
-    }
+    // Calcular datos de fecha para las reglas
+    const [y, m, d] = targetDate.split('-').map(Number);
+    // Usamos UTC para evitar desplazamientos raros al extraer componentes
+    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const dayOfWeek = dateObj.getUTCDay(); // 0=Dom
+    const dayOfMonth = dateObj.getUTCDate();
+
+    let totalTasksCreated = 0;
+    const logs: string[] = [];
 
     for (const tenant of (tenants || [])) {
-      const tId = tenant.id
+      // Obtener asignaciones activas
+      const { data: assignments } = await supabaseAdmin.from('routine_assignments')
+        .select(`
+          id, pdv_id, rutina_id,
+          routine_templates (
+            id, frequency:frecuencia, days:dias_ejecucion, active:activo,
+            priority:prioridad, start:hora_inicio, limit:hora_limite,
+            dates:fechas_especificas, dom:vencimiento_dia_mes
+          )
+        `)
+        .eq('tenant_id', tenant.id)
+        .eq('estado', 'activa');
 
-      // Fetch Data
-      const [assignmentsRes, responsiblesRes, absencesRes] = await Promise.all([
-        supabaseAdmin.from('routine_assignments')
-          .select(`
-            id, pdv_id, rutina_id,
-            pdv (nombre),
-            routine_templates (
-              id, nombre, frecuencia, dias_ejecucion, prioridad, hora_inicio, hora_limite,
-              fechas_especificas, vencimiento_dia_mes, corte_1_limite, corte_2_limite, activo
-            )
-          `)
-          .eq('tenant_id', tId)
-          .eq('estado', 'activa'),
+      // Obtener responsables vigentes
+      const { data: responsibles } = await supabaseAdmin.from('pdv_assignments')
+        .select('pdv_id, user_id')
+        .eq('tenant_id', tenant.id)
+        .eq('vigente', true);
         
-        supabaseAdmin.from('pdv_assignments')
-          .select('pdv_id, user_id')
-          .eq('tenant_id', tId)
-          .eq('vigente', true),
+      const respMap = new Map();
+      responsibles?.forEach(r => respMap.set(r.pdv_id, r.user_id));
 
-        supabaseAdmin.from('user_absences')
-          .select('user_id, politica, receptor_id')
-          .eq('tenant_id', tId)
-          .lte('fecha_desde', date)
-          .gte('fecha_hasta', date)
-      ])
+      // Obtener ausencias
+      const { data: absences } = await supabaseAdmin.from('user_absences')
+        .select('user_id, politica, receptor_id')
+        .eq('tenant_id', tenant.id)
+        .lte('fecha_desde', targetDate)
+        .gte('fecha_hasta', targetDate);
+        
+      const absMap = new Map();
+      absences?.forEach(a => absMap.set(a.user_id, a));
 
-      const assignments = assignmentsRes.data || []
-      const respMap = new Map()
-      responsiblesRes.data?.forEach(r => respMap.set(r.pdv_id, r.user_id))
-      const absMap = new Map()
-      absencesRes.data?.forEach(a => absMap.set(a.user_id, a))
+      const tasksToInsert = [];
 
-      summary.assignments_found += assignments.length
-      const tasksToInsert = []
+      for (const assign of (assignments || [])) {
+        const r = assign.routine_templates;
+        if (!r || !r.active) continue;
 
-      for (const assign of assignments) {
-        const r = assign.routine_templates
-        const pdvName = assign.pdv?.nombre || 'PDV?'
-        const routineName = r?.nombre || 'Rutina?'
+        // Reglas de Frecuencia
+        let shouldRun = false;
+        if (r.frequency === 'diaria' && (!r.days || r.days.length === 0 || r.days.includes(dayOfWeek))) shouldRun = true;
+        else if (r.frequency === 'semanal' && r.days?.includes(dayOfWeek)) shouldRun = true;
+        else if (r.frequency === 'mensual' && dayOfMonth === 1) shouldRun = true; // Día 1
+        else if (r.frequency === 'quincenal' && (dayOfMonth === 1 || dayOfMonth === 16)) shouldRun = true;
+        else if (r.frequency === 'fechas_especificas' && r.dates?.includes(targetDate)) shouldRun = true;
 
-        // Validación 1: Rutina Activa
-        if (!r || !r.activo) {
-          summary.skipped_inactive_routine++
-          continue
-        }
+        if (!shouldRun) continue;
 
-        // Validación 2: Frecuencia (Día correcto)
-        let shouldRun = false
-        switch (r.frecuencia) {
-          case 'diaria':
-            if (!r.dias_ejecucion || r.dias_ejecucion.length === 0 || r.dias_ejecucion.includes(dayOfWeek)) shouldRun = true
-            break
-          case 'semanal':
-            if (r.dias_ejecucion?.includes(dayOfWeek)) shouldRun = true
-            break
-          case 'mensual':
-            if (dayOfMonth === 1) shouldRun = true
-            break
-          case 'quincenal':
-            if (dayOfMonth === 1 || dayOfMonth === 16) shouldRun = true
-            break
-          case 'fechas_especificas':
-            if (r.fechas_especificas?.includes(date)) shouldRun = true
-            break
-        }
+        // Responsable y Ausencias
+        let userId = respMap.get(assign.pdv_id);
+        if (!userId) continue; // Sin responsable
 
-        if (!shouldRun) {
-          summary.skipped_wrong_day++
-          continue
-        }
-
-        // Validación 3: Responsable
-        let userId = respMap.get(assign.pdv_id)
-        if (!userId) {
-          summary.skipped_no_responsible++
-          logs.push(`⚠️ Skip [${routineName} @ ${pdvName}]: PDV sin responsable vigente`)
-          continue 
-        }
-
-        // Validación 4: Ausencias
-        const absence = absMap.get(userId)
+        const absence = absMap.get(userId);
         if (absence) {
-          if (absence.politica === 'omitir') {
-            summary.skipped_absence++
-            logs.push(`ℹ️ Skip [${routineName}]: Responsable ausente (Omitir)`)
-            continue
-          }
-          if (absence.politica === 'reasignar' && absence.receptor_id) {
-            userId = absence.receptor_id
-          }
+          if (absence.politica === 'omitir') continue;
+          if (absence.politica === 'reasignar' && absence.receptor_id) userId = absence.receptor_id;
         }
 
-        // TODO OK -> Agregar
         tasksToInsert.push({
-          tenant_id: tId,
+          tenant_id: tenant.id,
           assignment_id: assign.id,
           rutina_id: assign.rutina_id,
           pdv_id: assign.pdv_id,
           responsable_id: userId,
-          fecha_programada: date,
+          fecha_programada: targetDate,
           estado: 'pendiente',
-          prioridad_snapshot: r.prioridad,
-          hora_inicio_snapshot: r.hora_inicio,
-          hora_limite_snapshot: r.hora_limite,
+          prioridad_snapshot: r.priority,
+          hora_inicio_snapshot: r.start,
+          hora_limite_snapshot: r.limit,
           created_at: new Date().toISOString()
-        })
+        });
       }
 
       if (tasksToInsert.length > 0) {
-        const { error, count } = await supabaseAdmin
+        // Upsert tasks (si ya existen para ese assignment+fecha, no duplicar)
+        const { error: insertError } = await supabaseAdmin
           .from('task_instances')
-          .upsert(tasksToInsert, { 
-            onConflict: 'assignment_id,fecha_programada', 
-            ignoreDuplicates: true,
-            count: 'exact'
-          })
+          .upsert(tasksToInsert, { onConflict: 'assignment_id,fecha_programada', ignoreDuplicates: true });
         
-        if (error) {
-          console.error("DB Insert Error:", error)
-          logs.push(`❌ DB Error: ${error.message}`)
+        if (insertError) {
+          console.error(`Error insertando tareas tenant ${tenant.id}:`, insertError);
+          logs.push(`Error tenant ${tenant.id}: ${insertError.message}`);
         } else {
-          totalGenerated += tasksToInsert.length
+          totalTasksCreated += tasksToInsert.length;
         }
       }
     }
 
-    const message = totalGenerated > 0 
-      ? `Éxito. ${totalGenerated} tareas generadas.`
-      : `Proceso completado. Ver detalles.`;
+    // 4. REGISTRAR FIN (Success)
+    await supabaseAdmin
+      .from('task_generation_runs')
+      .update({
+        status: 'success',
+        finished_at: new Date().toISOString(),
+        tasks_created: totalTasksCreated,
+        error_message: logs.length > 0 ? logs.join('; ') : null
+      })
+      .eq('id', runRecord.id);
 
     return new Response(
-      JSON.stringify({
-        ok: true,
-        generated: totalGenerated,
-        date: date,
-        message: message,
-        diagnosis: {
-          total_asignaciones: summary.assignments_found,
-          razones_omitidas: {
-            no_toca_hoy: summary.skipped_wrong_day,
-            sin_responsable_pdv: summary.skipped_no_responsible,
-            rutina_inactiva: summary.skipped_inactive_routine,
-            ausencia_usuario: summary.skipped_absence
-          },
-          logs: logs.slice(0, 20)
-        }
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ ok: true, generated: totalTasksCreated, date: targetDate }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (err: any) {
-    console.error("[generate-daily-tasks] Unhandled Error:", err)
+    console.error("[Job] Critical Fail:", err);
+    
+    // 5. REGISTRAR FALLO (Failed)
+    // Intentamos actualizar el registro de corrida si existe, sino creamos uno de fallo
+    try {
+        const today = new Date().toISOString().split('T')[0]; // Fallback date if logic failed early
+        await supabaseAdmin.from('task_generation_runs').upsert({
+            fecha: today, // Best effort date
+            status: 'failed',
+            error_message: err.message,
+            finished_at: new Date().toISOString()
+        }, { onConflict: 'fecha' });
+    } catch (e) { /* ignore db error in catch block */ }
+
     return new Response(
-      JSON.stringify({ ok: false, code: "INTERNAL_ERROR", message: "An internal server error occurred." }),
+      JSON.stringify({ ok: false, error: err.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, XCircle, Terminal, Info, Moon } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Moon, ServerCog, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -14,15 +14,14 @@ export default function CommandCenter() {
   const { toast } = useToast();
   const [date, setDate] = useState<Date | undefined>(new Date());
   
-  // States Generador
+  // States Generador Manual
   const [isLoading, setIsLoading] = useState(false);
-  const [lastResult, setLastResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
-  const [debugError, setDebugError] = useState<string | null>(null);
   
-  // States Cierre
-  const [isClosing, setIsClosing] = useState(false);
+  // State Monitor Automático
+  const [lastRun, setLastRun] = useState<any>(null);
+  const [loadingRun, setLoadingRun] = useState(false);
 
-  // Metrics
+  // States Metrics
   const [metrics, setMetrics] = useState({
     incidencias: 0,
     totalHoy: 0,
@@ -30,6 +29,11 @@ export default function CommandCenter() {
     porcentaje: 0
   });
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+
+  const fetchAllData = () => {
+    fetchMetrics();
+    fetchLastRun();
+  };
 
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
@@ -66,80 +70,59 @@ export default function CommandCenter() {
     }
   };
 
+  const fetchLastRun = async () => {
+    setLoadingRun(true);
+    try {
+      // Buscar la ejecución de HOY
+      const today = getLocalDate();
+      const { data, error } = await supabase
+        .from('task_generation_runs')
+        .select('*')
+        .eq('fecha', today)
+        .maybeSingle();
+      
+      if (!error) {
+        setLastRun(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingRun(false);
+    }
+  };
+
   useEffect(() => {
-    fetchMetrics();
+    fetchAllData();
   }, []);
 
   const runTaskEngine = async () => {
     if (!date) return;
     setIsLoading(true);
-    setLastResult(null);
-    setDebugError(null);
 
-    try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session) {
-        throw new Error("Sesión expirada. Recarga la página.");
-      }
-
-      const token = session.access_token;
-      const simpleDate = format(date, "yyyy-MM-dd");
-      
-      const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { date: simpleDate },
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (error) throw new Error(error.message || "Error de conexión con el motor");
-      if (data && data.ok === false) throw new Error(data.message || "Error lógico en el motor");
-
-      setLastResult({
-        success: true,
-        message: data.message,
-        details: data 
-      });
-
-      if (data.generated > 0) {
-        toast({ title: "Éxito", description: `Se crearon ${data.generated} tareas nuevas.`, className: "bg-green-50 text-green-800" });
-      } else {
-        toast({ title: "Proceso completado", description: "No se generaron tareas nuevas (ver detalles).", variant: "default" });
-      }
-      
-      if (simpleDate === getLocalDate()) fetchMetrics();
-
-    } catch (error: any) {
-      setDebugError(error.message);
-      toast({ variant: "destructive", title: "Error", description: "Fallo en la ejecución." });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const runNightlyClose = async () => {
-    setIsClosing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-
-      const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
+      const simpleDate = format(date, "yyyy-MM-dd");
+      
+      const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
+        body: { date: simpleDate, triggered_by: 'manual_admin', force: true }, // Force permite re-ejecutar manualmente
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      if (error) throw error;
+      if (error) throw new Error(error.message);
+      if (data && data.ok === false) throw new Error(data.message);
 
       toast({ 
-        title: "Cierre Ejecutado", 
-        description: data.message || `Se marcaron ${data.updated} tareas como incumplidas.`,
-        className: "bg-blue-50 text-blue-900 border-blue-200"
+        title: "Proceso Finalizado", 
+        description: data.message || `Generación completada para ${simpleDate}.` 
       });
       
-      fetchMetrics();
+      fetchAllData();
 
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error en Cierre", description: error.message });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
-      setIsClosing(false);
+      setIsLoading(false);
     }
   };
 
@@ -149,9 +132,9 @@ export default function CommandCenter() {
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-3xl font-bold tracking-tight">Centro de Mando</h2>
-            <p className="text-muted-foreground">Supervisión operativa y herramientas de administración.</p>
+            <p className="text-muted-foreground">Supervisión operativa y estado del sistema.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchMetrics} disabled={loadingMetrics}>
+          <Button variant="outline" size="sm" onClick={fetchAllData} disabled={loadingMetrics}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loadingMetrics ? 'animate-spin' : ''}`} />
             Actualizar Datos
           </Button>
@@ -159,142 +142,136 @@ export default function CommandCenter() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
-        {/* Generador de Tareas */}
-        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-primary">
-              <Play className="w-5 h-5" />
-              Motor de Tareas
+        
+        {/* MONITOR DE AUTOMATIZACIÓN (NUEVO) */}
+        <Card className="border-blue-200 bg-blue-50/20 dark:bg-blue-900/10 h-full">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+              <ServerCog className="w-5 h-5" />
+              Generación Automática
             </CardTitle>
-            <CardDescription>Generación manual de tareas diarias.</CardDescription>
+            <CardDescription>Estado del proceso diario (05:00 AM)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingRun ? (
+              <div className="py-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500"/></div>
+            ) : lastRun ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Estado:</span>
+                  <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${
+                    lastRun.status === 'success' ? 'bg-green-100 text-green-700 border-green-200' :
+                    lastRun.status === 'running' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
+                    'bg-red-100 text-red-700 border-red-200'
+                  }`}>
+                    {lastRun.status === 'success' && <CheckCircle2 className="w-3 h-3"/>}
+                    {lastRun.status === 'running' && <Loader2 className="w-3 h-3 animate-spin"/>}
+                    {lastRun.status === 'failed' && <AlertTriangle className="w-3 h-3"/>}
+                    {lastRun.status}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground bg-background/50 p-2 rounded border">
+                  <div>
+                    <span className="block opacity-70">Tareas creadas</span>
+                    <span className="font-mono text-sm font-medium text-foreground">{lastRun.tasks_created}</span>
+                  </div>
+                  <div>
+                    <span className="block opacity-70">Hora inicio</span>
+                    <span className="font-mono text-foreground">
+                      {format(new Date(lastRun.started_at), 'HH:mm:ss')}
+                    </span>
+                  </div>
+                </div>
+
+                {lastRun.error_message && (
+                  <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded border border-red-100">
+                    {lastRun.error_message}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <Clock className="w-8 h-8 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  Aún no se ha ejecutado hoy.<br/>
+                  <span className="text-xs opacity-70">Programado para 05:00 AM</span>
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Generador Manual */}
+        <Card className="h-full">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <Play className="w-5 h-5" />
+              Ejecución Manual
+            </CardTitle>
+            <CardDescription>Forzar generación para una fecha.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Fecha a procesar:</label>
+            <div className="flex gap-2">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant={"outline"}
-                    className={cn("w-full justify-start text-left font-normal bg-background", !date && "text-muted-foreground")}
+                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "PPP", { locale: es }) : <span>Seleccionar fecha</span>}
+                    {date ? format(date, "P", { locale: es }) : <span>Fecha</span>}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
                   <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
                 </PopoverContent>
               </Popover>
+              
+              <Button onClick={runTaskEngine} disabled={isLoading || !date} className="w-[120px]">
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generar"}
+              </Button>
             </div>
-
-            <Button className="w-full" onClick={runTaskEngine} disabled={isLoading || !date}>
-              {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Procesando...</> : "Generar Tareas"}
-            </Button>
-
-            {lastResult && (
-              <div className="mt-3 p-3 rounded-md bg-white dark:bg-slate-900 border shadow-sm text-sm space-y-2 animate-in fade-in">
-                <div className="flex items-center gap-2 font-medium text-green-700 dark:text-green-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  {lastResult.message}
-                </div>
-                
-                {lastResult.details?.diagnosis && (
-                  <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded text-xs text-slate-600 dark:text-slate-300 space-y-1 border border-slate-100 dark:border-slate-700">
-                    <div className="flex justify-between border-b dark:border-slate-600 pb-1 mb-1">
-                      <span>Total Asignaciones:</span>
-                      <strong>{lastResult.details.diagnosis.total_asignaciones}</strong>
-                    </div>
-                    {lastResult.details.diagnosis.razones_omitidas.no_toca_hoy > 0 && (
-                      <div className="flex justify-between text-orange-600 dark:text-orange-400">
-                        <span>No programadas hoy:</span>
-                        <span>{lastResult.details.diagnosis.razones_omitidas.no_toca_hoy}</span>
-                      </div>
-                    )}
-                    {lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv > 0 && (
-                      <div className="flex justify-between text-red-600 dark:text-red-400 font-bold">
-                        <span>Sin responsable (PDV):</span>
-                        <span>{lastResult.details.diagnosis.razones_omitidas.sin_responsable_pdv}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {debugError && (
-              <div className="mt-2 p-2 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 text-xs rounded border border-red-200 dark:border-red-800">
-                <strong>Error:</strong> {debugError}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Cierre Nocturno */}
-        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 h-full">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-primary">
-              <Moon className="w-5 h-5" />
-              Cierre de Día
-            </CardTitle>
-            <CardDescription>Marca como "Incumplidas" las tareas vencidas.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="text-sm p-3 rounded border bg-background/50 border-primary/10 text-muted-foreground">
-              <p>Este proceso corre automáticamente a las 23:59. Úsalo aquí para forzar el cierre de tareas pendientes de días anteriores.</p>
-            </div>
-            
-            <Button 
-              className="w-full" 
-              onClick={runNightlyClose} 
-              disabled={isClosing}
-            >
-              {isClosing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cerrando...</> : "Ejecutar Cierre Ahora"}
-            </Button>
+            <p className="text-xs text-muted-foreground">
+              Nota: Usar esto forzará la regeneración incluso si ya existe una corrida exitosa para la fecha seleccionada.
+            </p>
           </CardContent>
         </Card>
 
         {/* Stats */}
         <div className="flex flex-col gap-4">
-          <Card className={`h-full ${metrics.incidencias > 0 ? "border-red-200 bg-red-50/30 dark:bg-red-900/10 dark:border-red-800" : ""}`}>
-            <CardHeader>
+          <Card className={`h-full ${metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}`}>
+            <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
-                Incidencias Hoy
+                Incidencias
               </CardTitle>
-              <CardDescription>Rechazos, vencimientos y tareas críticas.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600 dark:text-red-400" : ""}`}>
+              <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600" : ""}`}>
                 {metrics.incidencias}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {metrics.incidencias === 0 ? "Sin problemas detectados" : "Requieren atención inmediata"}
+                Tareas críticas o vencidas hoy.
               </p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
+          <Card className="h-full">
+            <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-green-500" />
-                Cumplimiento Hoy
+                Avance Diario
               </CardTitle>
-              <CardDescription>Avance de la operación diaria.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-baseline gap-2">
                 <div className="text-4xl font-bold">{metrics.porcentaje}%</div>
-                <span className="text-sm text-muted-foreground">completado</span>
+                <span className="text-sm text-muted-foreground">/ 100%</span>
               </div>
               <div className="w-full bg-secondary h-2 rounded-full mt-2 overflow-hidden">
-                <div 
-                  className="bg-green-500 h-full transition-all duration-500" 
-                  style={{ width: `${metrics.porcentaje}%` }} 
-                />
+                <div className="bg-green-500 h-full transition-all duration-500" style={{ width: `${metrics.porcentaje}%` }} />
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {metrics.completadasHoy} de {metrics.totalHoy} tareas finalizadas
-              </p>
             </CardContent>
           </Card>
         </div>
