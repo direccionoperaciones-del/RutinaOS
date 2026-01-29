@@ -4,11 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { MultiSelect } from "@/components/ui/multi-select"; // Asumiendo que existe o usaremos un select múltiple nativo
 import { RoutineFormValues } from "../routine-schema";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldCheck } from "lucide-react";
 
-// Componente simple de MultiSelect si no tienes uno en UI kit
+// Componente simple de MultiSelect
 const SimpleMultiSelect = ({ options, value, onChange }: any) => {
   return (
     <div className="grid grid-cols-2 gap-2 mt-2">
@@ -63,6 +62,30 @@ export function RoutineRequirementsTab({ form }: RoutineRequirementsTabProps) {
     <div className="space-y-4 py-4">
       <div className="grid grid-cols-1 gap-4 border p-4 rounded-md">
         
+        {/* AUDITORÍA (NUEVO) */}
+        <div className="bg-blue-50/50 p-3 rounded-md border border-blue-100 mb-2">
+          <FormField
+            control={form.control}
+            name="requiere_auditoria"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    Requiere Auditoría Manual
+                  </FormLabel>
+                  <FormDescription>
+                    Si se desactiva, la tarea se aprobará automáticamente al completarse.
+                  </FormDescription>
+                </div>
+              </FormItem>
+            )}
+          />
+        </div>
+
         {/* GPS */}
         <FormField
           control={form.control}

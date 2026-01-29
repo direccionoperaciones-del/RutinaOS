@@ -68,7 +68,7 @@ serve(async (req) => {
       .from('task_instances')
       .select(`
         *,
-        routine_templates (gps_obligatorio),
+        routine_templates (gps_obligatorio, requiere_auditoria),
         pdv (latitud, longitud, radio_gps)
       `)
       .eq('id', taskId)
@@ -160,8 +160,28 @@ serve(async (req) => {
         if (invError) throw new Error(`Inventory error: ${invError.message}`)
     }
 
-    // 7.2 Task Instance Update with Security Metadata
-    const nextAuditStatus = task.audit_status === 'rechazado' ? 'pendiente' : task.audit_status;
+    // 7.2 LOGICA AUDITORIA AUTOMÁTICA
+    // Si la rutina NO requiere auditoría, se auto-aprueba
+    let nextAuditStatus = task.audit_status;
+    let auditAt = task.audit_at;
+    let auditNotas = task.audit_notas;
+    let auditBy = task.audit_by;
+
+    const requiresAudit = routine.requiere_auditoria ?? true; // Default true por seguridad
+
+    // Si la tarea fue rechazada, SIEMPRE vuelve a pendiente para que el auditor verifique la corrección
+    if (task.audit_status === 'rechazado') {
+        nextAuditStatus = 'pendiente';
+    } else if (!requiresAudit) {
+        // Flujo normal auto-aprobado
+        nextAuditStatus = 'aprobado';
+        auditAt = new Date().toISOString();
+        auditNotas = 'Aprobación automática por sistema (Configuración de rutina)';
+        // auditBy se deja nulo o se podría poner un ID de sistema si existiera
+    } else {
+        // Flujo normal con auditoría
+        nextAuditStatus = 'pendiente';
+    }
     
     const updatePayload = {
         estado: newStatus,
@@ -172,8 +192,11 @@ serve(async (req) => {
         gps_en_rango: gps_en_rango,
         comentario: comments,
         audit_status: nextAuditStatus,
-        submission_ip: clientIp, // <-- Added Audit Field
-        gps_accuracy: gpsData?.accuracy // <-- Added Audit Field
+        audit_at: auditAt,
+        audit_notas: auditNotas,
+        audit_by: auditBy,
+        submission_ip: clientIp,
+        gps_accuracy: gpsData?.accuracy
     }
 
     const { error: updateError } = await supabase

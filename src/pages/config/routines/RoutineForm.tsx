@@ -38,6 +38,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       corte_2_limite: 30,
       vencimiento_dia_mes: 5,
       fechas_especificas: [],
+      requiere_auditoria: true, // Por defecto requiere auditoría
       gps_obligatorio: false,
       fotos_obligatorias: false,
       min_fotos: 0,
@@ -66,11 +67,15 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         corte_2_limite: routineToEdit.corte_2_limite || 30,
         vencimiento_dia_mes: routineToEdit.vencimiento_dia_mes || 5,
         fechas_especificas: routineToEdit.fechas_especificas || [],
+        
+        // Cargar flag de auditoría (si existe, sino true)
+        requiere_auditoria: routineToEdit.requiere_auditoria ?? true,
+        
         gps_obligatorio: routineToEdit.gps_obligatorio,
         fotos_obligatorias: routineToEdit.fotos_obligatorias,
         min_fotos: routineToEdit.min_fotos,
         requiere_inventario: routineToEdit.requiere_inventario,
-        categorias_ids: routineToEdit.categorias_ids || [], // Cargar array
+        categorias_ids: routineToEdit.categorias_ids || [], 
         comentario_obligatorio: routineToEdit.comentario_obligatorio,
         archivo_obligatorio: routineToEdit.archivo_obligatorio,
         enviar_email: routineToEdit.enviar_email,
@@ -91,6 +96,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         corte_2_limite: 30,
         vencimiento_dia_mes: 5,
         fechas_especificas: [],
+        requiere_auditoria: true,
         gps_obligatorio: false,
         fotos_obligatorias: false,
         min_fotos: 0,
