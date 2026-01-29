@@ -6,7 +6,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Moon, ServerCog, Clock } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ServerCog, Clock, Moon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -14,14 +14,12 @@ export default function CommandCenter() {
   const { toast } = useToast();
   const [date, setDate] = useState<Date | undefined>(new Date());
   
-  // States Generador Manual
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingGen, setIsLoadingGen] = useState(false);
+  const [isLoadingClose, setIsLoadingClose] = useState(false);
   
-  // State Monitor Automático
   const [lastRun, setLastRun] = useState<any>(null);
   const [loadingRun, setLoadingRun] = useState(false);
 
-  // States Metrics
   const [metrics, setMetrics] = useState({
     incidencias: 0,
     totalHoy: 0,
@@ -73,7 +71,6 @@ export default function CommandCenter() {
   const fetchLastRun = async () => {
     setLoadingRun(true);
     try {
-      // Buscar la ejecución de HOY
       const today = getLocalDate();
       const { data, error } = await supabase
         .from('task_generation_runs')
@@ -97,7 +94,7 @@ export default function CommandCenter() {
 
   const runTaskEngine = async () => {
     if (!date) return;
-    setIsLoading(true);
+    setIsLoadingGen(true);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -105,7 +102,7 @@ export default function CommandCenter() {
       const simpleDate = format(date, "yyyy-MM-dd");
       
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { date: simpleDate, triggered_by: 'manual_admin', force: true }, // Force permite re-ejecutar manualmente
+        body: { date: simpleDate, triggered_by: 'manual_admin', force: true },
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -113,8 +110,8 @@ export default function CommandCenter() {
       if (data && data.ok === false) throw new Error(data.message);
 
       toast({ 
-        title: "Proceso Finalizado", 
-        description: data.message || `Generación completada para ${simpleDate}.` 
+        title: "Generación Finalizada", 
+        description: data.message || `Tareas generadas para ${simpleDate}.` 
       });
       
       fetchAllData();
@@ -122,7 +119,34 @@ export default function CommandCenter() {
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
-      setIsLoading(false);
+      setIsLoadingGen(false);
+    }
+  };
+
+  const runDayClose = async () => {
+    if (!confirm("¿Seguro que deseas cerrar el día? Esto marcará como INCUMPLIDAS todas las tareas pendientes vencidas.")) return;
+    
+    setIsLoadingClose(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (error) throw new Error(error.message);
+      
+      toast({ 
+        title: "Cierre Completado", 
+        description: data.message || "Las tareas vencidas han sido marcadas." 
+      });
+      
+      fetchAllData();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al cerrar", description: error.message });
+    } finally {
+      setIsLoadingClose(false);
     }
   };
 
@@ -143,14 +167,14 @@ export default function CommandCenter() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
         
-        {/* MONITOR DE AUTOMATIZACIÓN (NUEVO) */}
+        {/* MONITOR DE AUTOMATIZACIÓN */}
         <Card className="border-blue-200 bg-blue-50/20 dark:bg-blue-900/10 h-full">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
               <ServerCog className="w-5 h-5" />
-              Generación Automática
+              Monitor Automático
             </CardTitle>
-            <CardDescription>Estado del proceso diario (05:00 AM)</CardDescription>
+            <CardDescription>Generación diaria (05:00 AM)</CardDescription>
           </CardHeader>
           <CardContent>
             {loadingRun ? (
@@ -183,58 +207,71 @@ export default function CommandCenter() {
                     </span>
                   </div>
                 </div>
-
-                {lastRun.error_message && (
-                  <div className="text-[10px] text-red-600 bg-red-50 p-2 rounded border border-red-100">
-                    {lastRun.error_message}
-                  </div>
-                )}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <Clock className="w-8 h-8 text-muted-foreground/30 mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  Aún no se ha ejecutado hoy.<br/>
-                  <span className="text-xs opacity-70">Programado para 05:00 AM</span>
+                  Aún no se ha ejecutado hoy.
                 </p>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Generador Manual */}
+        {/* ACCIONES MANUALES */}
         <Card className="h-full">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2">
               <Play className="w-5 h-5" />
-              Ejecución Manual
+              Acciones Manuales
             </CardTitle>
-            <CardDescription>Forzar generación para una fecha.</CardDescription>
+            <CardDescription>Control de emergencia y cierres.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "P", { locale: es }) : <span>Fecha</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-                </PopoverContent>
-              </Popover>
-              
-              <Button onClick={runTaskEngine} disabled={isLoading || !date} className="w-[120px]">
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generar"}
-              </Button>
+          <CardContent className="space-y-6">
+            
+            {/* Generar Tareas */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">1. Generación de Tareas</span>
+              <div className="flex gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={"outline"}
+                      size="sm"
+                      className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {date ? format(date, "P", { locale: es }) : <span>Fecha</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                  </PopoverContent>
+                </Popover>
+                
+                <Button onClick={runTaskEngine} disabled={isLoadingGen || !date} size="sm" className="w-[100px]">
+                  {isLoadingGen ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generar"}
+                </Button>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Nota: Usar esto forzará la regeneración incluso si ya existe una corrida exitosa para la fecha seleccionada.
-            </p>
+
+            <div className="border-t"></div>
+
+            {/* Cierre de Día */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Cierre de Operación</span>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-muted-foreground flex-1">
+                  Marca como <strong>incumplidas</strong> las tareas pendientes vencidas.
+                </p>
+                <Button onClick={runDayClose} disabled={isLoadingClose} size="sm" variant="secondary" className="border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700">
+                  {isLoadingClose ? <Loader2 className="w-4 h-4 animate-spin" /> : <Moon className="w-4 h-4 mr-2" />}
+                  Cerrar Día
+                </Button>
+              </div>
+            </div>
+
           </CardContent>
         </Card>
 
