@@ -57,12 +57,15 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
 
   const isTaskPending = task?.estado === 'pendiente' || task?.estado === 'en_proceso';
   const isTaskCompleted = !isTaskPending;
+  
+  // Lógica crítica de permisos
   const isRejected = task?.audit_status === 'rechazado';
-  const isExecutor = user?.id === task?.completado_por;
+  const isExecutor = user?.id === task?.completado_por || user?.id === task?.responsable_id; // Permitir al responsable también corregir
   
   const userRole = profile?.role || '';
-  const canEditAsAdmin = ['director', 'lider', 'auditor'].includes(userRole);
+  const canEditAsAdmin = ['director', 'lider'].includes(userRole); // Lideres pueden editar cualquier cosa si es necesario
   
+  // Habilitar edición si: (Está pendiente) O (Fue rechazada Y soy el ejecutor) O (Soy admin)
   const canPerformAction = isTaskPending || (isRejected && isExecutor) || canEditAsAdmin;
 
   const schema: TaskField[] = useMemo(() => {
@@ -228,7 +231,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <Badge variant="outline" className="capitalize text-[10px]">{routine.prioridad}</Badge>
                 <span className="text-xs text-muted-foreground">{task.fecha_programada}</span>
-                {isTaskCompleted && <Badge variant="secondary" className="bg-green-100 text-green-800 text-[10px]">Completada</Badge>}
+                {isTaskCompleted && !isRejected && <Badge variant="secondary" className="bg-green-100 text-green-800 text-[10px]">Completada</Badge>}
+                {isRejected && <Badge variant="destructive" className="text-[10px]">Rechazada</Badge>}
               </div>
               <DialogTitle className="text-lg leading-tight">{routine.nombre}</DialogTitle>
               <DialogDescription className="line-clamp-2 text-xs mt-1">{routine.descripcion}</DialogDescription>
@@ -252,15 +256,16 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
               </div>
               
               {task.audit_notas && (
-                <div className="text-sm bg-white/50 p-3 rounded border border-black/5 mt-2">
+                <div className="text-sm bg-white/70 p-3 rounded border border-black/5 mt-2">
                   <span className="font-semibold text-xs text-muted-foreground block mb-1 uppercase">Nota del Auditor:</span>
-                  <p className="text-slate-800">{task.audit_notas}</p>
+                  <p className="text-slate-900 font-medium">{task.audit_notas}</p>
                 </div>
               )}
 
-              {task.audit_status === 'rechazado' && isTaskCompleted && (
-                <div className="mt-3 text-xs text-red-700 font-medium">
-                  * Por favor corrige la información y vuelve a guardar para enviar a revisión.
+              {isRejected && isExecutor && (
+                <div className="mt-3 text-xs text-red-700 font-bold flex items-center gap-2">
+                  <RefreshCw className="w-3 h-3" />
+                  Se han habilitado los campos para que realices las correcciones solicitadas.
                 </div>
               )}
             </div>
@@ -272,7 +277,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
             <div className="py-10 text-center text-destructive"><AlertCircle className="w-8 h-8 mx-auto mb-2"/>{initError}</div>
           ) : (
             <div className={`space-y-6 pb-4 ${!canPerformAction ? 'opacity-80 pointer-events-none' : ''}`}>
-              {!canPerformAction && <div className="bg-muted p-3 rounded text-sm text-center text-muted-foreground">Solo lectura (Sin permisos de edición).</div>}
+              {!canPerformAction && (
+                <div className="bg-muted p-3 rounded text-sm text-center text-muted-foreground border border-dashed">
+                  Solo lectura (Sin permisos de edición).
+                </div>
+              )}
               {schema.map(field => renderField(field))}
             </div>
           )}

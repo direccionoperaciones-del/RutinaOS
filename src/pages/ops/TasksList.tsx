@@ -12,7 +12,7 @@ import {
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
   Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
-  CheckCircle2, X, Eye, Trash2, Ban
+  CheckCircle2, X, Eye, Trash2, Ban, AlertTriangle
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -48,6 +48,7 @@ const getStatusBadge = (task: any) => {
   const deadline = calculateTaskDeadline(task);
   const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
+  if (task.audit_status === 'rechazado') return <Badge className="bg-red-600 text-white border-red-700 animate-pulse">RECHAZADA</Badge>;
   if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200 hover:bg-green-100">A Tiempo</Badge>;
   if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100">Vencida</Badge>;
   if (task.estado === 'incumplida') return <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100">Incumplida</Badge>;
@@ -61,14 +62,15 @@ const getStatusBadge = (task: any) => {
 const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction: (t: any) => void, onCancel: (t: any) => void, canCancel: boolean }) => {
   const r = task.routine_templates || {};
   const styles = getPriorityStyles(task.prioridad_snapshot);
-  const isDone = task.estado.startsWith('completada') || task.estado === 'incumplida';
+  const isRejected = task.audit_status === 'rechazado';
+  const isDone = (task.estado.startsWith('completada') || task.estado === 'incumplida') && !isRejected;
   const isCancelled = task.estado === 'cancelada';
   
   const deadline = calculateTaskDeadline(task);
   const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
   return (
-    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : styles.border}`}>
+    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : (isRejected ? 'border-l-red-600 border-red-200 bg-red-50/20' : styles.border)}`}>
       <CardHeader className="p-3 pb-1 space-y-1"> 
         <div className="flex justify-between items-start">
           <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${isCancelled ? 'bg-gray-500 border-gray-600' : styles.badge}`}>
@@ -80,9 +82,9 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
               <ShieldCheck className="w-3 h-3" /> Aprobada
             </Badge>
           )}
-          {task.audit_status === 'rechazado' && (
-            <Badge className="bg-red-500 text-white border-red-600 gap-1 px-1.5 text-[10px]">
-              <ShieldAlert className="w-3 h-3" /> Rechazada
+          {isRejected && (
+            <Badge className="bg-red-600 text-white border-red-700 gap-1 px-1.5 text-[10px] animate-pulse">
+              <ShieldAlert className="w-3 h-3" /> Corregir
             </Badge>
           )}
           {(!task.audit_status || task.audit_status === 'pendiente') && !isCancelled && (
@@ -141,30 +143,28 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
       <CardFooter className="p-2 bg-muted/10 flex gap-1">
         {!isCancelled && (
           <Button 
-            className="flex-1 h-8 text-xs shadow-sm hover:shadow transition-all" 
-            variant={isDone ? (task.audit_status === 'rechazado' ? "destructive" : "secondary") : "default"}
+            className={`flex-1 h-8 text-xs shadow-sm hover:shadow transition-all ${isRejected ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
+            variant={isDone ? "secondary" : "default"}
             size="sm"
             onClick={() => onAction(task)}
           >
-            {isDone ? (
-              task.audit_status === 'rechazado' ? (
-                <><RefreshCw className="w-3 h-3 mr-1.5" /> Corregir Tarea</>
-              ) : (
+            {isRejected ? (
+                <><RefreshCw className="w-3 h-3 mr-1.5" /> Corregir</>
+            ) : isDone ? (
                 <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
-              )
             ) : (
               <><ArrowRight className="w-3 h-3 ml-1.5" /> Ejecutar</>
             )}
           </Button>
         )}
         
-        {canCancel && !isDone && !isCancelled && (
+        {canCancel && !isDone && !isCancelled && !isRejected && (
           <Button 
             variant="ghost" 
             size="sm" 
             className="h-8 w-8 px-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
             onClick={() => onCancel(task)}
-            title="Cancelar Tarea (Director/Líder)"
+            title="Cancelar Tarea"
           >
             <Ban className="w-4 h-4" />
           </Button>
@@ -206,18 +206,27 @@ const SegmentedProgressBar = ({
   onTime, 
   late, 
   missed, 
-  pending 
+  pending,
+  rejected
 }: { 
   total: number, 
   onTime: number, 
   late: number, 
   missed: number, 
-  pending: number 
+  pending: number,
+  rejected: number
 }) => {
+  // Ajustamos el total para incluir rechazadas en el cálculo si es necesario, 
+  // pero generalmente son un subconjunto de "completadas" que requieren acción.
+  // Visualmente vamos a separar "Rechazadas" como una categoría urgente.
+  
+  // % Completado global (incluye a tiempo + vencidas + rechazadas, ya que se ejecutaron)
+  const totalCompletedPct = total > 0 ? Math.round(((onTime + late + rejected) / total) * 100) : 0;
+
   const pctOnTime = total > 0 ? (onTime / total) * 100 : 0;
   const pctLate = total > 0 ? (late / total) * 100 : 0;
+  const pctRejected = total > 0 ? (rejected / total) * 100 : 0;
   const pctMissed = total > 0 ? (missed / total) * 100 : 0;
-  const totalCompletedPct = total > 0 ? Math.round(((onTime + late) / total) * 100) : 0;
 
   return (
     <div className="bg-card border rounded-xl p-5 shadow-sm mb-6">
@@ -234,12 +243,20 @@ const SegmentedProgressBar = ({
       </div>
 
       <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
-        <div style={{ width: `${pctOnTime}%` }} className="bg-emerald-500 h-full transition-all duration-700 ease-out hover:bg-emerald-400" title={`A Tiempo: ${onTime}`} />
-        <div style={{ width: `${pctLate}%` }} className="bg-amber-500 h-full transition-all duration-700 ease-out hover:bg-amber-400" title={`Vencidas: ${late}`} />
-        <div style={{ width: `${pctMissed}%` }} className="bg-rose-500 h-full transition-all duration-700 ease-out hover:bg-rose-400" title={`Incumplidas: ${missed}`} />
+        <div style={{ width: `${pctOnTime}%` }} className="bg-emerald-500 h-full hover:bg-emerald-400 transition-all" title={`A Tiempo: ${onTime}`} />
+        <div style={{ width: `${pctLate}%` }} className="bg-amber-500 h-full hover:bg-amber-400 transition-all" title={`Vencidas: ${late}`} />
+        <div style={{ width: `${pctRejected}%` }} className="bg-red-600 h-full hover:bg-red-500 transition-all animate-pulse" title={`Rechazadas: ${rejected}`} />
+        <div style={{ width: `${pctMissed}%` }} className="bg-gray-400 h-full hover:bg-gray-300 transition-all" title={`Incumplidas: ${missed}`} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-3 border-t border-dashed">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-4 pt-3 border-t border-dashed">
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-600 shrink-0 animate-pulse" />
+          <div className="flex flex-col leading-none">
+            <span className="text-xs font-bold text-red-700">Rechazadas</span>
+            <span className="text-[10px] text-muted-foreground">{rejected} tareas</span>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
           <div className="flex flex-col leading-none">
@@ -255,7 +272,7 @@ const SegmentedProgressBar = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-rose-500 shrink-0" />
+          <div className="w-3 h-3 rounded-full bg-gray-400 shrink-0" />
           <div className="flex flex-col leading-none">
             <span className="text-xs font-semibold text-foreground">Incumplidas</span>
             <span className="text-[10px] text-muted-foreground">{missed} tareas</span>
@@ -284,6 +301,9 @@ export default function TasksList() {
   const [dateTo, setDateTo] = useState<string>("");
   const [activeAbsence, setActiveAbsence] = useState<any>(null);
   
+  // Pestaña activa por defecto
+  const [activeTab, setActiveTab] = useState("pending");
+
   useEffect(() => { const today = getLocalDate(); setDateFrom(today); setDateTo(today); }, []);
   
   useEffect(() => {
@@ -313,10 +333,25 @@ export default function TasksList() {
   });
 
   const canCancel = ['director', 'lider'].includes(profile?.role || '');
-  const activeTasks = filteredTasks.filter(t => t.estado !== 'cancelada');
-  const pendingTasks = activeTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
-  const completedTasks = activeTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
+  
+  // CLASIFICACIÓN DE TAREAS
+  const rejectedTasks = filteredTasks.filter(t => t.audit_status === 'rechazado');
+  const activeTasks = filteredTasks.filter(t => t.estado !== 'cancelada'); // Todas menos canceladas
+  
+  // Pendientes: No completadas Y NO rechazadas (las rechazadas van a su propia pestaña)
+  const pendingTasks = activeTasks.filter(t => (t.estado === 'pendiente' || t.estado === 'en_proceso') && t.audit_status !== 'rechazado');
+  
+  // Completadas: Ya terminadas (éxito o falla) Y NO rechazadas
+  const completedTasks = activeTasks.filter(t => (t.estado.startsWith('completada') || t.estado === 'incumplida') && t.audit_status !== 'rechazado');
+  
   const cancelledTasks = filteredTasks.filter(t => t.estado === 'cancelada');
+
+  // Si hay rechazadas y no hemos cambiado de tab manualmente, sugerir ir a rechazadas
+  useEffect(() => {
+    if (rejectedTasks.length > 0 && activeTab === 'pending') {
+      // Opcional: Podríamos forzar el cambio, pero mejor solo mostramos la alerta visual
+    }
+  }, [rejectedTasks.length]);
 
   const stats = useMemo(() => {
     return {
@@ -324,12 +359,13 @@ export default function TasksList() {
       onTime: activeTasks.filter(t => t.estado === 'completada_a_tiempo' || t.estado === 'completada').length,
       late: activeTasks.filter(t => t.estado === 'completada_vencida').length,
       missed: activeTasks.filter(t => t.estado === 'incumplida').length,
-      pending: activeTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length
+      pending: pendingTasks.length,
+      rejected: rejectedTasks.length
     };
-  }, [activeTasks]);
+  }, [activeTasks, pendingTasks, rejectedTasks]);
 
   const todayStr = getLocalDate();
-  const showCongratulation = stats.total > 0 && stats.pending === 0 && dateTo <= todayStr && !activeAbsence; 
+  const showCongratulation = stats.total > 0 && stats.pending === 0 && stats.rejected === 0 && dateTo <= todayStr && !activeAbsence; 
 
   const clearFilters = () => { const today = getLocalDate(); setDateFrom(today); setDateTo(today); setSelectedPdvs([]); setSelectedRoutines([]); setSelectedUsers([]); };
   const hasActiveFilters = selectedPdvs.length > 0 || selectedRoutines.length > 0 || selectedUsers.length > 0;
@@ -371,6 +407,20 @@ export default function TasksList() {
         </div>
       </div>
 
+      {/* ALERTA DE TAREAS RECHAZADAS */}
+      {stats.rejected > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 animate-pulse cursor-pointer shadow-sm hover:shadow-md transition-all" onClick={() => setActiveTab('rejected')}>
+          <div className="bg-red-100 p-2 rounded-full text-red-600 shrink-0">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <div className="flex-1">
+            <h4 className="font-bold text-red-900 text-lg">Tienes {stats.rejected} tarea(s) rechazada(s)</h4>
+            <p className="text-red-800 text-sm">Requieren tu atención inmediata para corrección.</p>
+          </div>
+          <ArrowRight className="text-red-400" />
+        </div>
+      )}
+
       {activeAbsence && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-2">
           <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0"><Coffee className="w-6 h-6" /></div>
@@ -390,10 +440,7 @@ export default function TasksList() {
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          {/* LAYOUT GRID RESPONSIVE: DateRange col-span-2 en desktop, col-span-1 en móvil */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-            
-            {/* Componente Reutilizable de Fechas */}
             <DateRangePicker 
               dateFrom={dateFrom}
               setDateFrom={setDateFrom}
@@ -401,7 +448,6 @@ export default function TasksList() {
               setDateTo={setDateTo}
               className="col-span-1 md:col-span-2 lg:col-span-2"
             />
-
             <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
             <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>
             {profile?.role !== 'administrador' && (<div className="space-y-1 w-full min-w-0"><Label className="text-xs">Usuarios</Label><MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" /></div>)}
@@ -416,6 +462,7 @@ export default function TasksList() {
         late={stats.late} 
         missed={stats.missed} 
         pending={stats.pending} 
+        rejected={stats.rejected}
       />
 
       {showCongratulation && !isLoading && (
@@ -431,20 +478,38 @@ export default function TasksList() {
 
       {error && <div className="p-4 rounded border border-red-200 bg-red-50 text-red-700 flex items-center gap-2"><AlertCircle className="w-5 h-5" /><span>Error cargando tareas.</span></div>}
 
-      <Tabs defaultValue="pending" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
-          <TabsTrigger value="all">Todas ({activeTasks.length})</TabsTrigger>
-          <TabsTrigger value="pending">Pendientes ({pendingTasks.length})</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsTrigger value="pending">Pendientes ({stats.pending})</TabsTrigger>
+          <TabsTrigger value="rejected" className="data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:font-bold text-red-600 dark:text-red-400">
+            Rechazadas ({stats.rejected})
+          </TabsTrigger>
           <TabsTrigger value="completed">Realizadas ({completedTasks.length})</TabsTrigger>
-          {cancelledTasks.length > 0 && canCancel && (
-            <TabsTrigger value="cancelled" className="data-[state=active]:bg-red-50 data-[state=active]:text-red-700">Canceladas ({cancelledTasks.length})</TabsTrigger>
-          )}
+          <TabsTrigger value="all">Todas ({activeTasks.length})</TabsTrigger>
         </TabsList>
-        <TabsContent value="all" className="mt-0"><TaskGrid items={activeTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} /></TabsContent>
-        <TabsContent value="pending" className="mt-0"><TaskGrid items={pendingTasks} loading={isLoading} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} /></TabsContent>
-        <TabsContent value="completed" className="mt-0"><TaskGrid items={completedTasks} loading={isLoading} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} /></TabsContent>
-        {canCancel && (
-          <TabsContent value="cancelled" className="mt-0"><TaskGrid items={cancelledTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas canceladas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} /></TabsContent>
+
+        <TabsContent value="pending" className="mt-0">
+          <TaskGrid items={pendingTasks} loading={isLoading} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+        </TabsContent>
+        
+        <TabsContent value="rejected" className="mt-0">
+          <TaskGrid items={rejectedTasks} loading={isLoading} onRetry={refetch} emptyMessage="¡Excelente! No tienes tareas rechazadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} />
+        </TabsContent>
+
+        <TabsContent value="completed" className="mt-0">
+          <TaskGrid items={completedTasks} loading={isLoading} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+        </TabsContent>
+        
+        <TabsContent value="all" className="mt-0">
+          <TaskGrid items={activeTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+        </TabsContent>
+        
+        {/* Pestaña oculta para canceladas, solo accesible si se cambia la lógica de tabs o se agrega un filtro específico en el futuro */}
+        {cancelledTasks.length > 0 && canCancel && activeTab === 'all' && (
+           <div className="mt-8 pt-8 border-t">
+             <h3 className="text-sm font-medium text-muted-foreground mb-4">Tareas Canceladas</h3>
+             <TaskGrid items={cancelledTasks} loading={isLoading} onRetry={refetch} emptyMessage="" onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} />
+           </div>
         )}
       </Tabs>
 
