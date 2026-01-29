@@ -2,9 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
 
-// ¡IMPORTANTE! Reemplaza esto con tu llave pública generada con: npx web-push generate-vapid-keys
-// O mejor, usa import.meta.env.VITE_VAPID_PUBLIC_KEY
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "BPl_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX_REPLACE_THIS_WITH_REAL_KEY"; 
+// INTENTA LEER LA VARIABLE DE ENTORNO O USA UN PLACEHOLDER SEGURO
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || ""; 
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -47,8 +46,8 @@ export function usePushSubscription() {
     setError(null);
 
     try {
-      if (!VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY.includes('REPLACE')) {
-        throw new Error("VAPID Public Key no configurada en el código.");
+      if (!VAPID_PUBLIC_KEY) {
+        throw new Error("VAPID Public Key no configurada. Revisa VITE_VAPID_PUBLIC_KEY en .env");
       }
 
       const registration = await navigator.serviceWorker.ready;
