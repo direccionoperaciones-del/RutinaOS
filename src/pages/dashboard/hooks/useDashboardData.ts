@@ -94,26 +94,26 @@ export const useDashboardData = () => {
         const myPdvIds = assignments?.map(a => a.pdv_id) || [];
         
         if (myPdvIds.length > 0) {
-          // El admin ve tareas de sus PDVs asignados O tareas que él haya completado (histórico)
           query = query.or(`pdv_id.in.(${myPdvIds.join(',')}),completado_por.eq.${user.id}`);
         } else {
-          // Si no tiene PDV, solo ve lo que haya completado él
           query = query.eq('completado_por', user.id);
         }
       } else if (selectedUsers.length > 0) {
-        // Para Directores/Líderes filtrando por usuario
         query = query.in('completado_por', selectedUsers);
       }
 
-      // --- FILTROS ADICIONALES ---
       if (selectedPdvs.length > 0) query = query.in('pdv_id', selectedPdvs);
       if (selectedRoutines.length > 0) query = query.in('rutina_id', selectedRoutines);
 
-      const { data: tasks, error } = await query;
+      const { data: rawTasks, error } = await query;
       
       if (error) throw error;
 
-      processData(tasks || []);
+      // FILTRO CRÍTICO: Excluir 'cancelada' de todos los cálculos de métricas
+      // Solo el rol director podría querer verlas en listas, pero para KPIs se excluyen
+      const activeTasks = (rawTasks || []).filter((t: any) => t.estado !== 'cancelada');
+
+      processData(activeTasks);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -134,8 +134,8 @@ export const useDashboardData = () => {
     // 2. Trends
     const groupedByDate = tasks.reduce((acc: any, curr) => {
       const d = curr.fecha_programada;
-      if (!acc[d]) acc[d] = { date: d, total: 0, completed: 0, pending: 0 };
-      acc[d].total++;
+      if (!acc[d]) acc[d] = { date: d, Total: 0, completed: 0, pending: 0 };
+      acc[d].Total++;
       if (curr.estado.startsWith('completada')) acc[d].completed++;
       if (curr.estado === 'pendiente') acc[d].pending++;
       return acc;
@@ -183,7 +183,6 @@ export const useDashboardData = () => {
       return acc;
     }, {});
     
-    // Fix: Explicitly cast to ChartDataPoint[] to resolve type error
     setRoutineData(Object.values(routineMap).sort((a:any, b:any) => b.fallas - a.fallas).slice(0, 8) as ChartDataPoint[]);
 
     // 6. Performance

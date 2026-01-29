@@ -14,12 +14,13 @@ import {
   User, Filter, Loader2, RefreshCw, AlertCircle,
   Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
   Calendar as CalendarIcon, CheckCircle2, X, Eye, 
-  CheckSquare, XCircle, AlertTriangle, Circle
+  Trash2, Ban
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
+import { CancelTaskModal } from "./components/CancelTaskModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
 import { getLocalDate, parseLocalDate, openDatePicker } from "@/lib/utils";
@@ -50,25 +51,27 @@ const getStatusBadge = (task: any) => {
   if (task.estado === 'completada_a_tiempo') return <Badge className="bg-green-100 text-green-700 border-green-200 hover:bg-green-100">A Tiempo</Badge>;
   if (task.estado === 'completada_vencida') return <Badge className="bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100">Vencida</Badge>;
   if (task.estado === 'incumplida') return <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100">Incumplida</Badge>;
+  if (task.estado === 'cancelada') return <Badge variant="outline" className="bg-gray-100 text-gray-600 border-gray-300">Cancelada</Badge>;
   
   if (isLate) return <Badge className="bg-red-50 text-red-600 border-red-100 animate-pulse hover:bg-red-50">¡Vencida!</Badge>;
   
   return <Badge className="bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200">Pendiente</Badge>;
 };
 
-const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void }) => {
+const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction: (t: any) => void, onCancel: (t: any) => void, canCancel: boolean }) => {
   const r = task.routine_templates || {};
   const styles = getPriorityStyles(task.prioridad_snapshot);
   const isDone = task.estado.startsWith('completada') || task.estado === 'incumplida';
+  const isCancelled = task.estado === 'cancelada';
   
   const deadline = calculateTaskDeadline(task);
   const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
   return (
-    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${styles.border}`}>
+    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : styles.border}`}>
       <CardHeader className="p-3 pb-1 space-y-1"> 
         <div className="flex justify-between items-start">
-          <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${styles.badge}`}>
+          <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${isCancelled ? 'bg-gray-500 border-gray-600' : styles.badge}`}>
             {task.prioridad_snapshot}
           </Badge>
           
@@ -82,7 +85,7 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
               <ShieldAlert className="w-3 h-3" /> Rechazada
             </Badge>
           )}
-          {(!task.audit_status || task.audit_status === 'pendiente') && (
+          {(!task.audit_status || task.audit_status === 'pendiente') && !isCancelled && (
              <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-medium bg-muted px-1.5 py-0 rounded-full">
                {getFrequencyIcon(r.frecuencia)}
                {r.frecuencia}
@@ -91,7 +94,7 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
         </div>
         
         <div>
-          <h3 className="font-bold text-base leading-tight line-clamp-2" title={r.nombre}>
+          <h3 className={`font-bold text-base leading-tight line-clamp-2 ${isCancelled ? 'line-through text-muted-foreground' : ''}`} title={r.nombre}>
             {r.nombre}
           </h3>
           <div className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground">
@@ -110,16 +113,24 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
           {getStatusBadge(task)}
         </div>
 
-        <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
-          {r.gps_obligatorio && <span title="GPS"><MapPin className="w-3 h-3 text-blue-500" /></span>}
-          {r.fotos_obligatorias && <span title="Fotos"><Camera className="w-3 h-3 text-purple-500" /></span>}
-          {r.requiere_inventario && <span title="Inventario"><Box className="w-3 h-3 text-orange-500" /></span>}
-          {r.comentario_obligatorio && <span title="Notas"><MessageSquareText className="w-3 h-3 text-yellow-500" /></span>}
-          {r.archivo_obligatorio && <span title="Archivo"><FileText className="w-3 h-3 text-cyan-500" /></span>}
-          {(r.enviar_email || r.responder_email) && <span title="Email"><Mail className="w-3 h-3 text-pink-500" /></span>}
-        </div>
+        {!isCancelled && (
+          <div className="flex gap-2 text-muted-foreground justify-center py-1.5 border-t border-b border-dashed border-gray-100">
+            {r.gps_obligatorio && <span title="GPS"><MapPin className="w-3 h-3 text-blue-500" /></span>}
+            {r.fotos_obligatorias && <span title="Fotos"><Camera className="w-3 h-3 text-purple-500" /></span>}
+            {r.requiere_inventario && <span title="Inventario"><Box className="w-3 h-3 text-orange-500" /></span>}
+            {r.comentario_obligatorio && <span title="Notas"><MessageSquareText className="w-3 h-3 text-yellow-500" /></span>}
+            {r.archivo_obligatorio && <span title="Archivo"><FileText className="w-3 h-3 text-cyan-500" /></span>}
+            {(r.enviar_email || r.responder_email) && <span title="Email"><Mail className="w-3 h-3 text-pink-500" /></span>}
+          </div>
+        )}
 
-        {task.profiles && (
+        {isCancelled && task.cancel_reason && (
+          <div className="mt-2 text-xs bg-red-50 p-2 rounded border border-red-100 text-red-800 italic">
+            "{task.cancel_reason}"
+          </div>
+        )}
+
+        {task.profiles && !isCancelled && (
           <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1 bg-muted/20 p-1 rounded">
             <User className="w-3 h-3" />
             <span className="truncate">{task.profiles.nombre} {task.profiles.apellido}</span>
@@ -127,29 +138,43 @@ const TaskCard = ({ task, onAction }: { task: any, onAction: (t: any) => void })
         )}
       </CardContent>
 
-      <CardFooter className="p-2 bg-muted/10">
-        <Button 
-          className="w-full h-8 text-xs shadow-sm hover:shadow transition-all" 
-          variant={isDone ? (task.audit_status === 'rechazado' ? "destructive" : "secondary") : "default"}
-          size="sm"
-          onClick={() => onAction(task)}
-        >
-          {isDone ? (
-            task.audit_status === 'rechazado' ? (
-              <><RefreshCw className="w-3 h-3 mr-1.5" /> Corregir Tarea</>
+      <CardFooter className="p-2 bg-muted/10 flex gap-1">
+        {!isCancelled && (
+          <Button 
+            className="flex-1 h-8 text-xs shadow-sm hover:shadow transition-all" 
+            variant={isDone ? (task.audit_status === 'rechazado' ? "destructive" : "secondary") : "default"}
+            size="sm"
+            onClick={() => onAction(task)}
+          >
+            {isDone ? (
+              task.audit_status === 'rechazado' ? (
+                <><RefreshCw className="w-3 h-3 mr-1.5" /> Corregir Tarea</>
+              ) : (
+                <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
+              )
             ) : (
-              <><Eye className="w-3 h-3 mr-1.5" /> Ver Detalle</>
-            )
-          ) : (
-            <><ArrowRight className="w-3 h-3 ml-1.5" /> Ejecutar</>
-          )}
-        </Button>
+              <><ArrowRight className="w-3 h-3 ml-1.5" /> Ejecutar</>
+            )}
+          </Button>
+        )}
+        
+        {canCancel && !isDone && !isCancelled && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 px-0 text-muted-foreground hover:text-red-600 hover:bg-red-50"
+            onClick={() => onCancel(task)}
+            title="Cancelar Tarea (Director/Líder)"
+          >
+            <Ban className="w-4 h-4" />
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );
 };
 
-const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction }: { items: any[], loading: boolean, onRetry: () => void, emptyMessage: string, onAction: (t: any) => void }) => {
+const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction, onCancel, canCancel }: any) => {
   if (loading) return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
   if (items.length === 0) {
     return (
@@ -163,7 +188,15 @@ const TaskGrid = ({ items, loading, onRetry, emptyMessage, onAction }: { items: 
   }
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-      {items.map((task) => <TaskCard key={task.id} task={task} onAction={onAction} />)}
+      {items.map((task: any) => (
+        <TaskCard 
+          key={task.id} 
+          task={task} 
+          onAction={onAction} 
+          onCancel={onCancel}
+          canCancel={canCancel} 
+        />
+      ))}
     </div>
   );
 };
@@ -182,11 +215,11 @@ const SegmentedProgressBar = ({
   missed: number, 
   pending: number 
 }) => {
+  // Ajuste: total aquí ya viene sin las canceladas
   const pctOnTime = total > 0 ? (onTime / total) * 100 : 0;
   const pctLate = total > 0 ? (late / total) * 100 : 0;
   const pctMissed = total > 0 ? (missed / total) * 100 : 0;
   
-  // Progress total visible (excluye pendiente para el número grande)
   const totalCompletedPct = total > 0 ? Math.round(((onTime + late) / total) * 100) : 0;
 
   return (
@@ -198,32 +231,17 @@ const SegmentedProgressBar = ({
             <span className={`text-3xl font-bold ${totalCompletedPct >= 80 ? 'text-emerald-600' : 'text-foreground'}`}>
               {totalCompletedPct}%
             </span>
-            <span className="text-xs text-muted-foreground">de {total} tareas</span>
+            <span className="text-xs text-muted-foreground">de {total} tareas activas</span>
           </div>
         </div>
       </div>
 
-      {/* Barra Gruesa Segmentada */}
       <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
-        <div 
-          style={{ width: `${pctOnTime}%` }} 
-          className="bg-emerald-500 h-full transition-all duration-700 ease-out hover:bg-emerald-400" 
-          title={`A Tiempo: ${onTime}`}
-        />
-        <div 
-          style={{ width: `${pctLate}%` }} 
-          className="bg-amber-500 h-full transition-all duration-700 ease-out hover:bg-amber-400" 
-          title={`Vencidas: ${late}`}
-        />
-        <div 
-          style={{ width: `${pctMissed}%` }} 
-          className="bg-rose-500 h-full transition-all duration-700 ease-out hover:bg-rose-400" 
-          title={`Incumplidas: ${missed}`}
-        />
-        {/* El espacio restante es el background (Pendientes) */}
+        <div style={{ width: `${pctOnTime}%` }} className="bg-emerald-500 h-full transition-all duration-700 ease-out hover:bg-emerald-400" title={`A Tiempo: ${onTime}`} />
+        <div style={{ width: `${pctLate}%` }} className="bg-amber-500 h-full transition-all duration-700 ease-out hover:bg-amber-400" title={`Vencidas: ${late}`} />
+        <div style={{ width: `${pctMissed}%` }} className="bg-rose-500 h-full transition-all duration-700 ease-out hover:bg-rose-400" title={`Incumplidas: ${missed}`} />
       </div>
 
-      {/* Leyenda Detallada */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-3 border-t border-dashed">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
@@ -261,7 +279,10 @@ const SegmentedProgressBar = ({
 export default function TasksList() {
   const { user, profile } = useCurrentUser();
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [taskToCancel, setTaskToCancel] = useState<any>(null);
   const [isExecutionOpen, setIsExecutionOpen] = useState(false);
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [activeAbsence, setActiveAbsence] = useState<any>(null);
@@ -284,28 +305,38 @@ export default function TasksList() {
   const { data: tasks = [], isLoading, error, refetch } = useMyTasks(dateFrom, dateTo);
 
   const handleStartTask = (task: any) => { setSelectedTask(task); setIsExecutionOpen(true); };
+  const handleCancelTask = (task: any) => { setTaskToCancel(task); setIsCancelOpen(true); };
 
+  // Filtrado visual
   const filteredTasks = tasks.filter(t => {
+    // Si no soy Director ni Lider, NO muestro las canceladas (desaparecen para el operador)
+    if (t.estado === 'cancelada' && !['director', 'lider'].includes(profile?.role || '')) return false;
+    
     if (selectedPdvs.length > 0 && (!t.pdv || !selectedPdvs.includes(t.pdv.id))) return false;
     if (selectedRoutines.length > 0 && (!t.routine_templates || !selectedRoutines.includes(t.routine_templates.id))) return false;
     if (selectedUsers.length > 0 && (!t.profiles || !selectedUsers.includes(t.profiles.id))) return false;
     return true;
   });
 
-  const allTasks = filteredTasks;
-  const pendingTasks = filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
-  const completedTasks = filteredTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
+  const canCancel = ['director', 'lider'].includes(profile?.role || '');
 
-  // Stats for Progress Bar
+  // Sub-listas
+  const activeTasks = filteredTasks.filter(t => t.estado !== 'cancelada'); // Para las pestañas operativas
+  
+  const pendingTasks = activeTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso');
+  const completedTasks = activeTasks.filter(t => t.estado.startsWith('completada') || t.estado === 'incumplida');
+  const cancelledTasks = filteredTasks.filter(t => t.estado === 'cancelada');
+
+  // Stats for Progress Bar (EXCLUYENDO CANCELADAS)
   const stats = useMemo(() => {
     return {
-      total: filteredTasks.length,
-      onTime: filteredTasks.filter(t => t.estado === 'completada_a_tiempo' || t.estado === 'completada').length,
-      late: filteredTasks.filter(t => t.estado === 'completada_vencida').length,
-      missed: filteredTasks.filter(t => t.estado === 'incumplida').length,
-      pending: filteredTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length
+      total: activeTasks.length,
+      onTime: activeTasks.filter(t => t.estado === 'completada_a_tiempo' || t.estado === 'completada').length,
+      late: activeTasks.filter(t => t.estado === 'completada_vencida').length,
+      missed: activeTasks.filter(t => t.estado === 'incumplida').length,
+      pending: activeTasks.filter(t => t.estado === 'pendiente' || t.estado === 'en_proceso').length
     };
-  }, [filteredTasks]);
+  }, [activeTasks]);
 
   const todayStr = getLocalDate();
   const showCongratulation = stats.total > 0 && stats.pending === 0 && dateTo <= todayStr && !activeAbsence; 
@@ -321,24 +352,15 @@ export default function TasksList() {
   return (
     <div className="space-y-6 pb-24">
       <div className="flex flex-col gap-1">
-        {/* ENCABEZADO CON LOGO Y SALUDO */}
         <div className="flex items-center gap-4 mb-2">
           {profile?.tenants?.logo_url && (
             <div className="h-16 w-16 shrink-0 rounded-lg overflow-hidden border bg-white dark:bg-white/5 flex items-center justify-center p-1">
-              <img 
-                src={profile.tenants.logo_url} 
-                alt="Logo Empresa" 
-                className="max-h-full max-w-full object-contain"
-              />
+              <img src={profile.tenants.logo_url} alt="Logo Empresa" className="max-h-full max-w-full object-contain" />
             </div>
           )}
           <div>
-            <h2 className="text-3xl font-bold tracking-tight text-foreground">
-              {profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}
-            </h2>
-            <p className="text-lg text-muted-foreground font-medium mt-1">
-              Estas son tus actividades del día
-            </p>
+            <h2 className="text-3xl font-bold tracking-tight text-foreground">{profile?.nombre ? `Hola, ${profile.nombre}` : 'Bienvenido'}</h2>
+            <p className="text-lg text-muted-foreground font-medium mt-1">Estas son tus actividades del día</p>
           </div>
         </div>
 
@@ -372,33 +394,15 @@ export default function TasksList() {
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
               <div className="relative">
-                <CalendarIcon 
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" 
-                  onClick={() => openDatePicker('date-from-task')} 
-                />
-                <Input 
-                  id="date-from-task"
-                  type="date" 
-                  className="h-8 pl-8 text-xs bg-background" 
-                  value={dateFrom} 
-                  onChange={(e) => setDateFrom(e.target.value)} 
-                />
+                <CalendarIcon className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-from-task')} />
+                <Input id="date-from-task" type="date" className="h-8 pl-8 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
               <div className="relative">
-                <CalendarIcon 
-                  className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" 
-                  onClick={() => openDatePicker('date-to-task')} 
-                />
-                <Input 
-                  id="date-to-task"
-                  type="date" 
-                  className="h-8 pl-8 text-xs bg-background" 
-                  value={dateTo} 
-                  onChange={(e) => setDateTo(e.target.value)} 
-                />
+                <CalendarIcon className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-to-task')} />
+                <Input id="date-to-task" type="date" className="h-8 pl-8 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
             </div>
             <div className="space-y-1"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
@@ -409,7 +413,6 @@ export default function TasksList() {
         </CardContent>
       </Card>
 
-      {/* SEGMENTED PROGRESS BAR */}
       <SegmentedProgressBar 
         total={stats.total} 
         onTime={stats.onTime} 
@@ -433,16 +436,23 @@ export default function TasksList() {
 
       <Tabs defaultValue="pending" className="w-full">
         <TabsList className="grid w-full grid-cols-3 mb-6">
-          <TabsTrigger value="all">Todas ({allTasks.length})</TabsTrigger>
+          <TabsTrigger value="all">Todas ({activeTasks.length})</TabsTrigger>
           <TabsTrigger value="pending">Pendientes ({pendingTasks.length})</TabsTrigger>
           <TabsTrigger value="completed">Realizadas ({completedTasks.length})</TabsTrigger>
+          {cancelledTasks.length > 0 && canCancel && (
+            <TabsTrigger value="cancelled" className="data-[state=active]:bg-red-50 data-[state=active]:text-red-700">Canceladas ({cancelledTasks.length})</TabsTrigger>
+          )}
         </TabsList>
-        <TabsContent value="all" className="mt-0"><TaskGrid items={allTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} /></TabsContent>
-        <TabsContent value="pending" className="mt-0"><TaskGrid items={pendingTasks} loading={isLoading} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} /></TabsContent>
-        <TabsContent value="completed" className="mt-0"><TaskGrid items={completedTasks} loading={isLoading} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} /></TabsContent>
+        <TabsContent value="all" className="mt-0"><TaskGrid items={activeTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas programadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} /></TabsContent>
+        <TabsContent value="pending" className="mt-0"><TaskGrid items={pendingTasks} loading={isLoading} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} /></TabsContent>
+        <TabsContent value="completed" className="mt-0"><TaskGrid items={completedTasks} loading={isLoading} onRetry={refetch} emptyMessage="Aún no hay tareas completadas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} /></TabsContent>
+        {canCancel && (
+          <TabsContent value="cancelled" className="mt-0"><TaskGrid items={cancelledTasks} loading={isLoading} onRetry={refetch} emptyMessage="No hay tareas canceladas." onAction={handleStartTask} onCancel={handleCancelTask} canCancel={false} /></TabsContent>
+        )}
       </Tabs>
 
       <TaskExecutionModal task={selectedTask} open={isExecutionOpen} onOpenChange={setIsExecutionOpen} onSuccess={() => refetch()} />
+      <CancelTaskModal task={taskToCancel} open={isCancelOpen} onOpenChange={setIsCancelOpen} onSuccess={() => refetch()} />
     </div>
   );
 }
