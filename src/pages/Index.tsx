@@ -31,7 +31,6 @@ const Index = () => {
   return (
     <div className="space-y-8 pb-20">
       
-      {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-movacheck-navy dark:text-white">Dashboard Operativo</h2>
@@ -51,10 +50,8 @@ const Index = () => {
         </div>
       </div>
 
-      {/* Grid Layout */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
         
-        {/* COLUMNA 1: FILTROS */}
         <div className="xl:col-span-1 space-y-6">
           <Card className="bg-white dark:bg-card border-slate-200 h-fit sticky top-24">
             <CardHeader className="pb-3 border-b border-slate-100">
@@ -63,7 +60,8 @@ const Index = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
+              {/* Stack on mobile, side-by-side on larger screens if desired, but 1 col is safer for filters */}
+              <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
                   <div className="relative">
@@ -74,7 +72,7 @@ const Index = () => {
                     <Input 
                       id="date-from-dash"
                       type="date" 
-                      className="h-10 pl-10 text-sm" 
+                      className="h-10 pl-10 text-sm w-full block bg-background" 
                       value={dateFrom} 
                       onChange={(e) => setDateFrom(e.target.value)} 
                     />
@@ -90,7 +88,7 @@ const Index = () => {
                     <Input 
                       id="date-to-dash"
                       type="date" 
-                      className="h-10 pl-10 text-sm" 
+                      className="h-10 pl-10 text-sm w-full block bg-background" 
                       value={dateTo} 
                       onChange={(e) => setDateTo(e.target.value)} 
                     />
@@ -115,10 +113,7 @@ const Index = () => {
           </Card>
         </div>
 
-        {/* COLUMNA 2-4: DASHBOARD */}
         <div className="xl:col-span-3 space-y-6">
-          
-          {/* 1. KPIs */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <StatCard title="Cumplimiento Global" value={`${stats.compliance}%`} description="Efectividad total" icon={Activity} colorBg={stats.compliance >= 90 ? "bg-emerald-100" : "bg-amber-100"} colorText={stats.compliance >= 90 ? "text-emerald-600" : "text-amber-600"} loading={loading} />
             <StatCard title="Total Tareas" value={stats.totalTasks} description="Volumen en periodo" icon={BarChart3} colorBg="bg-blue-100" colorText="text-blue-600" loading={loading} />
@@ -126,22 +121,18 @@ const Index = () => {
             <StatCard title="Alertas Críticas" value={stats.criticalAlerts} description="Prioridad Alta / Rechazos" icon={AlertOctagon} colorBg="bg-rose-100" colorText="text-rose-600" loading={loading} />
           </div>
 
-          {/* 2. Tendencia */}
           <TrendChart data={trendData} loading={loading} />
 
-          {/* 3. Grid Secundario */}
           <div className="grid gap-6 md:grid-cols-2">
             <AlertsChart data={alertsData} loading={loading} />
             <StatusChart data={statusData} loading={loading} />
           </div>
 
-          {/* 4. Grid Terciario */}
           <div className="grid gap-6 md:grid-cols-2">
             <RoutineChart data={routineData} loading={loading} />
             <UserRanking data={performanceData} />
           </div>
 
-          {/* 5. Recent */}
           <RecentActivityList data={recentActivity} loading={loading} />
 
         </div>

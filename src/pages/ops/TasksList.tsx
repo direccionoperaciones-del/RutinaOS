@@ -409,7 +409,7 @@ export default function TasksList() {
                 <Input 
                   id="date-from-task" 
                   type="date" 
-                  className="h-10 pl-10 text-sm bg-background" 
+                  className="h-10 pl-10 text-sm bg-background w-full block" 
                   value={dateFrom} 
                   onChange={(e) => setDateFrom(e.target.value)} 
                 />
@@ -422,7 +422,7 @@ export default function TasksList() {
                 <Input 
                   id="date-to-task" 
                   type="date" 
-                  className="h-10 pl-10 text-sm bg-background" 
+                  className="h-10 pl-10 text-sm bg-background w-full block" 
                   value={dateTo} 
                   onChange={(e) => setDateTo(e.target.value)} 
                 />

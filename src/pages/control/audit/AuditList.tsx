@@ -21,7 +21,6 @@ export default function AuditList() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // --- ESTADOS DE FILTROS ---
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   
@@ -135,9 +134,7 @@ export default function AuditList() {
         <p className="text-muted-foreground">Revisión y aprobación de tareas ejecutadas en campo.</p>
       </div>
 
-      {/* --- PANEL DE FILTROS --- */}
       <Card className="bg-muted/20 border-primary/10 overflow-hidden">
-        {/* En móvil usamos Accordion para ahorrar espacio */}
         <div className="md:hidden">
           <Accordion type="single" collapsible>
             <AccordionItem value="filters" className="border-none">
@@ -159,7 +156,7 @@ export default function AuditList() {
                       <Input 
                         id="date-from-audit-m"
                         type="date" 
-                        className="h-9 pl-8" 
+                        className="h-9 pl-8 w-full block bg-background" 
                         value={dateFrom} 
                         onChange={(e) => setDateFrom(e.target.value)} 
                       />
@@ -175,7 +172,7 @@ export default function AuditList() {
                       <Input 
                         id="date-to-audit-m"
                         type="date" 
-                        className="h-9 pl-8" 
+                        className="h-9 pl-8 w-full block bg-background" 
                         value={dateTo} 
                         onChange={(e) => setDateTo(e.target.value)} 
                       />
@@ -189,7 +186,6 @@ export default function AuditList() {
                     <Label className="text-xs">Puntos de Venta</Label>
                     <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
                   </div>
-                  {/* Otros filtros ocultos en móvil para simplificar, o agregados si son críticos */}
                   {hasActiveFilters && (
                     <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full mt-2 text-destructive">
                       Limpiar Filtros
@@ -201,7 +197,6 @@ export default function AuditList() {
           </Accordion>
         </div>
 
-        {/* En desktop mostramos todo expandido */}
         <CardContent className="hidden md:block px-4 py-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-sm font-medium text-primary">
@@ -224,7 +219,7 @@ export default function AuditList() {
                 <Input 
                   id="date-from-audit"
                   type="date" 
-                  className="h-8 pl-8 text-xs bg-background" 
+                  className="h-8 pl-8 text-xs bg-background w-full block" 
                   value={dateFrom} 
                   onChange={(e) => setDateFrom(e.target.value)} 
                 />
@@ -240,7 +235,7 @@ export default function AuditList() {
                 <Input 
                   id="date-to-audit"
                   type="date" 
-                  className="h-8 pl-8 text-xs bg-background" 
+                  className="h-8 pl-8 text-xs bg-background w-full block" 
                   value={dateTo} 
                   onChange={(e) => setDateTo(e.target.value)} 
                 />
@@ -266,7 +261,6 @@ export default function AuditList() {
         </CardContent>
       </Card>
 
-      {/* --- VISTA MÓVIL: TARJETAS --- */}
       <div className="grid grid-cols-1 gap-4 md:hidden">
         {filteredTasks.map((task) => {
           const r = task.routine_templates || {};
@@ -310,7 +304,6 @@ export default function AuditList() {
         )}
       </div>
 
-      {/* --- VISTA DESKTOP: TABLA --- */}
       <Card className="hidden md:block">
         <CardContent className="p-0">
           <div className="rounded-md border">

@@ -32,7 +32,6 @@ export default function ReportsPage() {
           val = "";
         } else if (typeof val === 'string') {
           // Prevent CSV Formula Injection
-          // Prepend a single quote if the value starts with =, +, -, or @
           if (val.length > 0 && ['=', '+', '-', '@'].includes(val[0])) {
             val = "'" + val;
           }
@@ -70,7 +69,6 @@ export default function ReportsPage() {
 
       if (error) throw error;
 
-      // Aplanar datos para CSV
       const flattened = data.map((item: any) => ({
         Fecha: item.fecha_programada,
         PDV_Codigo: item.pdv?.codigo_interno,
@@ -138,8 +136,6 @@ export default function ReportsPage() {
   const generateInventoryReport = async () => {
     setLoading(true);
     try {
-      // Paso 1: Obtener IDs de tareas en el rango que sean de tipo INVENTARIO
-      // Usamos !inner para forzar que cumpla la condición de routine_templates
       const { data: tasks, error: taskError } = await supabase
         .from('task_instances')
         .select('id, routine_templates!inner(requiere_inventario)')
@@ -156,7 +152,6 @@ export default function ReportsPage() {
 
       const taskIds = tasks.map(t => t.id);
 
-      // Paso 2: Obtener registros de inventario de esas tareas
       const { data, error } = await supabase
         .from('inventory_submission_rows')
         .select(`
@@ -216,14 +211,14 @@ export default function ReportsPage() {
         <p className="text-muted-foreground">Descarga la data histórica para análisis externo.</p>
       </div>
 
-      {/* Filtros Globales */}
       <Card className="bg-muted/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <CalendarRange className="w-4 h-4" /> Rango de Fechas
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+        {/* Cambiado: md:grid-cols-2 para que en móviles sea 1 columna */}
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg">
           <div className="space-y-2">
             <Label>Desde</Label>
             <div className="relative">
@@ -234,7 +229,7 @@ export default function ReportsPage() {
               <Input 
                 id="date-from-report"
                 type="date" 
-                className="pl-10 h-10" 
+                className="pl-10 h-10 w-full block bg-background" 
                 value={dateFrom} 
                 onChange={(e) => setDateFrom(e.target.value)} 
               />
@@ -250,7 +245,7 @@ export default function ReportsPage() {
               <Input 
                 id="date-to-report"
                 type="date" 
-                className="pl-10 h-10" 
+                className="pl-10 h-10 w-full block bg-background" 
                 value={dateTo} 
                 onChange={(e) => setDateTo(e.target.value)} 
               />
@@ -260,7 +255,6 @@ export default function ReportsPage() {
       </Card>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {/* Reporte Operativo */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -279,7 +273,6 @@ export default function ReportsPage() {
           </CardFooter>
         </Card>
 
-        {/* Reporte Calidad */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -298,7 +291,6 @@ export default function ReportsPage() {
           </CardFooter>
         </Card>
 
-         {/* Reporte Inventarios */}
          <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
