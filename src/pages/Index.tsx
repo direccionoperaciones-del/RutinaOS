@@ -63,18 +63,18 @@ const Index = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              <div className="grid grid-cols-2 xl:grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-slate-500 uppercase">Desde</Label>
                   <div className="relative">
                     <CalendarIcon 
-                      className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
                       onClick={() => openDatePicker('date-from-dash')} 
                     />
                     <Input 
                       id="date-from-dash"
                       type="date" 
-                      className="h-9 pl-8 text-sm" 
+                      className="h-10 pl-10 text-sm" 
                       value={dateFrom} 
                       onChange={(e) => setDateFrom(e.target.value)} 
                     />
@@ -84,13 +84,13 @@ const Index = () => {
                   <Label className="text-xs font-bold text-slate-500 uppercase">Hasta</Label>
                   <div className="relative">
                     <CalendarIcon 
-                      className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                      className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary"
                       onClick={() => openDatePicker('date-to-dash')} 
                     />
                     <Input 
                       id="date-to-dash"
                       type="date" 
-                      className="h-9 pl-8 text-sm" 
+                      className="h-10 pl-10 text-sm" 
                       value={dateTo} 
                       onChange={(e) => setDateTo(e.target.value)} 
                     />

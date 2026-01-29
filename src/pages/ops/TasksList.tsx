@@ -405,15 +405,27 @@ export default function TasksList() {
             <div className="space-y-1">
               <Label className="text-xs">Desde</Label>
               <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-from-task')} />
-                <Input id="date-from-task" type="date" className="h-8 pl-8 text-xs bg-background" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-from-task')} />
+                <Input 
+                  id="date-from-task" 
+                  type="date" 
+                  className="h-10 pl-10 text-sm bg-background" 
+                  value={dateFrom} 
+                  onChange={(e) => setDateFrom(e.target.value)} 
+                />
               </div>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Hasta</Label>
               <div className="relative">
-                <CalendarIcon className="absolute left-2 top-2 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-to-task')} />
-                <Input id="date-to-task" type="date" className="h-8 pl-8 text-xs bg-background" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                <CalendarIcon className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary transition-colors" onClick={() => openDatePicker('date-to-task')} />
+                <Input 
+                  id="date-to-task" 
+                  type="date" 
+                  className="h-10 pl-10 text-sm bg-background" 
+                  value={dateTo} 
+                  onChange={(e) => setDateTo(e.target.value)} 
+                />
               </div>
             </div>
             <div className="space-y-1"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>

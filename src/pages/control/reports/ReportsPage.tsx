@@ -223,18 +223,18 @@ export default function ReportsPage() {
             <CalendarRange className="w-4 h-4" /> Rango de Fechas
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4 max-w-lg">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
           <div className="space-y-2">
             <Label>Desde</Label>
             <div className="relative">
               <CalendarIcon 
-                className="absolute left-2 top-2 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
                 onClick={() => openDatePicker('date-from-report')} 
               />
               <Input 
                 id="date-from-report"
                 type="date" 
-                className="pl-9" 
+                className="pl-10 h-10" 
                 value={dateFrom} 
                 onChange={(e) => setDateFrom(e.target.value)} 
               />
@@ -244,13 +244,13 @@ export default function ReportsPage() {
             <Label>Hasta</Label>
             <div className="relative">
               <CalendarIcon 
-                className="absolute left-2 top-2 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
+                className="absolute left-2 top-2.5 h-5 w-5 text-muted-foreground cursor-pointer z-10 hover:text-primary"
                 onClick={() => openDatePicker('date-to-report')} 
               />
               <Input 
                 id="date-to-report"
                 type="date" 
-                className="pl-9" 
+                className="pl-10 h-10" 
                 value={dateTo} 
                 onChange={(e) => setDateTo(e.target.value)} 
               />
