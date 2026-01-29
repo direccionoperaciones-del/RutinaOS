@@ -10,7 +10,7 @@ interface DateRangePickerProps {
   dateTo: string;
   setDateTo: (date: string) => void;
   className?: string;
-  compact?: boolean; // Force stacked layout if true
+  compact?: boolean; // Si es true, fuerza layout vertical (stack) siempre. Útil para sidebars.
 }
 
 export function DateRangePicker({ 
@@ -24,21 +24,33 @@ export function DateRangePicker({
   
   return (
     <div className={cn(
+      // A) Contenedor Responsive:
+      // - Mobile First: grid-cols-1 (Uno debajo del otro)
+      // - md+: grid-cols-2 (Lado a lado), salvo que sea 'compact'
+      // - w-full y min-w-0 para evitar desbordes en flex items padres
       "grid gap-3 w-full min-w-0", 
       compact ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2",
       className
     )}>
       {/* Campo Desde */}
       <div className="space-y-1 w-full min-w-0">
-        <Label className="text-xs font-semibold text-muted-foreground uppercase">Desde</Label>
-        <div className="relative w-full">
+        <Label 
+          htmlFor="date-filter-from" 
+          className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider"
+        >
+          Desde
+        </Label>
+        <div className="relative w-full group">
           <CalendarIcon 
-            className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none group-hover:text-primary transition-colors"
           />
           <Input 
             id="date-filter-from"
             type="date" 
-            className="h-10 pl-9 text-sm bg-background w-full min-w-0 block shadow-sm" 
+            // B) Input Responsive:
+            // - w-full para llenar la columna del grid
+            // - min-w-0 para permitir encogerse en flex containers
+            className="h-10 pl-9 w-full min-w-0 bg-background text-sm shadow-sm" 
             value={dateFrom} 
             onChange={(e) => setDateFrom(e.target.value)}
             onClick={() => openDatePicker('date-filter-from')}
@@ -48,15 +60,20 @@ export function DateRangePicker({
 
       {/* Campo Hasta */}
       <div className="space-y-1 w-full min-w-0">
-        <Label className="text-xs font-semibold text-muted-foreground uppercase">Hasta</Label>
-        <div className="relative w-full">
+        <Label 
+          htmlFor="date-filter-to" 
+          className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider"
+        >
+          Hasta
+        </Label>
+        <div className="relative w-full group">
           <CalendarIcon 
-            className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground cursor-pointer z-10 hover:text-primary pointer-events-none"
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none group-hover:text-primary transition-colors"
           />
           <Input 
             id="date-filter-to"
             type="date" 
-            className="h-10 pl-9 text-sm bg-background w-full min-w-0 block shadow-sm" 
+            className="h-10 pl-9 w-full min-w-0 bg-background text-sm shadow-sm" 
             value={dateTo} 
             onChange={(e) => setDateTo(e.target.value)} 
             onClick={() => openDatePicker('date-filter-to')}
