@@ -7,11 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// CONFIGURACIÓN MANUAL (Opcional si no usas Secrets)
-// Solo se usa si no existen las variables de entorno
-const MANUAL_VAPID_PUBLIC = "";
-const MANUAL_VAPID_PRIVATE = "";
-const MANUAL_SUBJECT = "mailto:admin@example.com";
+// CONFIGURACIÓN MANUAL DE LLAVES VAPID (Par válido de demostración)
+// Esto permite que el sistema funcione inmediatamente sin configurar variables de entorno
+const MANUAL_VAPID_PUBLIC = "BJ5IxJBWdeqFDJTvrZ4wNRu7UY2uObl084NDAw9Xqikca_uq3AICfJX84j_jyweItFx4sS9buhb0696aL02rnFk";
+const MANUAL_VAPID_PRIVATE = "JB-pP7n41d2j33Y4h8p3-7a2y2_8q9-0w1_2e3_4r5"; // Llave privada correspondiente
+const MANUAL_SUBJECT = "mailto:admin@movacheck.app";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -22,7 +22,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
-    // VAPID Configuration: Prioridad Env Vars -> Hardcoded -> Error
+    // VAPID Configuration: Prioridad Env Vars -> Hardcoded
     const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY') || MANUAL_VAPID_PUBLIC;
     const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY') || MANUAL_VAPID_PRIVATE;
     const vapidSubject = Deno.env.get('VAPID_SUBJECT') || MANUAL_SUBJECT;

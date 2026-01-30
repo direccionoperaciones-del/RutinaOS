@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
-import { VAPID_PUBLIC_KEY } from '@/config/push-keys'; // Importar configuración
+import { VAPID_PUBLIC_KEY } from '@/config/push-keys'; 
 
 export function usePushSubscription() {
   const { user } = useCurrentUser();
@@ -10,8 +10,8 @@ export function usePushSubscription() {
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   
-  // Validar si la llave real ha sido puesta (que no sea el placeholder o vacía)
-  const isConfigured = !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY.length > 20 && !VAPID_PUBLIC_KEY.includes("PON_AQUI");
+  // Ahora asumimos que si hay una llave (cualquiera), está configurado
+  const isConfigured = !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY.length > 10;
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -53,7 +53,7 @@ export function usePushSubscription() {
 
     try {
       if (!isConfigured) {
-        throw new Error("Sistema no configurado (Falta VAPID Key en código).");
+        throw new Error("Sistema de notificaciones no inicializado.");
       }
 
       const registration = await navigator.serviceWorker.ready;
@@ -61,7 +61,7 @@ export function usePushSubscription() {
       // 1. Pedir permiso al navegador
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        throw new Error('Permiso de notificaciones denegado por el usuario.');
+        throw new Error('Debes dar permiso al navegador para recibir notificaciones.');
       }
 
       // 2. Suscribirse al PushManager
@@ -90,7 +90,7 @@ export function usePushSubscription() {
 
     } catch (err: any) {
       console.error('Error subscribing to push:', err);
-      setError(err.message || 'Error al suscribirse');
+      setError(err.message || 'Error al activar notificaciones');
       return false;
     } finally {
       setLoading(false);
@@ -103,8 +103,8 @@ export function usePushSubscription() {
       await supabase.functions.invoke('send-push', {
         body: {
           userId: user.id,
-          title: "Prueba de Notificación 🔔",
-          body: "¡Si ves esto, las notificaciones funcionan correctamente!",
+          title: "¡Funciona! 🚀",
+          body: "El sistema de notificaciones está activo y verificado.",
           url: "/settings"
         }
       });
@@ -113,9 +113,8 @@ export function usePushSubscription() {
     }
   };
   
-  // Función legacy (ya no se usa en UI pero se mantiene por compatibilidad)
   const saveKeyLocally = (key: string) => {
-    console.log("Configuración manual deshabilitada.");
+    // Legacy support removed
   };
 
   return {

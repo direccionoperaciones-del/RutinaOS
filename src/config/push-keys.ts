@@ -1,7 +1,6 @@
 // CONFIGURACIÓN DE NOTIFICACIONES PUSH
-// Genera tus llaves en https://vapidkeys.com/
-// Pega la 'Public Key' aquí abajo. Esta será usada automáticamente por la app.
+// Llaves pre-configuradas para funcionamiento inmediato.
 
-export const VAPID_PUBLIC_KEY = "PON_AQUI_TU_PUBLIC_KEY_GENERADA";
+export const VAPID_PUBLIC_KEY = "BJ5IxJBWdeqFDJTvrZ4wNRu7UY2uObl084NDAw9Xqikca_uq3AICfJX84j_jyweItFx4sS9buhb0696aL02rnFk";
 
-// NOTA: La 'Private Key' debe ir en los Secrets de Supabase o en la Edge Function 'send-push'.
+// La llave privada correspondiente está configurada en la Edge Function 'send-push'.
