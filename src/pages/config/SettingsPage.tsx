@@ -7,14 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon, BellRing, Smartphone, AlertTriangle } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon, BellRing, Smartphone, AlertTriangle, ExternalLink, Key } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const { profile, loading: loadingProfile } = useCurrentUser();
-  const { isSupported, isSubscribed, subscribeToPush, loading: pushLoading, error: pushError, sendTestPush, isConfigured } = usePushSubscription();
+  const { isSupported, isSubscribed, subscribeToPush, loading: pushLoading, error: pushError, sendTestPush, isConfigured, saveKeyLocally } = usePushSubscription();
   
   const [formData, setFormData] = useState({ nombre: "", apellido: "" });
   const [orgData, setOrgData] = useState({ nombre: "" });
@@ -23,6 +23,9 @@ export default function SettingsPage() {
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  
+  // Estado para input manual de VAPID
+  const [manualVapidKey, setManualVapidKey] = useState("");
 
   useEffect(() => {
     if (profile) {
@@ -130,6 +133,11 @@ export default function SettingsPage() {
     if (success) toast({ title: "Notificaciones activadas", description: "Recibirás alertas en este dispositivo." });
     else toast({ variant: "destructive", title: "Error", description: "No se pudieron activar las notificaciones." });
   };
+  
+  const handleSaveVapid = () => {
+    if (!manualVapidKey.trim()) return;
+    saveKeyLocally(manualVapidKey.trim());
+  };
 
   if (loadingProfile) return <div className="p-8 flex justify-center"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
@@ -171,14 +179,14 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
-                {isSupported && (
+                {isSupported && isConfigured && (
                   <div className="flex gap-2">
                     {isSubscribed && (
                       <Button variant="outline" size="sm" onClick={sendTestPush}>Probar</Button>
                     )}
                     <Button 
                       onClick={handleSubscribe} 
-                      disabled={isSubscribed || pushLoading || !isConfigured} 
+                      disabled={isSubscribed || pushLoading} 
                       className={isSubscribed ? "bg-green-600 hover:bg-green-700" : ""}
                     >
                       {pushLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
@@ -189,10 +197,30 @@ export default function SettingsPage() {
               </div>
               
               {!isConfigured && isSupported && (
-                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Configuración pendiente:</strong> El administrador debe configurar las llaves VAPID en el archivo <code>.env</code> para habilitar esta función.
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+                    <div>
+                        <strong>Configuración Faltante:</strong> Se requieren las llaves VAPID.
+                        <p className="text-xs text-amber-700 mt-1">
+                            1. Genera un par de llaves en <a href="https://vapidkeys.com/" target="_blank" className="underline font-bold">vapidkeys.com</a><br/>
+                            2. Pega la <strong>Public Key</strong> aquí abajo:<br/>
+                            3. (Importante) Configura la Private Key en los Secrets de Supabase.
+                        </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 items-center">
+                    <Key className="w-4 h-4 text-amber-600" />
+                    <Input 
+                        placeholder="Pega tu VAPID Public Key aquí..." 
+                        value={manualVapidKey}
+                        onChange={(e) => setManualVapidKey(e.target.value)}
+                        className="bg-white border-amber-300 text-xs h-9"
+                    />
+                    <Button size="sm" onClick={handleSaveVapid} className="bg-amber-600 hover:bg-amber-700 text-white h-9">
+                        Guardar
+                    </Button>
                   </div>
                 </div>
               )}
