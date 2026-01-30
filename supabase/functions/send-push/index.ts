@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// CONFIGURACIÓN MANUAL (Opcional si no usas Secrets)
+// Solo se usa si no existen las variables de entorno
+const MANUAL_VAPID_PUBLIC = "";
+const MANUAL_VAPID_PRIVATE = "";
+const MANUAL_SUBJECT = "mailto:admin@example.com";
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -16,10 +22,14 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
-    // VAPID Configuration
-    const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY')!
-    const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY')!
-    const vapidSubject = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@example.com'
+    // VAPID Configuration: Prioridad Env Vars -> Hardcoded -> Error
+    const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY') || MANUAL_VAPID_PUBLIC;
+    const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY') || MANUAL_VAPID_PRIVATE;
+    const vapidSubject = Deno.env.get('VAPID_SUBJECT') || MANUAL_SUBJECT;
+
+    if (!vapidPublicKey || !vapidPrivateKey) {
+       throw new Error("VAPID Keys not configured on server.");
+    }
 
     webpush.setVapidDetails(
       vapidSubject,

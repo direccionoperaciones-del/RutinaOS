@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
+import { VAPID_PUBLIC_KEY } from '@/config/push-keys'; // Importar configuración
 
 export function usePushSubscription() {
   const { user } = useCurrentUser();
@@ -9,12 +10,8 @@ export function usePushSubscription() {
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   
-  // Buscar llave en variables de entorno O en localStorage (para configuración rápida)
-  const envKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-  const localKey = localStorage.getItem('vapid_public_key');
-  const VAPID_PUBLIC_KEY = envKey || localKey || "";
-  
-  const isConfigured = !!VAPID_PUBLIC_KEY;
+  // Validar si la llave real ha sido puesta (que no sea el placeholder o vacía)
+  const isConfigured = !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY.length > 20 && !VAPID_PUBLIC_KEY.includes("PON_AQUI");
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -56,7 +53,7 @@ export function usePushSubscription() {
 
     try {
       if (!isConfigured) {
-        throw new Error("Falta la VAPID Public Key.");
+        throw new Error("Sistema no configurado (Falta VAPID Key en código).");
       }
 
       const registration = await navigator.serviceWorker.ready;
@@ -116,9 +113,9 @@ export function usePushSubscription() {
     }
   };
   
+  // Función legacy (ya no se usa en UI pero se mantiene por compatibilidad)
   const saveKeyLocally = (key: string) => {
-    localStorage.setItem('vapid_public_key', key);
-    window.location.reload(); // Recargar para aplicar cambios
+    console.log("Configuración manual deshabilitada.");
   };
 
   return {
