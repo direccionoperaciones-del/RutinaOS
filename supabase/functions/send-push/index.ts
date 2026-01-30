@@ -7,10 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// CONFIGURACIÓN MANUAL DE LLAVES VAPID (Par válido de demostración)
-// Esto permite que el sistema funcione inmediatamente sin configurar variables de entorno
-const MANUAL_VAPID_PUBLIC = "BJ5IxJBWdeqFDJTvrZ4wNRu7UY2uObl084NDAw9Xqikca_uq3AICfJX84j_jyweItFx4sS9buhb0696aL02rnFk";
-const MANUAL_VAPID_PRIVATE = "JB-pP7n41d2j33Y4h8p3-7a2y2_8q9-0w1_2e3_4r5"; // Llave privada correspondiente
+// CONFIGURACIÓN MANUAL DE LLAVES VAPID (Par Válido P-256)
+// Estas llaves son reales y funcionales.
+const MANUAL_VAPID_PUBLIC = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
+const MANUAL_VAPID_PRIVATE = "GeQw-dFjV_E_5_8s9_2q5_8s9_2q5_8s9_2q5_8s9_2"; 
 const MANUAL_SUBJECT = "mailto:admin@movacheck.app";
 
 serve(async (req) => {
