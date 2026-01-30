@@ -7,14 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon, BellRing, Smartphone } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon, BellRing, Smartphone, AlertTriangle } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const { profile, loading: loadingProfile } = useCurrentUser();
-  const { isSupported, isSubscribed, subscribeToPush, loading: pushLoading, error: pushError, sendTestPush } = usePushSubscription();
+  const { isSupported, isSubscribed, subscribeToPush, loading: pushLoading, error: pushError, sendTestPush, isConfigured } = usePushSubscription();
   
   const [formData, setFormData] = useState({ nombre: "", apellido: "" });
   const [orgData, setOrgData] = useState({ nombre: "" });
@@ -176,13 +176,27 @@ export default function SettingsPage() {
                     {isSubscribed && (
                       <Button variant="outline" size="sm" onClick={sendTestPush}>Probar</Button>
                     )}
-                    <Button onClick={handleSubscribe} disabled={isSubscribed || pushLoading} className={isSubscribed ? "bg-green-600 hover:bg-green-700" : ""}>
+                    <Button 
+                      onClick={handleSubscribe} 
+                      disabled={isSubscribed || pushLoading || !isConfigured} 
+                      className={isSubscribed ? "bg-green-600 hover:bg-green-700" : ""}
+                    >
                       {pushLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                       {isSubscribed ? "Activado" : "Activar Notificaciones"}
                     </Button>
                   </div>
                 )}
               </div>
+              
+              {!isConfigured && isSupported && (
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Configuración pendiente:</strong> El administrador debe configurar las llaves VAPID en el archivo <code>.env</code> para habilitar esta función.
+                  </div>
+                </div>
+              )}
+              
               {pushError && <p className="text-xs text-red-600 mt-2 bg-red-50 p-2 rounded border border-red-100">{pushError}</p>}
             </CardContent>
           </Card>

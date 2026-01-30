@@ -26,6 +26,7 @@ export function usePushSubscription() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
+  const isConfigured = !!VAPID_PUBLIC_KEY;
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -46,7 +47,7 @@ export function usePushSubscription() {
     setError(null);
 
     try {
-      if (!VAPID_PUBLIC_KEY) {
+      if (!isConfigured) {
         throw new Error("VAPID Public Key no configurada. Revisa VITE_VAPID_PUBLIC_KEY en .env");
       }
 
@@ -110,6 +111,7 @@ export function usePushSubscription() {
   return {
     isSupported,
     isSubscribed,
+    isConfigured,
     loading,
     error,
     subscribeToPush,
