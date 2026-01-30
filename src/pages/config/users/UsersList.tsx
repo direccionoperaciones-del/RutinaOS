@@ -6,9 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, UserCog, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { EditUserModal } from "../personnel/EditUserModal";
+import { CreateUserModal } from "../personnel/CreateUserModal";
 
 export default function UsersList() {
   const { toast } = useToast();
@@ -17,6 +18,7 @@ export default function UsersList() {
   const [searchTerm, setSearchTerm] = useState("");
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const fetchUsers = async () => {
@@ -63,14 +65,19 @@ export default function UsersList() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex justify-between items-start">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h2>
           <p className="text-muted-foreground">Administra roles, accesos y permisos del equipo.</p>
         </div>
-        <Button variant="outline" size="icon" onClick={fetchUsers} title="Recargar lista">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" size="icon" onClick={fetchUsers} title="Recargar lista">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+            <Button onClick={() => setIsCreateModalOpen(true)} className="flex-1 sm:flex-none">
+              <UserPlus className="w-4 h-4 mr-2" /> Nuevo Usuario
+            </Button>
+        </div>
       </div>
 
       <Card className="border-none shadow-none bg-transparent sm:bg-card sm:border sm:shadow">
@@ -201,6 +208,12 @@ export default function UsersList() {
         open={isEditModalOpen}
         onOpenChange={setIsEditModalOpen}
         userToEdit={selectedUser}
+        onSuccess={fetchUsers}
+      />
+
+      <CreateUserModal
+        open={isCreateModalOpen}
+        onOpenChange={setIsCreateModalOpen}
         onSuccess={fetchUsers}
       />
     </div>
