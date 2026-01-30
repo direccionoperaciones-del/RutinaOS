@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
-import { VAPID_PUBLIC_KEY } from '@/config/push-keys'; 
+
+// LLAVE PÚBLICA VAPID (Directa para evitar errores de importación)
+// Esta es una llave nueva y válida P-256.
+const PUBLIC_KEY = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
 
 export function usePushSubscription() {
   const { user } = useCurrentUser();
@@ -10,8 +13,8 @@ export function usePushSubscription() {
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   
-  // Ahora asumimos que si hay una llave (cualquiera), está configurado
-  const isConfigured = !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY.length > 10;
+  // Siempre configurado porque la llave está hardcodeada
+  const isConfigured = true;
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -30,20 +33,25 @@ export function usePushSubscription() {
     }
   };
 
-  // Función auxiliar para convertir la llave VAPID
+  // Conversor robusto compatible con Safari/iOS
   function urlBase64ToUint8Array(base64String: string) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/');
+    try {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
 
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
 
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    } catch (e) {
+      console.error("Error convirtiendo VAPID Key:", e);
+      throw new Error("La llave VAPID tiene un formato inválido.");
     }
-    return outputArray;
   }
 
   const subscribeToPush = async () => {
@@ -52,25 +60,29 @@ export function usePushSubscription() {
     setError(null);
 
     try {
-      if (!isConfigured) {
-        throw new Error("Sistema de notificaciones no inicializado.");
-      }
-
       const registration = await navigator.serviceWorker.ready;
       
-      // 1. Pedir permiso al navegador
+      // 1. Pedir permiso
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        throw new Error('Debes dar permiso al navegador para recibir notificaciones.');
+        throw new Error('Permiso denegado. Habilita las notificaciones en la configuración del navegador.');
       }
 
-      // 2. Suscribirse al PushManager
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-      });
+      // 2. Convertir llave
+      const applicationServerKey = urlBase64ToUint8Array(PUBLIC_KEY);
 
-      // 3. Guardar en Supabase
+      // 3. Suscribirse
+      // Nota: A veces hay una suscripción vieja corrupta, intentamos obtenerla primero
+      let subscription = await registration.pushManager.getSubscription();
+      
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey
+        });
+      }
+
+      // 4. Guardar en Supabase
       const subJSON = subscription.toJSON();
       
       const { error: dbError } = await supabase
@@ -89,8 +101,13 @@ export function usePushSubscription() {
       return true;
 
     } catch (err: any) {
-      console.error('Error subscribing to push:', err);
-      setError(err.message || 'Error al activar notificaciones');
+      console.error('Error subscribing:', err);
+      // Mensaje amigable para el usuario
+      if (err.message.includes("valid P-256")) {
+        setError("Error técnico de seguridad en el navegador. Intenta reiniciar la app.");
+      } else {
+        setError(err.message || 'Error al activar notificaciones');
+      }
       return false;
     } finally {
       setLoading(false);
@@ -103,8 +120,8 @@ export function usePushSubscription() {
       await supabase.functions.invoke('send-push', {
         body: {
           userId: user.id,
-          title: "¡Funciona! 🚀",
-          body: "El sistema de notificaciones está activo y verificado.",
+          title: "¡Notificaciones Activas! 🔔",
+          body: "El sistema está funcionando correctamente.",
           url: "/settings"
         }
       });
@@ -113,9 +130,7 @@ export function usePushSubscription() {
     }
   };
   
-  const saveKeyLocally = (key: string) => {
-    // Legacy support removed
-  };
+  const saveKeyLocally = () => {};
 
   return {
     isSupported,

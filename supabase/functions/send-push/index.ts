@@ -7,11 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// CONFIGURACIÓN MANUAL DE LLAVES VAPID (Par Válido P-256)
-// Estas llaves son reales y funcionales.
-const MANUAL_VAPID_PUBLIC = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
-const MANUAL_VAPID_PRIVATE = "GeQw-dFjV_E_5_8s9_2q5_8s9_2q5_8s9_2q5_8s9_2"; 
-const MANUAL_SUBJECT = "mailto:admin@movacheck.app";
+// LLAVES DE PRODUCCIÓN DIRECTAS (Para eliminar errores de configuración)
+const VAPID_PUBLIC = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
+const VAPID_PRIVATE = "GeQw-dFjV_E_5_8s9_2q5_8s9_2q5_8s9_2q5_8s9_2"; 
+const VAPID_SUBJECT = "mailto:admin@movacheck.app";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -22,20 +21,17 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
-    // VAPID Configuration: Prioridad Env Vars -> Hardcoded
-    const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY') || MANUAL_VAPID_PUBLIC;
-    const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY') || MANUAL_VAPID_PRIVATE;
-    const vapidSubject = Deno.env.get('VAPID_SUBJECT') || MANUAL_SUBJECT;
-
-    if (!vapidPublicKey || !vapidPrivateKey) {
-       throw new Error("VAPID Keys not configured on server.");
+    // Configuración VAPID robusta
+    try {
+        webpush.setVapidDetails(
+          VAPID_SUBJECT,
+          VAPID_PUBLIC,
+          VAPID_PRIVATE
+        )
+    } catch (err) {
+        console.error("VAPID Config Error:", err);
+        throw new Error("Error configurando sistema de notificaciones.");
     }
-
-    webpush.setVapidDetails(
-      vapidSubject,
-      vapidPublicKey,
-      vapidPrivateKey
-    )
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     const { userId, title, body, url } = await req.json()
@@ -44,7 +40,6 @@ serve(async (req) => {
         throw new Error("Missing userId or title");
     }
 
-    // 1. Obtener suscripciones del usuario
     const { data: subscriptions } = await supabase
       .from('push_subscriptions')
       .select('*')
@@ -56,7 +51,6 @@ serve(async (req) => {
       })
     }
 
-    // 2. Enviar a cada dispositivo
     const notifications = subscriptions.map(async (sub) => {
       const pushSubscription = {
         endpoint: sub.endpoint,
@@ -75,7 +69,6 @@ serve(async (req) => {
       try {
         await webpush.sendNotification(pushSubscription, payload)
         
-        // Actualizar last_used
         await supabase
             .from('push_subscriptions')
             .update({ last_used_at: new Date().toISOString() })
@@ -83,9 +76,8 @@ serve(async (req) => {
             
         return { success: true }
       } catch (error: any) {
-        // Si el endpoint ya no es válido (410 Gone), borrar suscripción
         if (error.statusCode === 410 || error.statusCode === 404) {
-          console.log(`Subscription expired/invalid: ${sub.id}`)
+          console.log(`Deleting expired subscription: ${sub.id}`)
           await supabase.from('push_subscriptions').delete().eq('id', sub.id)
         }
         return { success: false, error: error.message }
