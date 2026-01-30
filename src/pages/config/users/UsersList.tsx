@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { EditUserModal } from "../personnel/EditUserModal";
-import { CreateUserModal } from "../personnel/CreateUserModal";
+import { CreateUserModal } from "./CreateUserModal";
 
 export default function UsersList() {
   const { toast } = useToast();
