@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { 
   Bell, Check, Clock, Mail, MessageSquare, Megaphone, 
   AlertCircle, Send, CheckCheck, Eye, ShieldAlert, ShieldCheck,
-  Filter, X
+  Filter, X, RefreshCw
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -39,10 +39,9 @@ export default function MessageList() {
   const [selectedSentMessage, setSelectedSentMessage] = useState<any>(null);
   const [readReceiptsDetail, setReadReceiptsDetail] = useState<any[]>([]);
 
-  // --- NUEVOS FILTROS ---
+  // --- FILTROS ---
   const [filterType, setFilterType] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
-  // Rango de fechas (Strings YYYY-MM-DD)
   const [filterDateFrom, setFilterDateFrom] = useState<string>("");
   const [filterDateTo, setFilterDateTo] = useState<string>("");
 
@@ -52,7 +51,7 @@ export default function MessageList() {
     if (!isBackground) setLoading(true);
     
     try {
-      // 1. RECIBIDOS
+      // 1. RECIBIDOS (Mensajes Reales)
       const { data: receipts, error: rxError } = await supabase
         .from('message_receipts')
         .select(`
@@ -79,15 +78,17 @@ export default function MessageList() {
         timestamp: new Date(r.messages.created_at).getTime()
       })) || [];
 
-      // 2. NOTIFICACIONES
+      // 2. NOTIFICACIONES (Solo alertas de sistema, EXCLUYENDO avisos de nuevos mensajes)
       const { data: notifications, error: notifError } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
+        .neq('type', 'message') // <--- CORRECCIÓN CLAVE: Ocultar duplicados de mensajes
         .order('created_at', { ascending: false });
 
       if (notifError) console.error("Error notifications:", notifError);
 
+      // Enriquecer notificaciones con datos de tareas si aplica
       const taskIds = notifications
         ?.filter(n => n.type === 'routine_rejected' || n.type === 'routine_approved')
         .map(n => n.entity_id) || [];
@@ -138,13 +139,13 @@ export default function MessageList() {
         };
       }) || [];
       
-      // 3. UNIFICAR
+      // 3. UNIFICAR Y ORDENAR
       const combinedInbox = [...formattedMessages, ...formattedNotifications];
       combinedInbox.sort((a, b) => b.timestamp - a.timestamp);
       
       setInboxMessages(combinedInbox);
 
-      // 4. ENVIADOS
+      // 4. ENVIADOS (Solo para roles administrativos)
       if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
         const { data: sent } = await supabase
           .from('messages')
@@ -231,19 +232,15 @@ export default function MessageList() {
 
   // --- LÓGICA DE FILTRADO ---
   const filteredInbox = inboxMessages.filter(msg => {
-    // Filtro Tipo
     if (filterType !== 'all') {
       if (filterType === 'comunicado' && msg.tipo !== 'comunicado') return false;
       if (filterType === 'mensaje' && msg.tipo !== 'mensaje') return false;
       if (filterType === 'sistema' && (msg.source === 'message' || msg.tipo === 'comunicado' || msg.tipo === 'mensaje')) return false;
     }
     
-    // Filtro Prioridad
     if (filterPriority !== 'all' && msg.prioridad !== filterPriority) return false;
     
-    // Filtro Fecha (Rango)
     if (filterDateFrom) {
-      // Comparar strings ISO (created_at es timestamp completo)
       if (msg.created_at < `${filterDateFrom}T00:00:00`) return false;
     }
     if (filterDateTo) {
@@ -264,16 +261,25 @@ export default function MessageList() {
 
   return (
     <div className="space-y-6">
+      {/* HEADER PRINCIPAL */}
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Centro de Mensajes</h2>
           <p className="text-muted-foreground">Bandeja de entrada y notificaciones del sistema.</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => setIsNewModalOpen(true)}>
-            <Send className="w-4 h-4 mr-2" /> Redactar
+        <div className="flex gap-2">
+          {/* BOTÓN ACTUALIZAR - VISIBLE PARA TODOS */}
+          <Button variant="outline" size="sm" onClick={() => fetchMessages(false)} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline ml-2">Actualizar</span>
           </Button>
-        )}
+          
+          {canCreate && (
+            <Button onClick={() => setIsNewModalOpen(true)}>
+              <Send className="w-4 h-4 mr-2" /> Redactar
+            </Button>
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="inbox" className="w-full">
@@ -293,29 +299,21 @@ export default function MessageList() {
 
         <TabsContent value="inbox" className="mt-4 space-y-4">
           
-          {/* --- BARRA DE FILTROS RESPONSIVE --- */}
+          {/* --- BARRA DE FILTROS --- */}
           <div className="bg-muted/20 rounded-lg border border-border/50 p-3 sm:p-4">
             <div className="flex flex-col gap-3">
-              {/* Encabezado Filtros */}
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <Filter className="w-4 h-4" /> Filtros
                 </div>
                 {hasActiveFilters && (
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={clearFilters}
-                    className="h-7 text-xs text-destructive hover:bg-destructive/10"
-                  >
+                  <Button variant="ghost" size="sm" onClick={clearFilters} className="h-7 text-xs text-destructive hover:bg-destructive/10">
                     <X className="w-3 h-3 mr-1" /> Borrar
                   </Button>
                 )}
               </div>
 
-              {/* Grid de Inputs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* Tipo */}
                 <Select value={filterType} onValueChange={setFilterType}>
                   <SelectTrigger className="w-full h-9 text-sm bg-background">
                     <SelectValue placeholder="Tipo de mensaje" />
@@ -328,7 +326,6 @@ export default function MessageList() {
                   </SelectContent>
                 </Select>
 
-                {/* Prioridad */}
                 <Select value={filterPriority} onValueChange={setFilterPriority}>
                   <SelectTrigger className="w-full h-9 text-sm bg-background">
                     <SelectValue placeholder="Prioridad" />
@@ -340,14 +337,13 @@ export default function MessageList() {
                   </SelectContent>
                 </Select>
               
-                {/* Rango de Fechas (Ocupa 2 columnas en Desktop, 2 en Tablet, Stack en Mobile) */}
                 <div className="sm:col-span-2">
                   <DateRangePicker 
                     dateFrom={filterDateFrom}
                     setDateFrom={setFilterDateFrom}
                     dateTo={filterDateTo}
                     setDateTo={setFilterDateTo}
-                    compact={false} // Usamos grid interno para tablet/desktop
+                    compact={false}
                   />
                 </div>
               </div>
@@ -356,11 +352,14 @@ export default function MessageList() {
 
           {/* --- LISTA DE MENSAJES --- */}
           {loading ? (
-            <div className="text-center py-10">Cargando mensajes...</div>
+            <div className="text-center py-10 flex flex-col items-center gap-2 text-muted-foreground">
+              <RefreshCw className="w-6 h-6 animate-spin" />
+              Cargando mensajes...
+            </div>
           ) : filteredInbox.length === 0 ? (
             <div className="text-center py-16 border-2 border-dashed rounded-lg text-muted-foreground bg-muted/10">
               <Bell className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p>No se encontraron mensajes con los filtros seleccionados.</p>
+              <p>No se encontraron mensajes.</p>
             </div>
           ) : (
             <Accordion 
@@ -401,7 +400,7 @@ export default function MessageList() {
                     <div className="prose prose-sm max-w-none text-gray-800 dark:text-slate-200 whitespace-pre-line mb-4 pl-9">
                       {msg.cuerpo}
                     </div>
-                    {/* Botones de acción */}
+                    
                     <div className="flex justify-end pl-9 gap-2">
                       {msg.requiere_confirmacion && msg.source === 'message' && (
                         msg.confirmado_at ? (
