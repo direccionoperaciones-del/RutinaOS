@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
+import { VAPID_PUBLIC_KEY } from '@/config/push-keys';
 
-// NOTA: Esta llave debe coincidir con la VAPID_PRIVATE_KEY en las variables de entorno de Edge Functions.
-// Genera un par nuevo con: npx web-push generate-vapid-keys
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
-
-// 1. UTILIDAD DE CONVERSIÓN OBLIGATORIA
+// 1. UTILIDAD DE CONVERSIÓN OBLIGATORIA (Base64URL -> Uint8Array)
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -56,7 +53,7 @@ export function usePushSubscription() {
       
       if (subscription) {
         setIsSubscribed(true);
-        // Opcional: Sincronizar con DB si es necesario
+        console.log("Existing subscription detected:", subscription);
       }
     } catch (e) {
       console.error("Error checking subscription", e);
@@ -82,15 +79,17 @@ export function usePushSubscription() {
       await navigator.serviceWorker.ready; // Esperar a que esté listo
 
       // 4. SUSCRIPCIÓN PUSH
-      console.log("Solicitando suscripción push...");
+      console.log("VAPID key raw:", VAPID_PUBLIC_KEY);
+      
       const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      console.log("VAPID key converted (Uint8Array):", applicationServerKey);
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey
+        applicationServerKey // ✅ PASAMOS LA KEY CONVERTIDA
       });
 
-      console.log("PushSubscription obtenida:", subscription);
+      console.log("Subscription OK:", subscription);
 
       // 5. GUARDAR EN SUPABASE
       const subJSON = subscription.toJSON();

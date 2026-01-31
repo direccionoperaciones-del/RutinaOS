@@ -1,7 +1,7 @@
 // CONFIGURACIÓN DE NOTIFICACIONES PUSH
-// Llaves pre-configuradas y válidas.
+// Nueva llave generada: 2026-01-20
 
-// Esta es una Public Key P-256 válida.
-export const VAPID_PUBLIC_KEY = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
+// Public Key (Base64URL safe)
+export const VAPID_PUBLIC_KEY = "BJ5IxJBWdeqFDJTvrZ4wNRu7UY2uOBl14T56A93qqbqhu18gJA8iFPOeP4_87F8SHp1tJfe8KHFq5lLRcn_oOcA";
 
-// La llave privada correspondiente se configura automáticamente en el backend.
+// NOTA: La llave privada correspondiente debe configurarse en las variables de entorno de Supabase (Edge Functions).
