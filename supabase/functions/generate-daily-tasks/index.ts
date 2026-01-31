@@ -19,6 +19,7 @@ serve(async (req) => {
       throw new Error('Configuración incompleta.')
     }
 
+    // 1. Auth Check
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Falta autorización.')
 
@@ -42,6 +43,7 @@ serve(async (req) => {
       }
     }
 
+    // 2. Parse Body
     let body: any = {};
     try { 
       const text = await req.text();
@@ -56,6 +58,7 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+    // --- LOGICA GENERACIÓN ---
     let tenantQuery = supabaseAdmin.from('tenants').select('id, nombre').eq('activo', true);
     if (requesterTenantId) tenantQuery = tenantQuery.eq('id', requesterTenantId);
     
@@ -64,7 +67,7 @@ serve(async (req) => {
 
     const [y, m, d] = targetDate.split('-').map(Number);
     const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-    const dayOfWeek = dateObj.getUTCDay(); 
+    const dayOfWeek = dateObj.getUTCDay(); // 0=Dom
     const dayOfMonth = dateObj.getUTCDate();
 
     let totalTasksCreated = 0;
@@ -91,26 +94,27 @@ serve(async (req) => {
         .eq('estado', 'activa');
 
       if (!assignments || assignments.length === 0) {
-        detailedLogs.push(`⚠️ Sin rutinas asignadas.`);
+        detailedLogs.push(`⚠️ Tenant ${tenant.nombre}: No hay rutinas asignadas.`);
         continue;
       }
 
-      // 2. Obtener Responsables (Debugged)
-      // Primero intentamos query normal vigente=true
+      // 2. Obtener Responsables
+      // CRITICO: Usamos 'profiles:user_id(...)' para decirle a Supabase explícitamente cuál Foreign Key usar
       const { data: responsibles, error: respError } = await supabaseAdmin
         .from('pdv_assignments')
-        .select('pdv_id, user_id, profiles(nombre, apellido)')
+        .select('pdv_id, user_id, profiles:user_id(nombre, apellido)') 
         .eq('tenant_id', tenant.id)
         .eq('vigente', true);
       
       if (respError) {
-        detailedLogs.push(`🔥 Error consultando responsables: ${respError.message}`);
+        // Loguear el error real pero intentar continuar
+        detailedLogs.push(`🔥 Error consultando responsables: ${respError.message} (Code: ${respError.code})`);
+      } else {
+        detailedLogs.push(`ℹ️ Responsables activos encontrados: ${responsibles?.length || 0}`);
       }
 
       const respMap = new Map();
       responsibles?.forEach(r => respMap.set(r.pdv_id, r));
-      
-      detailedLogs.push(`ℹ️ Responsables activos encontrados: ${responsibles?.length || 0}`);
 
       // 3. Ausencias
       const { data: absences } = await supabaseAdmin
@@ -164,7 +168,7 @@ serve(async (req) => {
 
         if (!shouldRun) {
             // Solo loguear skips si es manual para no ensuciar
-            // detailedLogs.push(`⏭️ ${r.nombre} @ ${pdvName}: ${skipReason}`);
+            if (triggeredBy !== 'cron') detailedLogs.push(`⏭️ Saltada: ${r.nombre} en ${pdvName} -> ${skipReason}`);
             continue;
         }
 
@@ -175,7 +179,7 @@ serve(async (req) => {
         if (!userId) {
           // Debugging info: Check if there's ANY assignment for this PDV, even inactive
           const { data: anyAssign } = await supabaseAdmin.from('pdv_assignments').select('id, vigente').eq('pdv_id', assign.pdv_id).limit(1);
-          const status = anyAssign && anyAssign.length > 0 ? (anyAssign[0].vigente ? 'Activo (Pero no cargó?)' : 'Inactivo') : 'Sin registro';
+          const status = anyAssign && anyAssign.length > 0 ? (anyAssign[0].vigente ? 'Activo (Error lectura)' : 'Inactivo') : 'Sin registro';
           
           detailedLogs.push(`⚠️ ${r.nombre} en ${pdvName}: SIN RESPONSABLE. (Estado BD: ${status})`);
           continue; 
@@ -208,7 +212,7 @@ serve(async (req) => {
           created_at: new Date().toISOString()
         });
         
-        detailedLogs.push(`✅ Generada: ${r.nombre} -> ${pdvName} (${assignmentInfo?.profiles?.nombre || 'Usuario'})`);
+        detailedLogs.push(`✅ Generar: ${r.nombre} para ${assignmentInfo?.profiles?.nombre || 'Usuario'} en ${pdvName}`);
       }
 
       if (tasksToInsert.length > 0) {
@@ -217,12 +221,14 @@ serve(async (req) => {
           .upsert(tasksToInsert, { onConflict: 'assignment_id,fecha_programada', ignoreDuplicates: true });
         
         if (insertError) {
-          detailedLogs.push(`🔥 Error BD: ${insertError.message}`);
+          detailedLogs.push(`🔥 Error Insertando Tareas: ${insertError.message}`);
         } else {
           totalTasksCreated += tasksToInsert.length;
         }
       } else {
-        detailedLogs.push(`ℹ️ No se generaron tareas para esta organización hoy.`);
+        if (assignments.length > 0) {
+           detailedLogs.push(`ℹ️ Procesado sin tareas creadas (Ver motivos arriba).`);
+        }
       }
     }
 
