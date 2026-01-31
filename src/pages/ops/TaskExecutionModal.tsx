@@ -18,7 +18,6 @@ import { InventoryStep } from "./components/execution/InventoryStep";
 // Logic
 import { buildTaskSchema, TaskField } from "./logic/task-schema";
 
-// [Update] Added support for rejected tasks correction
 interface TaskExecutionModalProps {
   task: any;
   open: boolean;
@@ -33,7 +32,9 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  
+  // Estado separado para uploading, pero lo manejamos granularmente en los archivos
+  const [isUploadingGlobal, setIsUploadingGlobal] = useState(false);
   
   const [formData, setFormData] = useState<{
     gps: { lat: number, lng: number, valid: boolean, accuracy: number } | null;
@@ -57,16 +58,11 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const pdv = task?.pdv;
 
   const isTaskPending = task?.estado === 'pendiente' || task?.estado === 'en_proceso';
-  const isTaskCompleted = !isTaskPending;
-  
-  // Lógica crítica de permisos
   const isRejected = task?.audit_status === 'rechazado';
-  const isExecutor = user?.id === task?.completado_por || user?.id === task?.responsable_id; // Permitir al responsable también corregir
-  
+  const isExecutor = user?.id === task?.completado_por || user?.id === task?.responsable_id; 
   const userRole = profile?.role || '';
-  const canEditAsAdmin = ['director', 'lider'].includes(userRole); // Lideres pueden editar cualquier cosa si es necesario
+  const canEditAsAdmin = ['director', 'lider'].includes(userRole);
   
-  // Habilitar edición si: (Está pendiente) O (Fue rechazada Y soy el ejecutor) O (Soy admin)
   const canPerformAction = isTaskPending || (isRejected && isExecutor) || canEditAsAdmin;
 
   const schema: TaskField[] = useMemo(() => {
@@ -114,57 +110,125 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     }
   };
 
+  // --- LOGICA DE CARGA OPTIMISTA ---
   const handleFilesAdded = async (files: File[], type: 'foto' | 'archivo') => {
     if (!files || files.length === 0 || !task) return;
     
-    setIsUploading(true);
+    setIsUploadingGlobal(true);
+
+    // 1. Crear objetos temporales para la UI (Preview Inmediato)
+    const tempFiles = files.map(f => ({
+      id: `temp-${Date.now()}-${Math.random()}`, // ID temporal
+      tipo: type,
+      filename: f.name,
+      storage_path: '', // Aún no tenemos path remoto
+      fileObject: f,    // GUARDA EL ARCHIVO RAW PARA PREVIEW LOCAL
+      isUploading: true, // Flag para mostrar spinner o badge
+      created_at: new Date().toISOString()
+    }));
+
+    // 2. Actualizar estado visualmente YA
+    setFormData(prev => ({
+      ...prev,
+      files: type === 'archivo' ? [...prev.files, ...tempFiles] : prev.files,
+      photos: type === 'foto' ? [...prev.photos, ...tempFiles] : prev.photos
+    }));
+
     try {
-      const uploadPromises = files.map(async (file) => {
+      // 3. Subir en paralelo
+      const uploadPromises = tempFiles.map(async (tempFile) => {
+        const file = tempFile.fileObject;
         const fileExt = file.name.split('.').pop();
+        // Usar crypto.randomUUID para nombre único en storage
         const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
         
+        // A. Subir a Storage
         const { error: uploadError } = await supabase.storage.from('evidence').upload(fileName, file);
         if (uploadError) throw uploadError;
         
-        await supabase.from('evidence_files').insert({
+        // B. Guardar metadata en BD
+        const { data: dbRecord, error: dbError } = await supabase.from('evidence_files').insert({
           task_id: task.id,
           tipo: type,
           filename: file.name,
           storage_path: fileName,
           size_bytes: file.size,
           mime_type: file.type
-        });
+        }).select().single();
+
+        if (dbError) throw dbError;
+
+        // C. Retornar mapeo de ID Temporal -> Registro Real
+        return { tempId: tempFile.id, realRecord: dbRecord };
       });
 
-      await Promise.all(uploadPromises);
+      const results = await Promise.all(uploadPromises);
       
-      const { data: newFiles } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
-      
-      setFormData(prev => ({ 
-        ...prev, 
-        files: newFiles?.filter(f => f.tipo === 'archivo') || [], 
-        photos: newFiles?.filter(f => f.tipo === 'foto') || [] 
-      }));
+      // 4. Reemplazar temporales con reales en el estado
+      setFormData(prev => {
+        const replaceList = (list: any[]) => list.map(item => {
+          const match = results.find(r => r.tempId === item.id);
+          // Si encontramos match, reemplazamos con el record de BD (que tiene el ID real y storage_path)
+          // PERO mantenemos fileObject temporalmente por si el usuario quiere seguir viendo el blob local rápido
+          // aunque idealmente ya usamos signedUrl. Para máxima velocidad, el componente EvidenceStep prefiere fileObject si existe.
+          if (match) {
+            return { ...match.realRecord, fileObject: item.fileObject, isUploading: false };
+          }
+          return item;
+        });
+
+        return {
+          ...prev,
+          files: type === 'archivo' ? replaceList(prev.files) : prev.files,
+          photos: type === 'foto' ? replaceList(prev.photos) : prev.photos
+        };
+      });
       
       toast({ title: "Carga completada", description: type === 'foto' ? "Foto guardada." : "Archivo adjuntado." });
+
     } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: "No se pudo subir el archivo: " + error.message });
+      toast({ variant: "destructive", title: "Error", description: "Fallo al subir: " + error.message });
+      
+      // Revertir temporales en caso de error (filtrar los que fallaron)
+      // Por simplicidad, recargamos la data del servidor para asegurar consistencia
+      loadTaskData();
     } finally {
-      setIsUploading(false);
+      setIsUploadingGlobal(false);
     }
   };
 
   const handleDeleteEvidence = async (id: string, path: string) => {
-    if (!confirm("¿Borrar archivo?")) return;
+    // Si es temporal, solo borrar del estado
+    if (id.startsWith('temp-')) {
+      setFormData(prev => ({
+        ...prev,
+        files: prev.files.filter(f => f.id !== id),
+        photos: prev.photos.filter(f => f.id !== id)
+      }));
+      return;
+    }
+
+    if (!confirm("¿Borrar archivo permanentemente?")) return;
+    
     try {
-      await supabase.storage.from('evidence').remove([path]);
+      if (path) {
+        await supabase.storage.from('evidence').remove([path]);
+      }
       await supabase.from('evidence_files').delete().eq('id', id);
-      setFormData(prev => ({ ...prev, files: prev.files.filter(f => f.id !== id), photos: prev.photos.filter(f => f.id !== id) }));
-    } catch (error) { toast({ variant: "destructive", title: "Error", description: "No se pudo borrar." }); }
+      
+      setFormData(prev => ({ 
+        ...prev, 
+        files: prev.files.filter(f => f.id !== id), 
+        photos: prev.photos.filter(f => f.id !== id) 
+      }));
+    } catch (error) { 
+      toast({ variant: "destructive", title: "Error", description: "No se pudo borrar." }); 
+    }
   };
 
   const handleComplete = async () => {
+    // Validaciones
     for (const field of schema) {
       let valueToValidate;
       switch (field.id) {
@@ -176,8 +240,22 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         case 'comments': valueToValidate = formData.comments; break;
         default: valueToValidate = null;
       }
+      
+      // Filtramos uploads fallidos o en proceso antes de validar cantidad
+      if (field.id === 'photos' || field.id === 'files') {
+         const list = valueToValidate as any[];
+         // Validar solo los que NO están subiendo (o asumimos que terminarán bien)
+         // Pero mejor validar longitud total
+      }
+
       const error = field.validate(valueToValidate);
       if (error) { toast({ variant: "destructive", title: "Falta información", description: error }); return; }
+    }
+
+    // Bloquear si hay cargas en proceso
+    if (isUploadingGlobal) {
+      toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están subiendo archivos." });
+      return;
     }
 
     setIsProcessing(true);
@@ -213,8 +291,8 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     switch (field.type) {
       case 'location': return <LocationStep key={field.id} pdv={pdv} required={field.required} onLocationVerified={(lat, lng, valid, accuracy) => setFormData(prev => ({ ...prev, gps: { lat, lng, valid, accuracy } }))} />;
       case 'email_check': return <EmailStep key={field.id} requiresSend={field.id === 'email_send'} requiresRespond={field.id === 'email_respond'} sentConfirmed={formData.email_send} respondedConfirmed={formData.email_respond} onUpdate={(k, v) => setFormData(prev => ({ ...prev, [k === 'sent' ? 'email_send' : 'email_respond']: v }))} />;
-      case 'file': return <EvidenceStep key={field.id} type="archivo" label={field.label} required={field.required} files={formData.files} isUploading={isUploading} onFilesAdded={(files) => handleFilesAdded(files, 'archivo')} onDelete={handleDeleteEvidence} />;
-      case 'photo': return <EvidenceStep key={field.id} type="foto" label={field.label} required={field.required} minCount={field.constraints?.min} files={formData.photos} isUploading={isUploading} onFilesAdded={(files) => handleFilesAdded(files, 'foto')} onDelete={handleDeleteEvidence} />;
+      case 'file': return <EvidenceStep key={field.id} type="archivo" label={field.label} required={field.required} files={formData.files} isUploading={isUploadingGlobal} onFilesAdded={(files) => handleFilesAdded(files, 'archivo')} onDelete={handleDeleteEvidence} />;
+      case 'photo': return <EvidenceStep key={field.id} type="foto" label={field.label} required={field.required} minCount={field.constraints?.min} files={formData.photos} isUploading={isUploadingGlobal} onFilesAdded={(files) => handleFilesAdded(files, 'foto')} onDelete={handleDeleteEvidence} />;
       case 'inventory': return <InventoryStep key={field.id} categoriesIds={field.constraints?.categories || []} savedData={formData.inventory} onChange={(data) => setFormData(prev => ({ ...prev, inventory: data }))} />;
       case 'text': return <div key={field.id} className="space-y-2"><div className="flex justify-between"><Label>{field.label}</Label>{field.required && <span className="text-xs text-destructive">*</span>}</div><Textarea placeholder="Escribe aquí..." value={formData.comments} onChange={(e) => setFormData(prev => ({ ...prev, comments: e.target.value }))} /></div>;
       default: return null;
@@ -232,7 +310,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <Badge variant="outline" className="capitalize text-[10px]">{routine.prioridad}</Badge>
                 <span className="text-xs text-muted-foreground">{task.fecha_programada}</span>
-                {isTaskCompleted && !isRejected && <Badge variant="secondary" className="bg-green-100 text-green-800 text-[10px]">Completada</Badge>}
                 {isRejected && <Badge variant="destructive" className="text-[10px]">Rechazada</Badge>}
               </div>
               <DialogTitle className="text-lg leading-tight">{routine.nombre}</DialogTitle>
@@ -296,7 +373,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
           {canPerformAction && (
             <Button 
               onClick={handleComplete} 
-              disabled={isInitializing || isProcessing || isUploading || !!initError}
+              disabled={isInitializing || isProcessing || isUploadingGlobal || !!initError}
               className={`w-full sm:w-auto ${isRejected ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-green-600 hover:bg-green-700'}`}
             >
               {isProcessing && <Loader2 className="w-4 h-4 animate-spin mr-2" />}

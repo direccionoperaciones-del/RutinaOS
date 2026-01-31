@@ -1,61 +1,87 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X, Eye, AlertCircle, RefreshCw } from "lucide-react";
+import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X, Eye, AlertCircle, RefreshCw, ImageOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { validateFileSecurity } from "@/utils/file-validation";
 import { useToast } from "@/hooks/use-toast";
 
-// Sub-componente ROBUSTO para cargar imágenes seguras
-const EvidenceThumbnail = ({ path, alt }: { path: string, alt: string }) => {
+// --- SUB-COMPONENTE ROBUSTO PARA MINIATURAS ---
+interface EvidenceThumbnailProps {
+  file: any; // Objeto de evidencia (puede tener fileObject o storage_path)
+}
+
+const EvidenceThumbnail = ({ file }: EvidenceThumbnailProps) => {
   const [url, setUrl] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const fetchUrl = async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      // Solicitar URL firmada (temporal)
-      const { data, error } = await supabase.storage
-        .from('evidence')
-        .createSignedUrl(path, 3600); // 1 hora
-
-      if (error) throw error;
-      
-      if (data?.signedUrl) {
-        setUrl(data.signedUrl);
-      } else {
-        throw new Error("No signed URL returned");
-      }
-    } catch (err) {
-      console.error("Error loading image:", err);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (path) fetchUrl();
-  }, [path]);
+    let isMounted = true;
+    let objectUrl: string | null = null;
 
+    const loadPreview = async () => {
+      setLoading(true);
+      setError(false);
+
+      try {
+        // CASO 1: Preview Inmediato (Archivo local recién seleccionado)
+        if (file.fileObject) {
+          objectUrl = URL.createObjectURL(file.fileObject);
+          if (isMounted) {
+            setUrl(objectUrl);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // CASO 2: Archivo remoto (Ya guardado en Supabase)
+        if (file.storage_path) {
+          // Generar URL firmada (validez 1 hora)
+          const { data, error } = await supabase.storage
+            .from('evidence')
+            .createSignedUrl(file.storage_path, 3600);
+
+          if (error) throw error;
+          
+          if (isMounted && data?.signedUrl) {
+            setUrl(data.signedUrl);
+          } else {
+            throw new Error("No se pudo generar la URL firmada");
+          }
+        }
+      } catch (err) {
+        console.error("Error cargando imagen:", err);
+        if (isMounted) setError(true);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    loadPreview();
+
+    // Cleanup para evitar memory leaks con blobs
+    return () => {
+      isMounted = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [file.storage_path, file.fileObject]); // Recargar si cambia el path o el archivo
+
+  // Renderizado de Estados
   if (loading) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-muted/50">
-        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground"/>
+      <div className="w-full h-full flex flex-col items-center justify-center bg-muted/30 animate-pulse">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground mb-1"/>
+        <span className="text-[9px] text-muted-foreground">Cargando...</span>
       </div>
     );
   }
 
   if (error || !url) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500 gap-2 p-2">
-        <AlertCircle className="w-6 h-6" />
-        <span className="text-[10px] text-center font-medium leading-tight">Error al cargar</span>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={fetchUrl}>
-          <RefreshCw className="w-3 h-3" />
-        </Button>
+      <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500 gap-1 p-2 border border-red-100">
+        <ImageOff className="w-6 h-6 opacity-50" />
+        <span className="text-[9px] text-center font-bold leading-tight">No disponible</span>
       </div>
     );
   }
@@ -64,24 +90,36 @@ const EvidenceThumbnail = ({ path, alt }: { path: string, alt: string }) => {
     <div className="relative w-full h-full group">
       <img 
         src={url} 
-        className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105" 
-        alt={alt}
+        className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105 bg-gray-100" 
+        alt="Evidencia"
         onError={() => setError(true)}
       />
-      {/* Botón flotante para ver original si la miniatura se ve rara */}
-      <a 
-        href={url} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="absolute bottom-1 right-1 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Ver original"
-        onClick={(e) => e.stopPropagation()} // Evitar triggers externos
-      >
-        <Eye className="w-3 h-3" />
-      </a>
+      
+      {/* Overlay con acciones */}
+      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+        <a 
+          href={url} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="p-2 bg-white/90 text-slate-800 rounded-full hover:bg-white shadow-lg transition-transform hover:scale-110"
+          title="Ver original"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Eye className="w-4 h-4" />
+        </a>
+      </div>
+      
+      {/* Badge de "Subiendo..." si aplica */}
+      {file.isUploading && (
+        <div className="absolute bottom-0 left-0 right-0 bg-blue-600/90 text-white text-[9px] py-0.5 text-center font-medium">
+          Subiendo...
+        </div>
+      )}
     </div>
   );
 };
+
+// --- COMPONENTE PRINCIPAL ---
 
 interface EvidenceStepProps {
   type: 'foto' | 'archivo';
@@ -114,7 +152,7 @@ export function EvidenceStep({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
 
-  // Manejar selección de archivos input tradicional
+  // Manejar input de archivo (Galería/Archivos)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
@@ -137,19 +175,20 @@ export function EvidenceStep({
         onFilesAdded(validFiles);
       }
       
-      e.target.value = ''; // Reset
+      e.target.value = ''; // Reset input
     }
   };
 
-  // --- LÓGICA DE CÁMARA ---
+  // --- LÓGICA DE CÁMARA (Web API) ---
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } // Preferir cámara trasera
+        video: { facingMode: 'environment' } // Intentar usar cámara trasera
       });
       setStream(mediaStream);
       setIsCameraOpen(true);
       
+      // Esperar a que el elemento video esté renderizado
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
@@ -157,7 +196,7 @@ export function EvidenceStep({
       }, 100);
     } catch (err) {
       console.error("Error accessing camera:", err);
-      toast({ variant: "destructive", title: "Error de Cámara", description: "No se pudo acceder a la cámara. Verifica los permisos." });
+      toast({ variant: "destructive", title: "Error de Cámara", description: "No se pudo acceder a la cámara. Verifica permisos o usa 'Subir Archivo'." });
     }
   };
 
@@ -185,16 +224,17 @@ export function EvidenceStep({
             const fileName = `foto_camara_${Date.now()}.jpg`;
             const file = new File([blob], fileName, { type: "image/jpeg" });
             
+            // Validar y enviar
             validateFileSecurity(file, 'foto').then(({ valid }) => {
               if (valid) {
                 onFilesAdded([file]);
                 stopCamera();
               } else {
-                toast({ variant: "destructive", title: "Error", description: "Error procesando la foto." });
+                toast({ variant: "destructive", title: "Error", description: "Error procesando la foto capturada." });
               }
             });
           }
-        }, 'image/jpeg', 0.8);
+        }, 'image/jpeg', 0.8); // Calidad 80%
       }
     }
   };
@@ -227,12 +267,13 @@ export function EvidenceStep({
               className="w-full h-full object-cover"
             />
             
-            <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-8">
+            <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-8 z-10">
               <Button 
                 variant="secondary" 
                 size="icon" 
                 className="rounded-full h-12 w-12 bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/20 text-white"
                 onClick={stopCamera}
+                title="Cerrar Cámara"
               >
                 <X className="w-6 h-6" />
               </Button>
@@ -242,13 +283,14 @@ export function EvidenceStep({
                 size="icon" 
                 className="rounded-full h-20 w-20 border-4 border-white bg-transparent hover:bg-white/20 transition-all active:scale-95 ring-4 ring-black/20"
                 onClick={takePhoto}
+                title="Tomar Foto"
               >
                 <div className="h-16 w-16 bg-white rounded-full shadow-inner" />
               </Button>
             </div>
           </div>
         ) : (
-          /* BOTONES DE ACCIÓN */
+          /* BOTONES DE ACCIÓN (Upload / Cámara) */
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {isPhoto && (
               <Button 
@@ -260,7 +302,7 @@ export function EvidenceStep({
                 <div className="p-3 rounded-full bg-blue-50 group-hover:bg-blue-100 transition-colors">
                   <Camera className="w-6 h-6 text-blue-500" />
                 </div>
-                <span className="text-xs font-medium text-blue-700">Abrir Cámara</span>
+                <span className="text-xs font-medium text-blue-700">Tomar Foto</span>
               </Button>
             )}
 
@@ -276,7 +318,7 @@ export function EvidenceStep({
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground font-medium mt-1">
-                  {isUploading ? "Subiendo..." : "Subir Archivo"}
+                  {isUploading ? "Procesando..." : "Subir Archivo / Galería"}
                 </p>
               </div>
               <input 
@@ -291,25 +333,26 @@ export function EvidenceStep({
           </div>
         )}
 
-        {/* File List / Grid */}
+        {/* GRID DE EVIDENCIAS (Lista visual) */}
         {files.length > 0 && (
           <div className={isPhoto ? "grid grid-cols-3 sm:grid-cols-4 gap-3 mt-4" : "space-y-2 mt-4"}>
             {files.map(file => (
               isPhoto ? (
-                // Photo Item con Thumbnail seguro y controles
+                // FOTO: Usamos el nuevo componente EvidenceThumbnail
                 <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-background shadow-sm animate-in fade-in zoom-in duration-300">
-                  <EvidenceThumbnail path={file.storage_path} alt="Evidencia" />
+                  <EvidenceThumbnail file={file} />
                   
                   <button 
                     onClick={() => onDelete(file.id, file.storage_path)}
                     className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white p-1.5 rounded-full backdrop-blur-sm transition-colors z-10"
                     title="Eliminar"
+                    type="button"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
               ) : (
-                // File Item
+                // ARCHIVO: Lista simple
                 <div key={file.id} className="flex items-center justify-between p-3 bg-background border rounded-lg text-sm shadow-sm animate-in slide-in-from-bottom-2">
                   <div className="flex items-center gap-3 truncate">
                     <div className="p-2 bg-blue-50 rounded text-blue-600">
