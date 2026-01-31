@@ -33,7 +33,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   const [initError, setInitError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // Estado separado para uploading, pero lo manejamos granularmente en los archivos
   const [isUploadingGlobal, setIsUploadingGlobal] = useState(false);
   
   const [formData, setFormData] = useState<{
@@ -70,20 +69,30 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   }, [routine, pdv]);
 
   useEffect(() => {
-    if (open && task) {
+    if (open && task && user) {
       loadTaskData();
     } else {
       setFormData({ gps: null, email_send: false, email_respond: false, files: [], photos: [], inventory: [], comments: "" });
       setIsInitializing(true);
       setInitError(null);
     }
-  }, [open, task?.id]);
+  }, [open, task?.id, user?.id]); // Recargar si cambia usuario o tarea
 
   const loadTaskData = async () => {
     setIsInitializing(true);
     setInitError(null);
     try {
-      const { data: filesData, error: filesError } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
+      // 1. CARGAR EVIDENCIAS CON FILTRO DE PRIVACIDAD
+      let filesQuery = supabase.from('evidence_files').select('*').eq('task_id', task.id);
+      
+      // LOGICA DE AISLAMIENTO:
+      // Si la tarea NO está completada, solo traigo mis propios archivos (created_by = user.id)
+      // Esto evita que si Director subió algo y cerró, Admin lo vea.
+      if (isTaskPending && !isRejected) {
+         filesQuery = filesQuery.eq('created_by', user?.id);
+      }
+
+      const { data: filesData, error: filesError } = await filesQuery;
       if (filesError) throw filesError;
 
       let inventoryData: any[] = [];
@@ -110,24 +119,21 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     }
   };
 
-  // --- LOGICA DE CARGA OPTIMISTA ---
   const handleFilesAdded = async (files: File[], type: 'foto' | 'archivo') => {
-    if (!files || files.length === 0 || !task) return;
+    if (!files || files.length === 0 || !task || !user) return;
     
     setIsUploadingGlobal(true);
 
-    // 1. Crear objetos temporales para la UI (Preview Inmediato)
     const tempFiles = files.map(f => ({
-      id: `temp-${Date.now()}-${Math.random()}`, // ID temporal
+      id: `temp-${Date.now()}-${Math.random()}`,
       tipo: type,
       filename: f.name,
-      storage_path: '', // Aún no tenemos path remoto
-      fileObject: f,    // GUARDA EL ARCHIVO RAW PARA PREVIEW LOCAL
-      isUploading: true, // Flag para mostrar spinner o badge
+      storage_path: '',
+      fileObject: f,
+      isUploading: true,
       created_at: new Date().toISOString()
     }));
 
-    // 2. Actualizar estado visualmente YA
     setFormData(prev => ({
       ...prev,
       files: type === 'archivo' ? [...prev.files, ...tempFiles] : prev.files,
@@ -135,42 +141,35 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     }));
 
     try {
-      // 3. Subir en paralelo
       const uploadPromises = tempFiles.map(async (tempFile) => {
         const file = tempFile.fileObject;
         const fileExt = file.name.split('.').pop();
-        // Usar crypto.randomUUID para nombre único en storage
         const fileName = `${task.id}/${crypto.randomUUID()}.${fileExt}`;
         
-        // A. Subir a Storage
         const { error: uploadError } = await supabase.storage.from('evidence').upload(fileName, file);
         if (uploadError) throw uploadError;
         
-        // B. Guardar metadata en BD
+        // IMPORTANTE: Guardamos created_by con el usuario actual
         const { data: dbRecord, error: dbError } = await supabase.from('evidence_files').insert({
           task_id: task.id,
           tipo: type,
           filename: file.name,
           storage_path: fileName,
           size_bytes: file.size,
-          mime_type: file.type
+          mime_type: file.type,
+          created_by: user.id // <--- CLAVE PARA AISLAMIENTO
         }).select().single();
 
         if (dbError) throw dbError;
 
-        // C. Retornar mapeo de ID Temporal -> Registro Real
         return { tempId: tempFile.id, realRecord: dbRecord };
       });
 
       const results = await Promise.all(uploadPromises);
       
-      // 4. Reemplazar temporales con reales en el estado
       setFormData(prev => {
         const replaceList = (list: any[]) => list.map(item => {
           const match = results.find(r => r.tempId === item.id);
-          // Si encontramos match, reemplazamos con el record de BD (que tiene el ID real y storage_path)
-          // PERO mantenemos fileObject temporalmente por si el usuario quiere seguir viendo el blob local rápido
-          // aunque idealmente ya usamos signedUrl. Para máxima velocidad, el componente EvidenceStep prefiere fileObject si existe.
           if (match) {
             return { ...match.realRecord, fileObject: item.fileObject, isUploading: false };
           }
@@ -189,9 +188,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     } catch (error: any) {
       console.error(error);
       toast({ variant: "destructive", title: "Error", description: "Fallo al subir: " + error.message });
-      
-      // Revertir temporales en caso de error (filtrar los que fallaron)
-      // Por simplicidad, recargamos la data del servidor para asegurar consistencia
       loadTaskData();
     } finally {
       setIsUploadingGlobal(false);
@@ -199,7 +195,6 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
   };
 
   const handleDeleteEvidence = async (id: string, path: string) => {
-    // Si es temporal, solo borrar del estado
     if (id.startsWith('temp-')) {
       setFormData(prev => ({
         ...prev,
@@ -212,9 +207,7 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
     if (!confirm("¿Borrar archivo permanentemente?")) return;
     
     try {
-      if (path) {
-        await supabase.storage.from('evidence').remove([path]);
-      }
+      if (path) await supabase.storage.from('evidence').remove([path]);
       await supabase.from('evidence_files').delete().eq('id', id);
       
       setFormData(prev => ({ 
@@ -241,18 +234,10 @@ export function TaskExecutionModal({ task, open, onOpenChange, onSuccess }: Task
         default: valueToValidate = null;
       }
       
-      // Filtramos uploads fallidos o en proceso antes de validar cantidad
-      if (field.id === 'photos' || field.id === 'files') {
-         const list = valueToValidate as any[];
-         // Validar solo los que NO están subiendo (o asumimos que terminarán bien)
-         // Pero mejor validar longitud total
-      }
-
       const error = field.validate(valueToValidate);
       if (error) { toast({ variant: "destructive", title: "Falta información", description: error }); return; }
     }
 
-    // Bloquear si hay cargas en proceso
     if (isUploadingGlobal) {
       toast({ variant: "destructive", title: "Espera un momento", description: "Aún se están subiendo archivos." });
       return;
