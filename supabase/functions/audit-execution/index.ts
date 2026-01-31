@@ -22,6 +22,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders })
     }
     
+    // Verificar token de usuario
     const { data: { user: auditor }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
 
     if (authError || !auditor) {
@@ -41,8 +42,7 @@ serve(async (req) => {
 
     const allowedRoles = ['director', 'lider', 'auditor']
     if (!allowedRoles.includes(profile.role)) {
-      console.error(`User ${auditor.id} with role ${profile.role} attempted to audit task without permission.`)
-      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), { status: 403, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'No tienes permisos para auditar tareas.' }), { status: 403, headers: corsHeaders })
     }
 
     // 2. Parsear Body
@@ -52,7 +52,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'La nota de auditoría es obligatoria para rechazar.' }), { status: 400, headers: corsHeaders })
     }
 
-    // 3. Obtener Tarea y Detalles (PDV, Rutina)
+    // 3. Obtener Tarea y Detalles
     const { data: task, error: taskError } = await supabase
       .from('task_instances')
       .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre), tenant_id, pdv_id')
@@ -65,28 +65,10 @@ serve(async (req) => {
 
     // 3.1 Verificar aislamiento de Tenant
     if (task.tenant_id !== profile.tenant_id) {
-      console.error(`User ${auditor.id} (Tenant: ${profile.tenant_id}) attempted to audit task ${taskId} (Tenant: ${task.tenant_id})`)
-      return new Response(JSON.stringify({ error: 'Forbidden: Tenant mismatch' }), { status: 403, headers: corsHeaders })
+      return new Response(JSON.stringify({ error: 'Acceso denegado a otra organización.' }), { status: 403, headers: corsHeaders })
     }
 
-    // 3.2 Verificar Asignación de PDV para Líderes (Security Fix)
-    // Los líderes solo pueden auditar tareas de PDVs donde tienen asignación vigente
-    if (profile.role === 'lider') {
-      const { data: assignment } = await supabase
-        .from('pdv_assignments')
-        .select('id')
-        .eq('pdv_id', task.pdv_id)
-        .eq('user_id', auditor.id)
-        .eq('vigente', true)
-        .maybeSingle()
-
-      if (!assignment) {
-        console.error(`Leader ${auditor.id} attempted to audit PDV ${task.pdv_id} without active assignment.`)
-        return new Response(JSON.stringify({ error: 'Forbidden: No tiene asignación vigente en este PDV.' }), { status: 403, headers: corsHeaders })
-      }
-    }
-
-    // 4. Actualizar Tarea
+    // 4. Actualizar Tarea (Con manejo de errores explícito)
     const updateData = {
       audit_status: status === 'approved' ? 'aprobado' : 'rechazado',
       audit_at: new Date().toISOString(),
@@ -99,9 +81,13 @@ serve(async (req) => {
       .update(updateData)
       .eq('id', taskId)
 
-    if (updateError) throw updateError
+    if (updateError) {
+      console.error("Update DB Error:", updateError);
+      // Retornar el mensaje específico de la base de datos (útil si el trigger lo bloquea)
+      return new Response(JSON.stringify({ error: `Error guardando auditoría: ${updateError.message}` }), { status: 400, headers: corsHeaders })
+    }
 
-    // 5. Notificar al Ejecutor
+    // 5. Notificar al Ejecutor (Opcional, no bloqueante)
     if (task.completado_por && task.completado_por !== auditor.id) {
       const isApproved = status === 'approved'
       const title = isApproved ? 'Rutina Aprobada ✅' : 'Tarea Rechazada ⚠️'
@@ -109,19 +95,19 @@ serve(async (req) => {
       const pdvName = task.pdv?.nombre || 'PDV'
       const dateStr = task.fecha_programada
       
-      // Cuerpo enriquecido con los datos solicitados
       const body = isApproved 
         ? `Tu ejecución de "${routineName}" en ${pdvName} del ${dateStr} ha sido aprobada.` 
-        : `⚠️ Se ha rechazado tu tarea.\n\n📍 PDV: ${pdvName}\n📅 Fecha: ${dateStr}\n📋 Rutina: ${routineName}\n\n📝 Motivo: "${note}"\n\nPor favor corrige y reenvía.`
+        : `⚠️ Se ha rechazado tu tarea.\n\n📍 PDV: ${pdvName}\n📅 Fecha: ${dateStr}\n📋 Rutina: ${routineName}\n\n📝 Motivo: "${note}"`
 
-      await supabase.from('notifications').insert({
+      // Insertar notificación sin await para no demorar la respuesta
+      supabase.from('notifications').insert({
         tenant_id: task.tenant_id,
         user_id: task.completado_por,
         type: isApproved ? 'routine_approved' : 'routine_rejected',
         title: title,
         entity_id: taskId, 
         leido: false
-      })
+      }).then(() => {})
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -129,9 +115,9 @@ serve(async (req) => {
       status: 200,
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("[audit-execution] Unhandled Error:", error)
-    return new Response(JSON.stringify({ error: "An internal server error occurred." }), {
+    return new Response(JSON.stringify({ error: error.message || "Error interno del servidor." }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })
