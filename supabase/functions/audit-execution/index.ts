@@ -47,18 +47,13 @@ serve(async (req) => {
 
     if (updateError) throw updateError
 
-    // --- NOTIFICACIÓN PUSH ROBUSTA ---
+    // --- NOTIFICACIÓN INTERNA (Trigger disparará Push) ---
     if (task.completado_por && task.completado_por !== auditor.id) {
       const isApproved = status === 'approved'
       const title = isApproved ? '✅ Tarea Aprobada' : '🚨 Tarea Rechazada'
-      const routineName = task.routine_templates?.nombre || 'Rutina'
-      const pdvName = task.pdv?.nombre || 'PDV'
       
-      const body = isApproved 
-        ? `Tu ejecución de "${routineName}" en ${pdvName} ha sido aprobada.` 
-        : `CORRECCIÓN REQUERIDA:\nRutina: ${routineName}\nMotivo: ${note}\n\nToca para corregir.`
-
-      // 1. Guardar en notificaciones internas
+      // Insertar en tabla de notificaciones.
+      // EL TRIGGER 'on_notification_created_push' DETECTARÁ ESTO Y ENCOLARÁ EL PUSH AUTOMÁTICAMENTE.
       await supabase.from('notifications').insert({
         tenant_id: task.tenant_id,
         user_id: task.completado_por,
@@ -67,29 +62,8 @@ serve(async (req) => {
         entity_id: taskId, 
         leido: false
       })
-
-      // 2. Disparar Push (Usando Service Key para bypass de permisos)
-      // Construimos la URL de la función manualmente
-      // En Supabase local o producción, la estructura es standard
-      const functionsUrl = `${supabaseUrl}/functions/v1/send-push`;
       
-      console.log(`[Audit] Disparando Push System-to-User -> ${task.completado_por}`);
-
-      // Usamos FETCH directo con la Service Key en el header Authorization
-      // Esto simula que es el "Sistema" quien llama a la función, no el usuario Auditor
-      await fetch(functionsUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseServiceKey}`, // CLAVE MAESTRA
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          userId: task.completado_por,
-          title: title,
-          body: body,
-          url: '/tasks'
-        })
-      });
+      console.log(`[Audit] Notificación insertada para ${task.completado_por}. El Trigger DB se encargará del Push.`);
     }
 
     return new Response(JSON.stringify({ success: true }), {

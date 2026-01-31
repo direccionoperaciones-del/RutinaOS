@@ -20,56 +20,52 @@ serve(async (req) => {
     const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY')
     const vapidSubject = "mailto:admin@movacheck.app"
 
-    if (!vapidPublic || !vapidPrivate) {
-      throw new Error("VAPID keys no configuradas en Edge Function secrets")
-    }
+    if (!vapidPublic || !vapidPrivate) throw new Error("VAPID keys missing")
 
     webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate)
 
-    // Cliente con privilegios de Superusuario para leer suscripciones de CUALQUIER usuario
+    // Cliente Admin para operaciones de sistema
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 1. Verificación de Seguridad Dual
-    const authHeader = req.headers.get('Authorization')
-    const token = authHeader?.replace('Bearer ', '')
-    let isAuthorized = false
-
-    // Caso A: Llamada interna del sistema (usando Service Key)
-    if (token === supabaseServiceKey) {
-      isAuthorized = true;
-      console.log("[send-push] Autorizado por Service Key (Sistema)")
-    } 
-    // Caso B: Llamada desde cliente (Usuario logueado)
-    else if (token) {
-      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-      if (user && !error) isAuthorized = true;
+    // 1. Obtener Payload (Soporta llamada directa o desde Trigger/Webhook)
+    const bodyReq = await req.json()
+    
+    // Si viene desde el Trigger, el dato está en 'record'. Si es manual, en root.
+    const record = bodyReq.record || bodyReq; 
+    
+    // Validar datos mínimos
+    if (!record.user_id || !record.title) {
+        throw new Error("Invalid payload: missing user_id or title")
     }
 
-    if (!isAuthorized) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-    }
+    const queueId = record.id; // Puede ser null si es prueba manual
+    const { user_id, title, body, url } = record;
 
-    // 2. Proceso de Envío
-    const { userId, title, body, url } = await req.json()
+    console.log(`[Push Worker] Procesando para Usuario: ${user_id} | QueueID: ${queueId || 'MANUAL'}`)
 
-    if (!userId || !title) throw new Error("Faltan datos (userId, title)")
-
-    // Leer suscripciones usando el cliente Admin (Bypassea RLS)
+    // 2. Obtener Suscripciones
     const { data: subscriptions, error: subError } = await supabaseAdmin
       .from('push_subscriptions')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', user_id)
 
     if (subError) throw subError;
 
-    if (!subscriptions?.length) {
-      console.log(`[send-push] Usuario ${userId} no tiene dispositivos registrados.`)
-      return new Response(JSON.stringify({ success: true, message: 'No devices found', results: [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+    if (!subscriptions || subscriptions.length === 0) {
+      console.log(`[Push Worker] Usuario ${user_id} no tiene dispositivos.`)
+      if (queueId) {
+        await supabaseAdmin.from('notification_queue').update({ 
+            status: 'failed', 
+            response_log: { error: 'No subscriptions found' },
+            processed_at: new Date().toISOString()
+        }).eq('id', queueId)
+      }
+      return new Response(JSON.stringify({ result: 'no_subs' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    console.log(`[send-push] Enviando a ${subscriptions.length} dispositivos del usuario ${userId}`)
+    // 3. Enviar a todos los dispositivos
+    const pushPayload = JSON.stringify({ title, body, url: url || '/' })
+    const results = []
 
     const promises = subscriptions.map(async (sub) => {
       const pushConfig = {
@@ -77,40 +73,43 @@ serve(async (req) => {
         keys: { p256dh: sub.p256dh, auth: sub.auth }
       }
 
-      const payload = JSON.stringify({ title, body, url })
-
       try {
-        await webpush.sendNotification(pushConfig, payload, {
-          TTL: 60,
-          headers: { 'Urgency': 'high' }
+        await webpush.sendNotification(pushConfig, pushPayload, {
+          TTL: 60 * 60 * 24, // 24 horas de vida
+          headers: { 'Urgency': 'high' } // Prioridad alta para despertar Android en Doze mode
         })
-        
-        // Registrar éxito
-        await supabaseAdmin
-          .from('push_subscriptions')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('id', sub.id)
-          
-        return { status: 'ok', id: sub.id }
+        return { status: 'success', sub_id: sub.id }
       } catch (err: any) {
+        // Manejo de suscripciones muertas (410 Gone / 404 Not Found)
         if (err.statusCode === 410 || err.statusCode === 404) {
-          console.log(`[send-push] Eliminando suscripción muerta: ${sub.id}`)
+          console.log(`[Push Worker] Eliminando suscripción muerta: ${sub.id}`)
           await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id)
-          return { status: 'deleted', id: sub.id }
+          return { status: 'deleted', sub_id: sub.id }
         }
-        console.error(`[send-push] Fallo envío a ${sub.id}:`, err)
-        return { status: 'error', error: err.message }
+        console.error(`[Push Worker] Error envío individual:`, err)
+        return { status: 'error', sub_id: sub.id, error: err.message }
       }
     })
 
-    const results = await Promise.all(promises)
+    const executionResults = await Promise.all(promises)
+    const successCount = executionResults.filter(r => r.status === 'success').length
 
-    return new Response(JSON.stringify({ success: true, results }), {
+    // 4. Actualizar estado en la Cola
+    if (queueId) {
+      await supabaseAdmin.from('notification_queue').update({
+        status: successCount > 0 ? 'sent' : 'failed',
+        response_log: executionResults,
+        processed_at: new Date().toISOString()
+      }).eq('id', queueId)
+    }
+
+    return new Response(JSON.stringify({ success: true, results: executionResults }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
     })
 
   } catch (error: any) {
-    console.error("[send-push] Critical Error:", error)
+    console.error("[Push Worker] Critical Error:", error)
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

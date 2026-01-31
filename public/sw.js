@@ -1,50 +1,58 @@
 self.addEventListener('push', function(event) {
-  if (event.data) {
-    const data = event.data.json();
-    
-    const options = {
-      body: data.body,
-      icon: 'https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4', // Icono absoluto para asegurar carga
-      badge: '/icon-192.png', // Badge monocromático (Android standard)
-      
-      // --- SONIDO Y VIBRACIÓN AGRESIVA ---
-      vibrate: [200, 100, 200, 100, 200], // Vibración larga-corta-larga (SOS style)
-      renotify: true, // IMPORTANTE: Fuerza a sonar aunque haya notificaciones previas
-      tag: 'movacheck-alert-' + Date.now(), // Tag único fuerza nueva alerta visual y sonora
-      silent: false, // Explicito: NO silencioso
-      
-      // --- VISIBILIDAD ---
-      requireInteraction: true, // La notificación no desaparece sola, obliga al usuario a verla
-      
-      data: {
-        url: data.url || '/'
-      },
-      actions: [
-        { action: 'open', title: '👀 Ver Detalles' }
-      ]
-    };
-
-    event.waitUntil(
-      self.registration.showNotification(data.title, options)
-    );
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    console.error('Error parsing push data', e);
+    data = { title: 'Nueva notificación', body: 'Tienes una nueva actividad en Movacheck' };
   }
+
+  const title = data.title || 'Movacheck';
+  const options = {
+    body: data.body || 'Tienes una nueva notificación.',
+    icon: 'https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4',
+    badge: 'https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4', // Badge monocromático idealmente
+    data: {
+      url: data.url || '/'
+    },
+    // Opciones críticas para asegurar atención
+    requireInteraction: true, // No desaparece sola
+    renotify: true, // Vibra/Suena aunque haya otra notificación
+    tag: data.tag || 'movacheck-notification', // Agrupa si es necesario, o usa timestamp para únicas
+    vibrate: [200, 100, 200],
+    dir: 'auto',
+    lang: 'es'
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
 });
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
+  const urlToOpen = event.notification.data?.url || '/';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
-      // Intentar enfocar ventana existente
-      for (var i = 0; i < windowClients.length; i++) {
-        var client = windowClients[i];
-        if (client.url.includes(event.notification.data.url) && 'focus' in client) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+      // 1. Si ya hay una ventana abierta con esa URL, enfocarla
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if (client.url.includes(urlToOpen) && 'focus' in client) {
           return client.focus();
         }
       }
-      // Si no, abrir nueva
+      // 2. Si hay una ventana abierta pero en otra URL, navegar
+      for (var i = 0; i < clientList.length; i++) {
+        var client = clientList[i];
+        if ('navigate' in client && 'focus' in client) {
+          client.focus();
+          return client.navigate(urlToOpen);
+        }
+      }
+      // 3. Si no hay ventanas, abrir una nueva
       if (clients.openWindow) {
-        return clients.openWindow(event.notification.data.url);
+        return clients.openWindow(urlToOpen);
       }
     })
   );
