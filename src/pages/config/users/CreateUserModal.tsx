@@ -54,7 +54,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
 
       toast({ 
         title: "Usuario creado", 
-        description: `Se ha enviado un correo de confirmación a ${values.email}.` 
+        description: `Se ha creado la cuenta para ${values.nombre}. Ya puede iniciar sesión.` 
       });
       
       form.reset();
@@ -76,7 +76,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
             <UserPlus className="w-5 h-5 text-primary" /> Nuevo Usuario
           </DialogTitle>
           <DialogDescription>
-            Registra un nuevo empleado en tu organización. Recibirá un correo para confirmar su cuenta.
+            Registra un nuevo empleado en tu organización. Podrá acceder inmediatamente.
           </DialogDescription>
         </DialogHeader>
         
