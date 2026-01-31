@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ServerCog, Clock, Moon, Bug } from "lucide-react";
+import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ServerCog, Clock, Moon, Bug, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
 
@@ -24,6 +26,10 @@ export default function CommandCenter() {
   
   const [lastRun, setLastRun] = useState<any>(null);
   const [loadingRun, setLoadingRun] = useState(false);
+
+  // LOGS MODAL
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [executionLogs, setExecutionLogs] = useState<string[]>([]);
 
   const [metrics, setMetrics] = useState({
     incidencias: 0,
@@ -97,60 +103,41 @@ export default function CommandCenter() {
     fetchAllData();
   }, []);
 
-  // --- FUNCIÓN MANUAL CORREGIDA ---
   const runTaskEngine = async () => {
     if (!date) return;
     setIsLoadingGen(true);
+    setExecutionLogs([]);
 
     try {
       const simpleDate = format(date, "yyyy-MM-dd");
       console.log(`[Manual Trigger] Ejecutando motor para: ${simpleDate}`);
 
-      // Usamos invoke nativo de Supabase Client - Maneja Auth y URL automáticamente
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { 
-          date: simpleDate, 
-          force: true 
-        }
+        body: { date: simpleDate }
       });
 
-      if (error) {
-        // Error de invocación (Red, CORS, o 500 del servidor)
-        throw new Error(error.message || "Error de conexión con el motor de tareas.");
+      if (error) throw new Error(error.message || "Error de conexión.");
+      if (data && data.error) throw new Error(data.error);
+
+      // Mostrar logs si hay
+      if (data.logs && Array.isArray(data.logs)) {
+        setExecutionLogs(data.logs);
+        setLogsOpen(true);
       }
 
-      // El servidor devolvió respuesta, verificamos si es OK lógico
-      if (data && data.error) {
-        throw new Error(`Error del Motor: ${data.error}`);
-      }
-
-      if (data && !data.ok) {
-         throw new Error("El motor respondió con un estado inválido.");
-      }
-
-      // Éxito
       toast({ 
-        title: "Generación Finalizada", 
-        description: data?.message || `Tareas generadas: ${data?.generated || 0} para ${simpleDate}.` 
+        title: "Ejecución Finalizada", 
+        description: data.message || `Tareas generadas: ${data.generated}` 
       });
       
       fetchAllData();
 
     } catch (error: any) {
       console.error("[Manual Trigger Error]", error);
-      
-      // Intentar parsear si es un error JSON stringificado
-      let msg = error.message;
-      try {
-         const parsed = JSON.parse(error.message);
-         if (parsed.error) msg = parsed.error;
-      } catch (e) {}
-
       toast({ 
         variant: "destructive", 
         title: "Fallo en Ejecución", 
-        description: msg,
-        duration: 6000 
+        description: error.message,
       });
     } finally {
       setIsLoadingGen(false);
@@ -373,6 +360,39 @@ export default function CommandCenter() {
           </Card>
         </div>
       </div>
+
+      {/* MODAL DE LOGS */}
+      <Dialog open={logsOpen} onOpenChange={setLogsOpen}>
+        <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5"/> Reporte de Ejecución</DialogTitle>
+            <DialogDescription>
+              Detalle del procesamiento del motor de tareas.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 border rounded-md p-4 bg-slate-950 text-slate-100 font-mono text-xs">
+            {executionLogs.length === 0 ? (
+              <p className="text-slate-500">Sin detalles disponibles.</p>
+            ) : (
+              <div className="space-y-1">
+                {executionLogs.map((log, i) => (
+                  <div key={i} className={`
+                    ${log.includes('✅') ? 'text-green-400' : ''}
+                    ${log.includes('⚠️') ? 'text-yellow-400' : ''}
+                    ${log.includes('❌') ? 'text-red-400' : ''}
+                    ${log.includes('⏭️') ? 'text-slate-500' : ''}
+                  `}>
+                    {log}
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          <DialogFooter>
+            <Button onClick={() => setLogsOpen(false)}>Cerrar Reporte</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
