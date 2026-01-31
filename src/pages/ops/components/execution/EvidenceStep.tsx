@@ -1,47 +1,86 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X } from "lucide-react";
+import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X, Eye, AlertCircle, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { validateFileSecurity } from "@/utils/file-validation";
 import { useToast } from "@/hooks/use-toast";
 
-// Sub-componente para cargar imágenes seguras
+// Sub-componente ROBUSTO para cargar imágenes seguras
 const EvidenceThumbnail = ({ path, alt }: { path: string, alt: string }) => {
   const [url, setUrl] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    const fetchUrl = async () => {
-      // Solicitar URL firmada (temporal) para ver archivo privado
+  const fetchUrl = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      // Solicitar URL firmada (temporal)
       const { data, error } = await supabase.storage
         .from('evidence')
-        .createSignedUrl(path, 3600); // Validez de 1 hora
+        .createSignedUrl(path, 3600); // 1 hora
 
-      if (active) {
-        if (data?.signedUrl) {
-          setUrl(data.signedUrl);
-        } else {
-          console.error("Error cargando imagen:", error);
-        }
-        setLoading(false);
+      if (error) throw error;
+      
+      if (data?.signedUrl) {
+        setUrl(data.signedUrl);
+      } else {
+        throw new Error("No signed URL returned");
       }
-    };
+    } catch (err) {
+      console.error("Error loading image:", err);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     if (path) fetchUrl();
-    return () => { active = false; };
   }, [path]);
 
   if (loading) {
-    return <div className="w-full h-full flex items-center justify-center bg-muted/50"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground"/></div>;
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted/50">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground"/>
+      </div>
+    );
   }
 
-  if (!url) {
-    return <div className="w-full h-full flex items-center justify-center bg-muted/50 text-[10px] text-muted-foreground">No disponible</div>;
+  if (error || !url) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500 gap-2 p-2">
+        <AlertCircle className="w-6 h-6" />
+        <span className="text-[10px] text-center font-medium leading-tight">Error al cargar</span>
+        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={fetchUrl}>
+          <RefreshCw className="w-3 h-3" />
+        </Button>
+      </div>
+    );
   }
 
-  return <img src={url} className="object-cover w-full h-full transition-transform hover:scale-105" alt={alt} />;
+  return (
+    <div className="relative w-full h-full group">
+      <img 
+        src={url} 
+        className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105" 
+        alt={alt}
+        onError={() => setError(true)}
+      />
+      {/* Botón flotante para ver original si la miniatura se ve rara */}
+      <a 
+        href={url} 
+        target="_blank" 
+        rel="noopener noreferrer"
+        className="absolute bottom-1 right-1 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Ver original"
+        onClick={(e) => e.stopPropagation()} // Evitar triggers externos
+      >
+        <Eye className="w-3 h-3" />
+      </a>
+    </div>
+  );
 };
 
 interface EvidenceStepProps {
@@ -75,7 +114,7 @@ export function EvidenceStep({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
 
-  // Manejar selección de archivos input tradicional con validación
+  // Manejar selección de archivos input tradicional
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
@@ -106,12 +145,11 @@ export function EvidenceStep({
   const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } // Preferir cámara trasera en móviles
+        video: { facingMode: 'environment' } // Preferir cámara trasera
       });
       setStream(mediaStream);
       setIsCameraOpen(true);
       
-      // Esperar a que el ref del video esté disponible
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
@@ -119,7 +157,7 @@ export function EvidenceStep({
       }, 100);
     } catch (err) {
       console.error("Error accessing camera:", err);
-      alert("No se pudo acceder a la cámara. Por favor verifica los permisos.");
+      toast({ variant: "destructive", title: "Error de Cámara", description: "No se pudo acceder a la cámara. Verifica los permisos." });
     }
   };
 
@@ -147,7 +185,6 @@ export function EvidenceStep({
             const fileName = `foto_camara_${Date.now()}.jpg`;
             const file = new File([blob], fileName, { type: "image/jpeg" });
             
-            // Validar incluso la foto de cámara por consistencia
             validateFileSecurity(file, 'foto').then(({ valid }) => {
               if (valid) {
                 onFilesAdded([file]);
@@ -246,7 +283,7 @@ export function EvidenceStep({
                 type="file" 
                 accept={isPhoto ? "image/*" : ".pdf,.doc,.docx,.xls,.xlsx,.txt"} 
                 className="hidden" 
-                multiple // Permitir selección múltiple
+                multiple 
                 onChange={handleFileChange} 
                 disabled={isUploading} 
               />
@@ -259,13 +296,14 @@ export function EvidenceStep({
           <div className={isPhoto ? "grid grid-cols-3 sm:grid-cols-4 gap-3 mt-4" : "space-y-2 mt-4"}>
             {files.map(file => (
               isPhoto ? (
-                // Photo Item con Thumbnail seguro
+                // Photo Item con Thumbnail seguro y controles
                 <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-background shadow-sm animate-in fade-in zoom-in duration-300">
                   <EvidenceThumbnail path={file.storage_path} alt="Evidencia" />
                   
                   <button 
                     onClick={() => onDelete(file.id, file.storage_path)}
-                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white p-1.5 rounded-full backdrop-blur-sm transition-colors"
+                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white p-1.5 rounded-full backdrop-blur-sm transition-colors z-10"
+                    title="Eliminar"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
