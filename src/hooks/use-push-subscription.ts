@@ -79,8 +79,13 @@ export function usePushSubscription() {
         throw new Error("No se pudo obtener la configuración de notificaciones del servidor. Verifica los Secretos en Supabase.");
       }
 
-      const vapidPublicKey = keyData.publicKey;
-      console.log("Llave recibida:", vapidPublicKey.substring(0, 10) + "...");
+      // LIMPIEZA DE LLAVE: Eliminar espacios y comillas accidentales
+      const vapidPublicKey = keyData.publicKey.trim().replace(/['"]/g, '');
+      console.log("Llave recibida (sanitizada):", vapidPublicKey);
+
+      if (vapidPublicKey.length < 10) {
+         throw new Error("La llave pública parece estar vacía o corrupta.");
+      }
 
       // 2. REGISTRO SERVICE WORKER
       console.log("Registrando Service Worker...");
@@ -92,7 +97,8 @@ export function usePushSubscription() {
       try {
         applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
       } catch (e) {
-        throw new Error("La llave pública VAPID en Supabase tiene un formato incorrecto. Asegúrate de que sea una cadena Base64URL válida.");
+        console.error("Error convirtiendo llave:", e);
+        throw new Error("La llave pública VAPID tiene un formato incorrecto (Base64URL inválido).");
       }
       
       const subscription = await registration.pushManager.subscribe({
@@ -127,8 +133,13 @@ export function usePushSubscription() {
       
       let msg = err.message || "Error desconocido al suscribir";
       
-      if (msg.includes("valid P-256")) msg = "La llave pública VAPID configurada en Supabase no es válida. Revisa los Secretos.";
-      if (msg.includes("user denied")) msg = "Permiso de notificaciones denegado por el usuario.";
+      // Diagnóstico detallado para el usuario
+      if (msg.includes("valid P-256")) {
+        msg = "Error: La llave VAPID en Supabase es incorrecta. Asegúrate de copiar la 'Public Key' generada (no la privada) y sin comillas.";
+      }
+      if (msg.includes("user denied")) {
+        msg = "Permiso de notificaciones denegado. Habilítalo en la configuración del navegador (candado en la barra de URL).";
+      }
       
       setError(msg);
       return false;
