@@ -38,14 +38,14 @@ serve(async (req) => {
         .single()
 
     if (requesterProfile?.role !== 'director') {
-        return new Response(JSON.stringify({ error: 'Solo los directores pueden crear usuarios.' }), { status: 403, headers: corsHeaders })
+        return new Response(JSON.stringify({ error: 'Solo los directores pueden crear usuarios.' }), { status: 200, headers: corsHeaders })
     }
 
     // 2. Obtener datos del body
     const { email, password, nombre, apellido, role } = await req.json()
 
     if (!email || !password || !nombre || !apellido || !role) {
-        return new Response(JSON.stringify({ error: 'Faltan campos obligatorios' }), { status: 400, headers: corsHeaders })
+        return new Response(JSON.stringify({ error: 'Faltan campos obligatorios' }), { status: 200, headers: corsHeaders })
     }
 
     // 3. Crear el usuario en Auth
@@ -59,11 +59,18 @@ serve(async (req) => {
             nombre: nombre,
             apellido: apellido,
             tenant_id: requesterProfile.tenant_id, // VINCULACIÓN CRÍTICA
-            role: role // Opcional, el trigger podría usar esto o el update posterior
+            role: role 
         }
     })
 
-    if (createError) throw createError
+    if (createError) {
+        console.error("Error creating user in Auth:", createError)
+        // Devolvemos 200 OK pero con el error en el body para que el cliente lo muestre
+        return new Response(
+            JSON.stringify({ error: createError.message }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+        )
+    }
 
     // 4. Asegurar que el perfil tenga el rol correcto (por si el trigger por defecto asigna otro)
     if (newUser.user) {
@@ -79,10 +86,11 @@ serve(async (req) => {
     )
 
   } catch (error: any) {
-    console.error("Error creating user:", error)
+    console.error("Critical error in create-user:", error)
+    // Devolvemos 200 para evitar "non-2xx status code" en el cliente y mostrar el mensaje real
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      JSON.stringify({ error: error.message || 'Error interno del servidor' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
   }
 })
