@@ -336,8 +336,19 @@ export default function TasksList() {
   useEffect(() => {
     const checkAbsences = async () => {
       if (!user || !dateFrom || !dateTo) return;
-      const { data } = await supabase.from('user_absences').select('*, absence_types(nombre)').eq('user_id', user.id).lte('fecha_desde', dateTo).gte('fecha_hasta', dateFrom).maybeSingle(); 
-      setActiveAbsence(data);
+      // Usamos .select() que devuelve array en lugar de maybeSingle para robustez ante duplicados
+      const { data } = await supabase
+        .from('user_absences')
+        .select('*, absence_types(nombre)')
+        .eq('user_id', user.id)
+        .lte('fecha_desde', dateTo)
+        .gte('fecha_hasta', dateFrom);
+        
+      if (data && data.length > 0) {
+        setActiveAbsence(data[0]);
+      } else {
+        setActiveAbsence(null);
+      }
     };
     checkAbsences();
   }, [user, dateFrom, dateTo]);
@@ -449,7 +460,7 @@ export default function TasksList() {
           <div>
             <h4 className="font-bold text-blue-900 text-lg">Tienes una novedad: {activeAbsence.absence_types?.nombre}</h4>
             <p className="text-blue-800 text-sm">Hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}</p>
-            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium"><Info className="w-3 h-3"/> {activeAbsence.politica === 'reasignar' ? 'Tareas reasignadas.' : 'Tareas omitidas.'}</p>
+            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium"><Info className="w-3 h-3"/> {activeAbsence.politica === 'reasignar' ? 'Tareas reasignadas.' : 'Tareas omitidas. No tienes tareas asignadas.'}</p>
           </div>
         </div>
       )}
