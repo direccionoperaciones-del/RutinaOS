@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X, Eye, AlertCircle, RefreshCw, ImageOff } from "lucide-react";
