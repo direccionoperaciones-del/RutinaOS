@@ -4,15 +4,14 @@ self.addEventListener('push', function(event) {
     
     const options = {
       body: data.body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      icon: '/icon-192.png', // Asegúrate de tener este icono en public/
+      badge: '/icon-192.png',
       vibrate: [100, 50, 100],
       data: {
         url: data.url || '/'
       },
-      // Acciones opcionales
       actions: [
-        {action: 'open', title: 'Ver ahora'}
+        { action: 'open', title: 'Ver ahora' }
       ]
     };
 
@@ -26,7 +25,7 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
 
   event.waitUntil(
-    clients.matchAll({type: 'window'}).then( windowClients => {
+    clients.matchAll({ type: 'window' }).then(windowClients => {
       // Si la app ya está abierta, enfocarla
       for (var i = 0; i < windowClients.length; i++) {
         var client = windowClients[i];

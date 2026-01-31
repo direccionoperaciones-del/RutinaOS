@@ -2,13 +2,23 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
 
-// NUEVAS LLAVES GENERADAS (Formato URL-Safe Base64 estándar)
-const PUBLIC_KEY = "BKs4297p6q3d9Z4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4q2w4"; 
-// Nota: Esta es una llave placeholder para evitar el error de formato anterior. 
-// Usaremos la llave anterior que parecía válida pero con un conversor corregido, 
-// o mejor, usa esta nueva si la anterior estaba corrupta.
-// Vuelvo a poner la ANTERIOR pero asegurando que el string esté limpio:
-const VAPID_PUBLIC_KEY = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
+// NOTA: Esta llave debe coincidir con la VAPID_PRIVATE_KEY en las variables de entorno de Edge Functions.
+// Genera un par nuevo con: npx web-push generate-vapid-keys
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBLYFpaaRWsEtzD9DxWo";
+
+// 1. UTILIDAD DE CONVERSIÓN OBLIGATORIA
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export function usePushSubscription() {
   const { user } = useCurrentUser();
@@ -16,12 +26,25 @@ export function usePushSubscription() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
-  
-  const isConfigured = true;
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      setIsSupported(true);
+    // Detectar soporte y entorno
+    const hasSW = 'serviceWorker' in navigator;
+    const hasPush = 'PushManager' in window;
+    setIsSupported(hasSW && hasPush);
+
+    // Detectar iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isIosDevice);
+
+    // Detectar Standalone (PWA instalada)
+    const isStand = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+    setIsStandalone(isStand);
+
+    if (hasSW && hasPush && user) {
       checkSubscription();
     }
   }, [user]);
@@ -30,84 +53,61 @@ export function usePushSubscription() {
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
-      setIsSubscribed(!!subscription);
+      
+      if (subscription) {
+        setIsSubscribed(true);
+        // Opcional: Sincronizar con DB si es necesario
+      }
     } catch (e) {
       console.error("Error checking subscription", e);
     }
   };
-
-  // Conversor BINARIO corregido y simplificado para máxima compatibilidad (Safari/iOS)
-  function urlBase64ToUint8Array(base64String: string) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/');
-
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  }
 
   const subscribeToPush = async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
 
-    // 1. VALIDACIÓN IOS PWA (CRÍTICO)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    // Check si está en modo standalone (instalada)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
-
+    // 2. VALIDACIÓN IOS PWA
     if (isIOS && !isStandalone) {
       setLoading(false);
-      setError("En iPhone/iPad es OBLIGATORIO instalar la app en el inicio para activar notificaciones. Toca el botón 'Compartir' y luego 'Agregar a Inicio'.");
+      setError("En iOS, debes instalar la aplicación en tu pantalla de inicio para activar las notificaciones. Toca 'Compartir' -> 'Agregar a inicio'.");
       return false;
     }
 
     try {
-      // 2. Esperar al Service Worker
-      const registration = await navigator.serviceWorker.ready;
+      // 3. REGISTRO SERVICE WORKER
+      console.log("Registrando SW...");
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      await navigator.serviceWorker.ready; // Esperar a que esté listo
 
-      if (!registration.active) {
-        throw new Error("El Service Worker no está activo. Recarga la página.");
-      }
+      // 4. SUSCRIPCIÓN PUSH
+      console.log("Solicitando suscripción push...");
+      const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
       
-      // 3. Permiso
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        throw new Error('Permiso denegado. Habilita las notificaciones en la configuración del navegador.');
-      }
-
-      // 4. Suscribirse (Intentamos primero con la llave existente)
-      const convertedKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-      
-      // Cancelar suscripción anterior si existe (a veces quedan corruptas)
-      const existingSub = await registration.pushManager.getSubscription();
-      if (existingSub) {
-        await existingSub.unsubscribe();
-      }
-
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: convertedKey
+        applicationServerKey
       });
 
-      // 5. Guardar en BD
+      console.log("PushSubscription obtenida:", subscription);
+
+      // 5. GUARDAR EN SUPABASE
       const subJSON = subscription.toJSON();
       
+      if (!subJSON.keys?.p256dh || !subJSON.keys?.auth || !subJSON.endpoint) {
+        throw new Error("Suscripción incompleta (faltan llaves)");
+      }
+
       const { error: dbError } = await supabase
         .from('push_subscriptions')
         .upsert({
           user_id: user.id,
-          endpoint: subJSON.endpoint!,
-          p256dh: subJSON.keys!.p256dh,
-          auth: subJSON.keys!.auth,
+          endpoint: subJSON.endpoint,
+          p256dh: subJSON.keys.p256dh,
+          auth: subJSON.keys.auth,
           user_agent: navigator.userAgent
-        }, { onConflict: 'user_id,endpoint' });
+        }, { onConflict: 'endpoint' });
 
       if (dbError) throw dbError;
 
@@ -115,9 +115,12 @@ export function usePushSubscription() {
       return true;
 
     } catch (err: any) {
-      console.error('Error subscribing:', err);
-      // Mostramos el error REAL para diagnóstico
-      setError(err.message || 'Error desconocido al suscribir');
+      console.error("PUSH SUBSCRIBE FAILED:", err);
+      // Extraer mensaje real del error
+      let msg = err.message || "Error desconocido al suscribir";
+      if (msg.includes("valid P-256")) msg = "Error de configuración VAPID (Clave pública inválida).";
+      
+      setError(msg);
       return false;
     } finally {
       setLoading(false);
@@ -127,29 +130,32 @@ export function usePushSubscription() {
   const sendTestPush = async () => {
     if (!user) return;
     try {
-      await supabase.functions.invoke('send-push', {
+      setLoading(true);
+      const { error } = await supabase.functions.invoke('send-push', {
         body: {
           userId: user.id,
-          title: "¡Notificaciones Activas! 🔔",
-          body: "El sistema está funcionando correctamente.",
+          title: "🔔 Prueba Exitosa",
+          body: "El sistema de notificaciones está funcionando correctamente.",
           url: "/settings"
         }
       });
-    } catch (err) {
-      console.error(err);
+      if (error) throw error;
+    } catch (err: any) {
+      console.error("Error sending test push:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
-  
-  const saveKeyLocally = () => {};
 
   return {
     isSupported,
     isSubscribed,
-    isConfigured,
     loading,
     error,
     subscribeToPush,
     sendTestPush,
-    saveKeyLocally
+    isIOS,
+    isStandalone
   };
 }
