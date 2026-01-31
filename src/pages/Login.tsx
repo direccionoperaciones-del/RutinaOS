@@ -89,10 +89,15 @@ const Login = () => {
   const onRegister = async (values: z.infer<typeof registerSchema>) => {
     setIsLoading(true);
     try {
+      // Definimos explícitamente la URL de redirección para evitar ir a localhost
+      // Usamos window.location.origin para que funcione en cualquier dominio (preview o prod)
+      const redirectTo = `${window.location.origin}/login`;
+
       const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
+          emailRedirectTo: redirectTo,
           data: {
             nombre: values.nombre,
             apellido: values.apellido,
@@ -126,8 +131,9 @@ const Login = () => {
     }
     setIsResetting(true);
     try {
+      // También aseguramos el redirect aquí por si acaso
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: window.location.origin + "/settings",
+        redirectTo: `${window.location.origin}/settings`,
       });
       
       if (error) throw error;
