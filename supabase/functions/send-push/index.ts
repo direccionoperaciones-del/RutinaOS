@@ -55,7 +55,13 @@ serve(async (req) => {
       const payload = JSON.stringify({ title, body, url })
 
       try {
-        await webpush.sendNotification(pushConfig, payload)
+        // CORRECCIÓN CRÍTICA: Headers para prioridad alta
+        await webpush.sendNotification(pushConfig, payload, {
+          TTL: 60, // Tiempo de vida corto para forzar entrega rápida
+          headers: {
+            'Urgency': 'high' // Obligatorio para que suene en iOS/Android
+          }
+        })
         
         // Actualizar último uso
         await supabase

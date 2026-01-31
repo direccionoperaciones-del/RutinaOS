@@ -4,9 +4,12 @@ self.addEventListener('push', function(event) {
     
     const options = {
       body: data.body,
-      icon: '/icon-192.png', // Asegúrate de tener este icono en public/
+      icon: '/icon-192.png',
       badge: '/icon-192.png',
       vibrate: [100, 50, 100],
+      // Timestamp como tag fuerza que cada notif sea única y suene
+      tag: 'movacheck-' + Date.now(), 
+      renotify: true, // Importante: fuerza sonido/vibración de nuevo
       data: {
         url: data.url || '/'
       },
