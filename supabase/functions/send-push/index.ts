@@ -33,26 +33,31 @@ serve(async (req) => {
     // Si viene desde el Trigger, el dato está en 'record'. Si es manual, en root.
     const record = bodyReq.record || bodyReq; 
     
+    // Normalizar user_id (soporta userId o user_id)
+    const targetUserId = record.user_id || record.userId;
+    const title = record.title;
+    const body = record.body;
+    const url = record.url;
+
     // Validar datos mínimos
-    if (!record.user_id || !record.title) {
+    if (!targetUserId || !title) {
         throw new Error("Invalid payload: missing user_id or title")
     }
 
     const queueId = record.id; // Puede ser null si es prueba manual
-    const { user_id, title, body, url } = record;
 
-    console.log(`[Push Worker] Procesando para Usuario: ${user_id} | QueueID: ${queueId || 'MANUAL'}`)
+    console.log(`[Push Worker] Procesando para Usuario: ${targetUserId} | QueueID: ${queueId || 'MANUAL'}`)
 
     // 2. Obtener Suscripciones
     const { data: subscriptions, error: subError } = await supabaseAdmin
       .from('push_subscriptions')
       .select('*')
-      .eq('user_id', user_id)
+      .eq('user_id', targetUserId)
 
     if (subError) throw subError;
 
     if (!subscriptions || subscriptions.length === 0) {
-      console.log(`[Push Worker] Usuario ${user_id} no tiene dispositivos.`)
+      console.log(`[Push Worker] Usuario ${targetUserId} no tiene dispositivos.`)
       if (queueId) {
         await supabaseAdmin.from('notification_queue').update({ 
             status: 'failed', 

@@ -113,10 +113,11 @@ export function usePushSubscription() {
     if (!user) return;
     try {
       setLoading(true);
+      setError(null);
       // Usar invoke normal aquí (Usuario llamando a función)
       const { error } = await supabase.functions.invoke('send-push', {
         body: {
-          userId: user.id,
+          user_id: user.id, // CORREGIDO: user_id en lugar de userId
           title: "🔔 Prueba Exitosa",
           body: "Sistema operativo y conectado.",
           url: "/settings"
