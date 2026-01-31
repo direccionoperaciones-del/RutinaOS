@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
-import { VAPID_PUBLIC_KEY } from '@/lib/push-keys'; // Ruta corregida a @/lib
 
 // Función obligatoria para convertir la llave VAPID de base64url a Uint8Array
 function urlBase64ToUint8Array(base64String: string) {
@@ -53,7 +52,6 @@ export function usePushSubscription() {
       
       if (subscription) {
         setIsSubscribed(true);
-        console.log("Existing subscription detected:", subscription);
       }
     } catch (e) {
       console.error("Error checking subscription", e);
@@ -65,11 +63,7 @@ export function usePushSubscription() {
     setLoading(true);
     setError(null);
 
-    // Logs de diagnóstico
-    console.log("Iniciando proceso de suscripción...");
-    console.log("VAPID Key Raw:", VAPID_PUBLIC_KEY);
-
-    // 2. VALIDACIÓN IOS PWA
+    // VALIDACIÓN IOS PWA
     if (isIOS && !isStandalone) {
       setLoading(false);
       setError("En iOS, debes instalar la aplicación en tu pantalla de inicio para activar las notificaciones. Toca 'Compartir' -> 'Agregar a inicio'.");
@@ -77,23 +71,36 @@ export function usePushSubscription() {
     }
 
     try {
-      // 3. REGISTRO SERVICE WORKER
+      // 1. OBTENER LLAVE PÚBLICA DEL SERVIDOR (Dinámico)
+      console.log("Obteniendo llave VAPID del servidor...");
+      const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
+      
+      if (keyError || !keyData?.publicKey) {
+        throw new Error("No se pudo obtener la configuración de notificaciones del servidor. Verifica los Secretos en Supabase.");
+      }
+
+      const vapidPublicKey = keyData.publicKey;
+      console.log("Llave recibida:", vapidPublicKey.substring(0, 10) + "...");
+
+      // 2. REGISTRO SERVICE WORKER
       console.log("Registrando Service Worker...");
       const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
       await navigator.serviceWorker.ready;
 
-      // 4. SUSCRIPCIÓN PUSH CON CONVERSIÓN
-      const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-      console.log("VAPID Key Convertida (Uint8Array):", applicationServerKey);
+      // 3. SUSCRIPCIÓN PUSH
+      let applicationServerKey;
+      try {
+        applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      } catch (e) {
+        throw new Error("La llave pública VAPID en Supabase tiene un formato incorrecto. Asegúrate de que sea una cadena Base64URL válida.");
+      }
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey // ✅ Usamos la llave convertida correctamente
+        applicationServerKey
       });
 
-      console.log("Subscription OK:", subscription);
-
-      // 5. GUARDAR EN SUPABASE
+      // 4. GUARDAR EN SUPABASE
       const subJSON = subscription.toJSON();
       
       if (!subJSON.keys?.p256dh || !subJSON.keys?.auth || !subJSON.endpoint) {
@@ -120,8 +127,7 @@ export function usePushSubscription() {
       
       let msg = err.message || "Error desconocido al suscribir";
       
-      // Mensajes de error más amigables
-      if (msg.includes("valid P-256")) msg = "Error de configuración VAPID (Clave pública inválida/formato incorrecto).";
+      if (msg.includes("valid P-256")) msg = "La llave pública VAPID configurada en Supabase no es válida. Revisa los Secretos.";
       if (msg.includes("user denied")) msg = "Permiso de notificaciones denegado por el usuario.";
       
       setError(msg);
