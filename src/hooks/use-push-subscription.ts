@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
-import { VAPID_PUBLIC_KEY } from '@/config/push-keys';
+import { VAPID_PUBLIC_KEY } from '@/lib/push-keys'; // Ruta corregida a @/lib
 
-// 1. UTILIDAD DE CONVERSIÓN OBLIGATORIA (Base64URL -> Uint8Array)
+// Función obligatoria para convertir la llave VAPID de base64url a Uint8Array
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -65,6 +65,10 @@ export function usePushSubscription() {
     setLoading(true);
     setError(null);
 
+    // Logs de diagnóstico
+    console.log("Iniciando proceso de suscripción...");
+    console.log("VAPID Key Raw:", VAPID_PUBLIC_KEY);
+
     // 2. VALIDACIÓN IOS PWA
     if (isIOS && !isStandalone) {
       setLoading(false);
@@ -74,19 +78,17 @@ export function usePushSubscription() {
 
     try {
       // 3. REGISTRO SERVICE WORKER
-      console.log("Registrando SW...");
+      console.log("Registrando Service Worker...");
       const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-      await navigator.serviceWorker.ready; // Esperar a que esté listo
+      await navigator.serviceWorker.ready;
 
-      // 4. SUSCRIPCIÓN PUSH
-      console.log("VAPID key raw:", VAPID_PUBLIC_KEY);
-      
+      // 4. SUSCRIPCIÓN PUSH CON CONVERSIÓN
       const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-      console.log("VAPID key converted (Uint8Array):", applicationServerKey);
+      console.log("VAPID Key Convertida (Uint8Array):", applicationServerKey);
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey // ✅ PASAMOS LA KEY CONVERTIDA
+        applicationServerKey // ✅ Usamos la llave convertida correctamente
       });
 
       console.log("Subscription OK:", subscription);
@@ -95,7 +97,7 @@ export function usePushSubscription() {
       const subJSON = subscription.toJSON();
       
       if (!subJSON.keys?.p256dh || !subJSON.keys?.auth || !subJSON.endpoint) {
-        throw new Error("Suscripción incompleta (faltan llaves)");
+        throw new Error("Suscripción incompleta (faltan llaves p256dh/auth)");
       }
 
       const { error: dbError } = await supabase
@@ -115,9 +117,12 @@ export function usePushSubscription() {
 
     } catch (err: any) {
       console.error("PUSH SUBSCRIBE FAILED:", err);
-      // Extraer mensaje real del error
+      
       let msg = err.message || "Error desconocido al suscribir";
-      if (msg.includes("valid P-256")) msg = "Error de configuración VAPID (Clave pública inválida).";
+      
+      // Mensajes de error más amigables
+      if (msg.includes("valid P-256")) msg = "Error de configuración VAPID (Clave pública inválida/formato incorrecto).";
+      if (msg.includes("user denied")) msg = "Permiso de notificaciones denegado por el usuario.";
       
       setError(msg);
       return false;
