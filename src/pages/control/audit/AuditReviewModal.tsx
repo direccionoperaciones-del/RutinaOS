@@ -36,24 +36,48 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
     if (open && task) {
       fetchTaskDetails();
       setNotes(task.audit_notas || "");
+    } else {
+      // Limpiar estados al cerrar
+      setEvidenceFiles([]);
+      setInventoryRows([]);
     }
   }, [open, task]);
 
   const fetchTaskDetails = async () => {
     setIsLoadingDetails(true);
     try {
+      // 1. Cargar Metadatos de Archivos
       const { data: files } = await supabase.from('evidence_files').select('*').eq('task_id', task.id);
-      if (files) setEvidenceFiles(files);
+      
+      if (files && files.length > 0) {
+        // 2. Generar Signed URLs para cada archivo (foto o documento)
+        const filesWithUrls = await Promise.all(files.map(async (file) => {
+          const { data } = await supabase.storage
+            .from('evidence')
+            .createSignedUrl(file.storage_path, 3600); // 1 hora de validez
+            
+          return {
+            ...file,
+            signedUrl: data?.signedUrl || null
+          };
+        }));
+        setEvidenceFiles(filesWithUrls);
+      } else {
+        setEvidenceFiles([]);
+      }
 
+      // 3. Cargar Inventario
       if (config.requiere_inventario) {
         const { data: inv } = await supabase
           .from('inventory_submission_rows')
           .select('*, inventory_products(nombre, codigo_sku, unidad)')
           .eq('task_id', task.id);
+        
         if (inv) setInventoryRows(inv);
       }
     } catch (error) {
       console.error("Error loading details:", error);
+      toast({ variant: "destructive", title: "Error de carga", description: "No se pudieron cargar los detalles completos." });
     } finally {
       setIsLoadingDetails(false);
     }
@@ -107,11 +131,6 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
       case 'rechazado': return 'bg-red-100 text-red-800 border-red-200';
       default: return 'bg-yellow-100 text-yellow-800 border-yellow-200';
     }
-  };
-
-  const getPublicUrl = (path: string) => {
-    const { data } = supabase.storage.from('evidence').getPublicUrl(path);
-    return data.publicUrl;
   };
 
   if (!task) return null;
@@ -195,6 +214,8 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                     </div>
                     {isLoadingDetails ? (
                       <div className="p-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></div>
+                    ) : inventoryRows.length === 0 ? (
+                      <div className="text-center py-4 text-muted-foreground text-sm border rounded bg-muted/10">No hay datos de inventario registrados.</div>
                     ) : (
                       <div className="border rounded-lg overflow-hidden bg-card">
                         <Table>
@@ -242,15 +263,29 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {evidenceFiles.map((file) => (
                       file.tipo === 'foto' ? (
-                        <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border cursor-pointer" onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}>
-                          <img src={getPublicUrl(file.storage_path)} className="object-cover w-full h-full hover:scale-105 transition-transform" />
+                        <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border cursor-pointer bg-black/5" onClick={() => file.signedUrl && window.open(file.signedUrl, '_blank')}>
+                          {file.signedUrl ? (
+                            <img 
+                              src={file.signedUrl} 
+                              className="object-cover w-full h-full hover:scale-105 transition-transform" 
+                              alt="Evidencia"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-xs text-red-500">Error URL</div>
+                          )}
                         </div>
                       ) : (
-                        <div key={file.id} className="col-span-full flex items-center p-3 border rounded-lg bg-blue-50/50 cursor-pointer" onClick={() => window.open(getPublicUrl(file.storage_path), '_blank')}>
+                        <div key={file.id} className="col-span-full flex items-center p-3 border rounded-lg bg-blue-50/50 cursor-pointer hover:bg-blue-100/50" onClick={() => file.signedUrl && window.open(file.signedUrl, '_blank')}>
                           <FileText className="w-8 h-8 text-blue-500 mr-3" />
                           <div className="overflow-hidden">
                             <p className="text-sm font-medium truncate">{file.filename}</p>
-                            <p className="text-xs text-muted-foreground flex items-center">Descargar <ChevronRight className="w-3 h-3 ml-1"/></p>
+                            <p className="text-xs text-muted-foreground flex items-center">
+                              {file.signedUrl ? (
+                                <>Descargar <ChevronRight className="w-3 h-3 ml-1"/></>
+                              ) : (
+                                <span className="text-red-500">No disponible</span>
+                              )}
+                            </p>
                           </div>
                         </div>
                       )
