@@ -49,30 +49,28 @@ serve(async (req) => {
     }
 
     // 3. Crear el usuario en Auth
-    // Pasamos el tenant_id en los metadatos para que el Trigger de la base de datos
-    // se encargue de crear el perfil automáticamente vinculado a esta organización.
+    // Cambiamos email_confirm a FALSE para que Supabase envíe el correo de confirmación
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: email,
         password: password,
-        email_confirm: true, // Auto-confirmar email
+        email_confirm: false, // IMPORTANTE: False para disparar el envío de email
         user_metadata: {
             nombre: nombre,
             apellido: apellido,
-            tenant_id: requesterProfile.tenant_id, // VINCULACIÓN CRÍTICA
+            tenant_id: requesterProfile.tenant_id,
             role: role 
         }
     })
 
     if (createError) {
         console.error("Error creating user in Auth:", createError)
-        // Devolvemos 200 OK pero con el error en el body para que el cliente lo muestre
         return new Response(
             JSON.stringify({ error: createError.message }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         )
     }
 
-    // 4. Asegurar que el perfil tenga el rol correcto (por si el trigger por defecto asigna otro)
+    // 4. Asegurar que el perfil tenga el rol correcto
     if (newUser.user) {
         await supabaseAdmin
             .from('profiles')
@@ -87,7 +85,6 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error("Critical error in create-user:", error)
-    // Devolvemos 200 para evitar "non-2xx status code" en el cliente y mostrar el mensaje real
     return new Response(
       JSON.stringify({ error: error.message || 'Error interno del servidor' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
