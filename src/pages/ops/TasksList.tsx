@@ -459,8 +459,15 @@ export default function TasksList() {
           <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0"><Coffee className="w-6 h-6" /></div>
           <div>
             <h4 className="font-bold text-blue-900 text-lg">Tienes una novedad: {activeAbsence.absence_types?.nombre}</h4>
-            <p className="text-blue-800 text-sm">Hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}</p>
-            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium"><Info className="w-3 h-3"/> {activeAbsence.politica === 'reasignar' ? 'Tareas reasignadas.' : 'Tareas omitidas. No tienes tareas asignadas.'}</p>
+            <p className="text-blue-800 text-sm">
+              Desde el {format(parseLocalDate(activeAbsence.fecha_desde), 'dd/MM/yyyy')} hasta el {format(parseLocalDate(activeAbsence.fecha_hasta), 'dd/MM/yyyy')}
+            </p>
+            <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
+              <Info className="w-3 h-3"/> 
+              {activeAbsence.politica === 'reasignar' 
+                ? 'Durante este periodo tus tareas serán reasignadas.' 
+                : 'No tendrás tareas asignadas durante los días de ausencia.'}
+            </p>
           </div>
         </div>
       )}
@@ -522,7 +529,7 @@ export default function TasksList() {
         </TabsList>
 
         <TabsContent value="pending" className="mt-0">
-          <TaskGrid items={pendingTasks} loading={false} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
+          <TaskGrid items={pendingTasks} loading={false} onRetry={refetch} emptyMessage={activeAbsence ? "No tienes tareas pendientes para el periodo seleccionado." : (showCongratulation ? "¡Todo listo!" : "No tienes tareas pendientes.")} onAction={handleStartTask} onCancel={handleCancelTask} canCancel={canCancel} />
         </TabsContent>
         
         <TabsContent value="rejected" className="mt-0">
