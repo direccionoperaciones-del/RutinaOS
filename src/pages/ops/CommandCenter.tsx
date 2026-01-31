@@ -97,77 +97,60 @@ export default function CommandCenter() {
     fetchAllData();
   }, []);
 
-  // --- FUNCIÓN MANUAL CON DIAGNÓSTICO PROFUNDO ---
+  // --- FUNCIÓN MANUAL CORREGIDA ---
   const runTaskEngine = async () => {
     if (!date) return;
     setIsLoadingGen(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
-      if (!token) throw new Error("No hay sesión activa. Por favor inicia sesión nuevamente.");
-
       const simpleDate = format(date, "yyyy-MM-dd");
-      
-      // Construimos URL manualmente para tener control total del fetch
-      // Nota: Vite expone VITE_SUPABASE_URL. En producción esto debe apuntar a la URL correcta.
-      const projectUrl = import.meta.env.VITE_SUPABASE_URL;
-      const functionUrl = `${projectUrl}/functions/v1/generate-daily-tasks`;
+      console.log(`[Manual Trigger] Ejecutando motor para: ${simpleDate}`);
 
-      console.log(`[Manual Trigger] Llamando a: ${functionUrl} para fecha ${simpleDate}`);
-
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
+      // Usamos invoke nativo de Supabase Client - Maneja Auth y URL automáticamente
+      const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
+        body: { 
           date: simpleDate, 
-          triggered_by: 'manual_admin', 
           force: true 
-        })
+        }
       });
 
-      // 1. Loguear Status y Headers (Requisito Obligatorio)
-      console.log(`[Engine Status] ${response.status} ${response.statusText}`);
-      response.headers.forEach((val, key) => console.log(`[Header] ${key}: ${val}`));
-
-      // 2. Obtener Body como texto primero para no fallar en JSON parse
-      const bodyText = await response.text();
-      console.log(`[Engine Body Raw]`, bodyText);
-
-      let data;
-      try {
-        data = JSON.parse(bodyText);
-      } catch (e) {
-        // Si no es JSON, es un error crudo (HTML de nginx, texto plano, etc)
-        throw new Error(`Error Motor (Status ${response.status}): ${bodyText.slice(0, 100)}...`);
+      if (error) {
+        // Error de invocación (Red, CORS, o 500 del servidor)
+        throw new Error(error.message || "Error de conexión con el motor de tareas.");
       }
 
-      // 3. Manejar errores HTTP
-      if (!response.ok) {
-        const errorMsg = data.error || data.message || "Error desconocido en el motor";
-        const details = JSON.stringify(data, null, 2);
-        throw new Error(`Error Motor (${response.status}): ${errorMsg}\n${details}`);
+      // El servidor devolvió respuesta, verificamos si es OK lógico
+      if (data && data.error) {
+        throw new Error(`Error del Motor: ${data.error}`);
+      }
+
+      if (data && !data.ok) {
+         throw new Error("El motor respondió con un estado inválido.");
       }
 
       // Éxito
       toast({ 
         title: "Generación Finalizada", 
-        description: data.message || `Tareas generadas: ${data.generated || 0} para ${simpleDate}.` 
+        description: data?.message || `Tareas generadas: ${data?.generated || 0} para ${simpleDate}.` 
       });
       
       fetchAllData();
 
     } catch (error: any) {
       console.error("[Manual Trigger Error]", error);
+      
+      // Intentar parsear si es un error JSON stringificado
+      let msg = error.message;
+      try {
+         const parsed = JSON.parse(error.message);
+         if (parsed.error) msg = parsed.error;
+      } catch (e) {}
+
       toast({ 
         variant: "destructive", 
         title: "Fallo en Ejecución", 
-        description: error.message,
-        duration: 10000 // Duración larga para leer el error
+        description: msg,
+        duration: 6000 
       });
     } finally {
       setIsLoadingGen(false);
