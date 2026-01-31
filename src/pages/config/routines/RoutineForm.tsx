@@ -23,6 +23,8 @@ interface RoutineFormProps {
 export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: RoutineFormProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  // Estado para controlar el tab activo y mover al usuario al tab con errores
+  const [activeTab, setActiveTab] = useState("general");
 
   const form = useForm<RoutineFormValues>({
     resolver: zodResolver(routineSchema),
@@ -38,7 +40,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       corte_2_limite: 30,
       vencimiento_dia_mes: 5,
       fechas_especificas: [],
-      requiere_auditoria: true, // Por defecto requiere auditoría
+      requiere_auditoria: true,
       gps_obligatorio: false,
       fotos_obligatorias: false,
       min_fotos: 0,
@@ -67,10 +69,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         corte_2_limite: routineToEdit.corte_2_limite || 30,
         vencimiento_dia_mes: routineToEdit.vencimiento_dia_mes || 5,
         fechas_especificas: routineToEdit.fechas_especificas || [],
-        
-        // Cargar flag de auditoría (si existe, sino true)
         requiere_auditoria: routineToEdit.requiere_auditoria ?? true,
-        
         gps_obligatorio: routineToEdit.gps_obligatorio,
         fotos_obligatorias: routineToEdit.fotos_obligatorias,
         min_fotos: routineToEdit.min_fotos,
@@ -158,6 +157,33 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
     }
   };
 
+  // Manejador de errores visuales
+  const onError = (errors: any) => {
+    console.log("Errores de validación:", errors);
+    
+    // Identificar en qué tab está el error para cambiar a él
+    let targetTab = activeTab;
+    const errorKeys = Object.keys(errors);
+    
+    if (errorKeys.some(k => ['nombre', 'descripcion', 'prioridad'].includes(k))) {
+      targetTab = 'general';
+    } else if (errorKeys.some(k => ['frecuencia', 'hora_inicio', 'hora_limite', 'dias_ejecucion', 'fechas_especificas'].includes(k))) {
+      targetTab = 'planificacion';
+    } else if (errorKeys.some(k => ['min_fotos', 'categorias_ids'].includes(k))) {
+      targetTab = 'requisitos';
+    }
+
+    if (targetTab !== activeTab) {
+      setActiveTab(targetTab);
+    }
+
+    toast({ 
+      variant: "destructive", 
+      title: "Formulario incompleto", 
+      description: "Por favor revisa los campos marcados en rojo." 
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
@@ -166,8 +192,8 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
         </DialogHeader>
         
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <Tabs defaultValue="general" className="w-full">
+          <form onSubmit={form.handleSubmit(onSubmit, onError)} className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="general"><FileText className="w-4 h-4 mr-2"/> General</TabsTrigger>
                 <TabsTrigger value="planificacion"><CalendarIcon className="w-4 h-4 mr-2"/> Frecuencia</TabsTrigger>

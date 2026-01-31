@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, Image as ImageIcon, BellRing, Smartphone, AlertTriangle, Send } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, BellRing, Smartphone, AlertTriangle, Send } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 
@@ -25,25 +25,135 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
       setFormData({ nombre: profile.nombre || "", apellido: profile.apellido || "" });
       setAvatarUrl(profile.avatar_url);
       if (profile.tenants) {
-        setCompanyLogoUrl(profile.tenants.logo_url);
         setOrgData({ nombre: profile.tenants.nombre });
       }
     }
   }, [profile]);
 
-  // ... (Funciones de perfil/org existentes se mantienen igual) ...
-  const handleUpdateProfile = async () => { /* ... */ }; // Mantener lógica existente
-  const handleUpdateOrganization = async () => { /* ... */ }; // Mantener lógica existente
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => { /* ... */ }; // Mantener lógica existente
-  const handleCompanyLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => { /* ... */ }; // Mantener lógica existente
-  const handleChangePassword = async () => { /* ... */ }; // Mantener lógica existente
+  const handleUpdateProfile = async () => {
+    if (!profile) return;
+    if (!formData.nombre || !formData.apellido) {
+      toast({ variant: "destructive", title: "Campos requeridos", description: "Nombre y Apellido son obligatorios." });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          nombre: formData.nombre,
+          apellido: formData.apellido
+        })
+        .eq('id', profile.id);
+
+      if (error) throw error;
+      toast({ title: "Perfil actualizado", description: "Tus datos personales han sido guardados." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateOrganization = async () => {
+    if (!profile?.tenant_id) return;
+    if (!orgData.nombre) {
+      toast({ variant: "destructive", title: "Requerido", description: "El nombre de la empresa es obligatorio." });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('tenants')
+        .update({ nombre: orgData.nombre })
+        .eq('id', profile.tenant_id);
+
+      if (error) throw error;
+      toast({ title: "Organización actualizada", description: "Los datos de la empresa han sido guardados." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) {
+        return;
+      }
+
+      if (!profile) return;
+
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${profile.id}/${Math.random()}.${fileExt}`;
+
+      // 1. Subir al bucket avatars
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Obtener URL pública
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
+      if (data) {
+          // 3. Actualizar perfil
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ avatar_url: data.publicUrl })
+            .eq('id', profile.id);
+            
+          if (updateError) throw updateError;
+          
+          setAvatarUrl(data.publicUrl);
+          toast({ title: "Foto actualizada", description: "Tu foto de perfil se ha guardado." });
+          
+          // Recargar para que el header tome el cambio
+          setTimeout(() => window.location.reload(), 1500); 
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error subiendo imagen", description: error.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (passwordData.password !== passwordData.confirm) {
+      toast({ variant: "destructive", title: "Error", description: "Las contraseñas no coinciden." });
+      return;
+    }
+    if (passwordData.password.length < 6) {
+      toast({ variant: "destructive", title: "Error", description: "La contraseña debe tener al menos 6 caracteres." });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: passwordData.password });
+      if (error) throw error;
+      
+      toast({ title: "Contraseña actualizada", description: "Tu contraseña ha sido cambiada exitosamente." });
+      setPasswordData({ password: "", confirm: "" });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSubscribe = async () => {
     const success = await subscribeToPush();
@@ -72,7 +182,7 @@ export default function SettingsPage() {
           <TabsTrigger value="organization">Organización</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="account" className="space-y-6">
+        <TabsContent value="account" className="space-y-6 mt-6">
           
           {/* TARJETA DE NOTIFICACIONES */}
           <Card className={`border ${isSubscribed ? 'bg-green-50 border-green-200' : 'bg-card border-border'}`}>
@@ -139,12 +249,10 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Resto del contenido existente... (Avatar, Datos, Password) */}
-          {/* ... (código existente del formulario de perfil y password) ... */}
+          {/* DATOS PERSONALES */}
           <Card>
             <CardHeader><CardTitle>Información Personal</CardTitle></CardHeader>
             <CardContent className="space-y-6">
-               {/* ... (mantener código existente) ... */}
                <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
                 <div className="relative group">
                   <Avatar className="w-24 h-24 border-2 border-muted">
@@ -170,17 +278,48 @@ export default function SettingsPage() {
               <Button onClick={handleUpdateProfile} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Guardar</Button>
             </CardFooter>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="organization">
-           {/* ... (mantener código existente de organización) ... */}
-           <Card>
-            <CardHeader><CardTitle>Datos de la Empresa</CardTitle></CardHeader>
-            <CardContent>
-               <div className="space-y-2"><Label>Nombre de la Organización</Label><div className="flex items-center gap-2"><Building className="w-4 h-4 text-muted-foreground" /><Input value={orgData.nombre} onChange={(e) => setOrgData({ ...orgData, nombre: e.target.value })} /></div></div>
+          {/* CAMBIO DE CONTRASEÑA */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Seguridad</CardTitle>
+              <CardDescription>Actualiza tu contraseña de acceso.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nueva Contraseña</Label>
+                  <Input type="password" value={passwordData.password} onChange={(e) => setPasswordData({...passwordData, password: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Confirmar Contraseña</Label>
+                  <Input type="password" value={passwordData.confirm} onChange={(e) => setPasswordData({...passwordData, confirm: e.target.value})} />
+                </div>
+              </div>
             </CardContent>
             <CardFooter>
-              <Button onClick={handleUpdateOrganization} disabled={saving}>Guardar</Button>
+              <Button onClick={handleChangePassword} disabled={saving} variant="outline"><Lock className="w-4 h-4 mr-2"/> Actualizar Contraseña</Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="organization" className="mt-6">
+           <Card>
+            <CardHeader>
+              <CardTitle>Datos de la Empresa</CardTitle>
+              <CardDescription>Información general de tu organización.</CardDescription>
+            </CardHeader>
+            <CardContent>
+               <div className="space-y-2">
+                 <Label>Nombre de la Organización</Label>
+                 <div className="flex items-center gap-2">
+                   <Building className="w-4 h-4 text-muted-foreground" />
+                   <Input value={orgData.nombre} onChange={(e) => setOrgData({ ...orgData, nombre: e.target.value })} />
+                 </div>
+               </div>
+            </CardContent>
+            <CardFooter>
+              <Button onClick={handleUpdateOrganization} disabled={saving}>Guardar Cambios</Button>
             </CardFooter>
           </Card>
         </TabsContent>
