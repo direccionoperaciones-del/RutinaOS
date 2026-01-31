@@ -17,14 +17,17 @@ export function useNotifications() {
     queryFn: async () => {
       if (!user) return 0;
       
-      // Contar notificaciones de sistema no leídas
+      // A. Contar notificaciones de sistema no leídas
+      // CRITICO: Excluir 'message' porque esos ya se cuentan en message_receipts
+      // Si no los excluimos, el usuario ve un badge pero no ve la notificación en la lista (porque la lista los filtra)
       const { count: sysCount, error: sysError } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .eq('leido', false);
+        .eq('leido', false)
+        .neq('type', 'message'); 
       
-      // Contar mensajes directos no leídos
+      // B. Contar mensajes directos no leídos (Inbox real)
       const { count: msgCount, error: msgError } = await supabase
         .from('message_receipts')
         .select('*', { count: 'exact', head: true })
