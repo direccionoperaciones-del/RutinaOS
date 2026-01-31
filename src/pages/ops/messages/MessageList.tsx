@@ -9,20 +9,18 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { 
   Bell, Check, Clock, Mail, MessageSquare, Megaphone, 
   AlertCircle, Send, CheckCheck, Eye, ShieldAlert, ShieldCheck,
-  Filter, Calendar as CalendarIcon, X
+  Filter, X
 } from "lucide-react";
-import { format, isSameDay } from "date-fns";
+import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { NewMessageModal } from "./NewMessageModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { NOTIFICATIONS_QUERY_KEY } from "@/hooks/use-notifications";
-import { cn } from "@/lib/utils";
+import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 export default function MessageList() {
   const { toast } = useToast();
@@ -44,7 +42,9 @@ export default function MessageList() {
   // --- NUEVOS FILTROS ---
   const [filterType, setFilterType] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
-  const [filterDate, setFilterDate] = useState<Date | undefined>(undefined);
+  // Rango de fechas (Strings YYYY-MM-DD)
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
 
   // Función de carga de datos
   const fetchMessages = async (isBackground = false) => {
@@ -241,9 +241,13 @@ export default function MessageList() {
     // Filtro Prioridad
     if (filterPriority !== 'all' && msg.prioridad !== filterPriority) return false;
     
-    // Filtro Fecha
-    if (filterDate) {
-      if (!isSameDay(new Date(msg.created_at), filterDate)) return false;
+    // Filtro Fecha (Rango)
+    if (filterDateFrom) {
+      // Comparar strings ISO (created_at es timestamp completo)
+      if (msg.created_at < `${filterDateFrom}T00:00:00`) return false;
+    }
+    if (filterDateTo) {
+      if (msg.created_at > `${filterDateTo}T23:59:59`) return false;
     }
     
     return true;
@@ -252,10 +256,11 @@ export default function MessageList() {
   const clearFilters = () => {
     setFilterType("all");
     setFilterPriority("all");
-    setFilterDate(undefined);
+    setFilterDateFrom("");
+    setFilterDateTo("");
   };
 
-  const hasActiveFilters = filterType !== 'all' || filterPriority !== 'all' || filterDate;
+  const hasActiveFilters = filterType !== 'all' || filterPriority !== 'all' || filterDateFrom || filterDateTo;
 
   return (
     <div className="space-y-6">
@@ -288,74 +293,65 @@ export default function MessageList() {
 
         <TabsContent value="inbox" className="mt-4 space-y-4">
           
-          {/* --- BARRA DE FILTROS --- */}
-          <div className="flex flex-col sm:flex-row gap-3 p-3 bg-muted/20 rounded-lg border border-border/50 items-start sm:items-center">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mr-2">
-              <Filter className="w-4 h-4" /> Filtros:
-            </div>
-            
-            <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
-              {/* Tipo */}
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="w-full sm:w-[140px] h-8 text-xs bg-background">
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los tipos</SelectItem>
-                  <SelectItem value="comunicado">Comunicados</SelectItem>
-                  <SelectItem value="mensaje">Mensajes</SelectItem>
-                  <SelectItem value="sistema">Notificaciones</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Prioridad */}
-              <Select value={filterPriority} onValueChange={setFilterPriority}>
-                <SelectTrigger className="w-full sm:w-[130px] h-8 text-xs bg-background">
-                  <SelectValue placeholder="Prioridad" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas prioridades</SelectItem>
-                  <SelectItem value="alta">Alta</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                </SelectContent>
-              </Select>
-            
-              {/* Fecha */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant={"outline"}
-                    className={cn(
-                      "w-full sm:w-[140px] h-8 text-xs justify-start text-left font-normal bg-background",
-                      !filterDate && "text-muted-foreground"
-                    )}
+          {/* --- BARRA DE FILTROS RESPONSIVE --- */}
+          <div className="bg-muted/20 rounded-lg border border-border/50 p-3 sm:p-4">
+            <div className="flex flex-col gap-3">
+              {/* Encabezado Filtros */}
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Filter className="w-4 h-4" /> Filtros
+                </div>
+                {hasActiveFilters && (
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={clearFilters}
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10"
                   >
-                    <CalendarIcon className="mr-2 h-3 w-3" />
-                    {filterDate ? format(filterDate, "P", { locale: es }) : <span>Fecha</span>}
+                    <X className="w-3 h-3 mr-1" /> Borrar
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={filterDate}
-                    onSelect={setFilterDate}
-                    initialFocus
-                    locale={es}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+                )}
+              </div>
 
-            {hasActiveFilters && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={clearFilters}
-                className="h-8 text-xs text-destructive hover:bg-destructive/10 ml-auto"
-              >
-                <X className="w-3 h-3 mr-1" /> Borrar
-              </Button>
-            )}
+              {/* Grid de Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Tipo */}
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger className="w-full h-9 text-sm bg-background">
+                    <SelectValue placeholder="Tipo de mensaje" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los tipos</SelectItem>
+                    <SelectItem value="comunicado">Comunicados</SelectItem>
+                    <SelectItem value="mensaje">Mensajes Directos</SelectItem>
+                    <SelectItem value="sistema">Notificaciones</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Prioridad */}
+                <Select value={filterPriority} onValueChange={setFilterPriority}>
+                  <SelectTrigger className="w-full h-9 text-sm bg-background">
+                    <SelectValue placeholder="Prioridad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas prioridades</SelectItem>
+                    <SelectItem value="alta">Alta Prioridad</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                  </SelectContent>
+                </Select>
+              
+                {/* Rango de Fechas (Ocupa 2 columnas en Desktop, 2 en Tablet, Stack en Mobile) */}
+                <div className="sm:col-span-2">
+                  <DateRangePicker 
+                    dateFrom={filterDateFrom}
+                    setDateFrom={setFilterDateFrom}
+                    dateTo={filterDateTo}
+                    setDateTo={setFilterDateTo}
+                    compact={false} // Usamos grid interno para tablet/desktop
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* --- LISTA DE MENSAJES --- */}
