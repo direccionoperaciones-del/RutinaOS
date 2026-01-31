@@ -16,7 +16,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
-    // VAPID KEYS desde variables de entorno
     const vapidPublic = Deno.env.get('VAPID_PUBLIC_KEY')
     const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY')
     const vapidSubject = "mailto:admin@movacheck.app"
@@ -25,27 +24,53 @@ serve(async (req) => {
       throw new Error("VAPID keys no configuradas en Edge Function secrets")
     }
 
-    // Configurar Web Push
     webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate)
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    // Cliente con privilegios de Superusuario para leer suscripciones de CUALQUIER usuario
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
+    // 1. Verificación de Seguridad Dual
+    const authHeader = req.headers.get('Authorization')
+    const token = authHeader?.replace('Bearer ', '')
+    let isAuthorized = false
+
+    // Caso A: Llamada interna del sistema (usando Service Key)
+    if (token === supabaseServiceKey) {
+      isAuthorized = true;
+      console.log("[send-push] Autorizado por Service Key (Sistema)")
+    } 
+    // Caso B: Llamada desde cliente (Usuario logueado)
+    else if (token) {
+      const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
+      if (user && !error) isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
+    }
+
+    // 2. Proceso de Envío
     const { userId, title, body, url } = await req.json()
 
     if (!userId || !title) throw new Error("Faltan datos (userId, title)")
 
-    // Obtener suscripciones del usuario
-    const { data: subscriptions } = await supabase
+    // Leer suscripciones usando el cliente Admin (Bypassea RLS)
+    const { data: subscriptions, error: subError } = await supabaseAdmin
       .from('push_subscriptions')
       .select('*')
       .eq('user_id', userId)
 
+    if (subError) throw subError;
+
     if (!subscriptions?.length) {
-      return new Response(JSON.stringify({ success: true, message: 'No hay dispositivos suscritos' }), {
+      console.log(`[send-push] Usuario ${userId} no tiene dispositivos registrados.`)
+      return new Response(JSON.stringify({ success: true, message: 'No devices found', results: [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
-    // Enviar a cada dispositivo
+    console.log(`[send-push] Enviando a ${subscriptions.length} dispositivos del usuario ${userId}`)
+
     const promises = subscriptions.map(async (sub) => {
       const pushConfig = {
         endpoint: sub.endpoint,
@@ -55,29 +80,25 @@ serve(async (req) => {
       const payload = JSON.stringify({ title, body, url })
 
       try {
-        // CORRECCIÓN CRÍTICA: Headers para prioridad alta
         await webpush.sendNotification(pushConfig, payload, {
-          TTL: 60, // Tiempo de vida corto para forzar entrega rápida
-          headers: {
-            'Urgency': 'high' // Obligatorio para que suene en iOS/Android
-          }
+          TTL: 60,
+          headers: { 'Urgency': 'high' }
         })
         
-        // Actualizar último uso
-        await supabase
+        // Registrar éxito
+        await supabaseAdmin
           .from('push_subscriptions')
           .update({ last_used_at: new Date().toISOString() })
           .eq('id', sub.id)
           
         return { status: 'ok', id: sub.id }
       } catch (err: any) {
-        // Manejar suscripciones expiradas (410 Gone / 404 Not Found)
         if (err.statusCode === 410 || err.statusCode === 404) {
-          console.log(`Borrando suscripción expirada: ${sub.id}`)
-          await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+          console.log(`[send-push] Eliminando suscripción muerta: ${sub.id}`)
+          await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id)
           return { status: 'deleted', id: sub.id }
         }
-        console.error(`Error enviando a ${sub.id}:`, err)
+        console.error(`[send-push] Fallo envío a ${sub.id}:`, err)
         return { status: 'error', error: err.message }
       }
     })
@@ -89,7 +110,7 @@ serve(async (req) => {
     })
 
   } catch (error: any) {
-    console.error(error)
+    console.error("[send-push] Critical Error:", error)
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -16,60 +16,38 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 1. Obtener Auditor (Usuario Actual)
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders })
-    }
+    if (!authHeader) throw new Error('Missing Authorization header')
     
+    // Validar usuario
     const { data: { user: auditor }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
+    if (authError || !auditor) throw new Error('Unauthorized')
 
-    if (authError || !auditor) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-    }
-
-    // 1.1 Verificar Rol
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, tenant_id')
-      .eq('id', auditor.id)
-      .single()
-
-    if (!['director', 'lider', 'auditor'].includes(profile?.role || '')) {
-      return new Response(JSON.stringify({ error: 'No tienes permisos.' }), { status: 403, headers: corsHeaders })
-    }
-
-    // 2. Parsear Body
     const { taskId, status, note } = await req.json()
 
-    // 3. Obtener Tarea
+    // Obtener tarea
     const { data: task } = await supabase
       .from('task_instances')
-      .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre, ciudad), tenant_id')
+      .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre), tenant_id')
       .eq('id', taskId)
       .single()
 
-    if (!task) {
-      return new Response(JSON.stringify({ error: 'Tarea no encontrada' }), { status: 404, headers: corsHeaders })
-    }
+    if (!task) throw new Error('Task not found')
 
-    // 4. Actualizar Tarea
-    const updateData = {
-      audit_status: status === 'approved' ? 'aprobado' : 'rechazado',
-      audit_at: new Date().toISOString(),
-      audit_by: auditor.id,
-      audit_notas: note
-    }
-
+    // Actualizar estado
     const { error: updateError } = await supabase
       .from('task_instances')
-      .update(updateData)
+      .update({
+        audit_status: status === 'approved' ? 'aprobado' : 'rechazado',
+        audit_at: new Date().toISOString(),
+        audit_by: auditor.id,
+        audit_notas: note
+      })
       .eq('id', taskId)
 
     if (updateError) throw updateError
 
-    // 5. NOTIFICACIÓN PUSH REAL (Server-Side Trigger)
-    // Esto asegura que llegue aunque la app esté cerrada
+    // --- NOTIFICACIÓN PUSH ROBUSTA ---
     if (task.completado_por && task.completado_por !== auditor.id) {
       const isApproved = status === 'approved'
       const title = isApproved ? '✅ Tarea Aprobada' : '🚨 Tarea Rechazada'
@@ -77,10 +55,10 @@ serve(async (req) => {
       const pdvName = task.pdv?.nombre || 'PDV'
       
       const body = isApproved 
-        ? `Tu ejecución de "${routineName}" ha sido aprobada.` 
-        : `CORRECCIÓN REQUERIDA:\nRutina: ${routineName}\nMotivo: ${note}\n\nToca para corregir ahora.`
+        ? `Tu ejecución de "${routineName}" en ${pdvName} ha sido aprobada.` 
+        : `CORRECCIÓN REQUERIDA:\nRutina: ${routineName}\nMotivo: ${note}\n\nToca para corregir.`
 
-      // A) Insertar en base de datos (Historial)
+      // 1. Guardar en notificaciones internas
       await supabase.from('notifications').insert({
         tenant_id: task.tenant_id,
         user_id: task.completado_por,
@@ -90,18 +68,28 @@ serve(async (req) => {
         leido: false
       })
 
-      // B) Disparar Push Notification (Fuego real)
-      console.log(`[Audit] Disparando Push a usuario ${task.completado_por}`)
+      // 2. Disparar Push (Usando Service Key para bypass de permisos)
+      // Construimos la URL de la función manualmente
+      // En Supabase local o producción, la estructura es standard
+      const functionsUrl = `${supabaseUrl}/functions/v1/send-push`;
       
-      // Llamamos a la función send-push internamente usando invoke
-      await supabase.functions.invoke('send-push', {
-        body: {
+      console.log(`[Audit] Disparando Push System-to-User -> ${task.completado_por}`);
+
+      // Usamos FETCH directo con la Service Key en el header Authorization
+      // Esto simula que es el "Sistema" quien llama a la función, no el usuario Auditor
+      await fetch(functionsUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`, // CLAVE MAESTRA
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
           userId: task.completado_por,
           title: title,
           body: body,
-          url: '/tasks' // Redirigir directo a mis tareas
-        }
-      })
+          url: '/tasks'
+        })
+      });
     }
 
     return new Response(JSON.stringify({ success: true }), {
