@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
 import { MapPin, User, CheckCircle2, XCircle, AlertTriangle, Loader2, FileText, Camera, Package, ChevronRight, Clock, Mail, MessageSquareText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -133,6 +133,24 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
     }
   };
 
+  // Cálculo de totales para el footer de la tabla
+  const inventoryTotals = useMemo(() => {
+    return inventoryRows.reduce((acc, row) => {
+      const fis = Number(row.fisico) || 0;
+      const esp = Number(row.esperado) || 0;
+      // Calculamos la diferencia en caliente por si la BD viene null
+      const dif = row.diferencia !== undefined && row.diferencia !== null 
+        ? Number(row.diferencia) 
+        : (fis - esp);
+
+      return {
+        fisico: acc.fisico + fis,
+        esperado: acc.esperado + esp,
+        diferencia: acc.diferencia + dif
+      };
+    }, { fisico: 0, esperado: 0, diferencia: 0 });
+  }, [inventoryRows]);
+
   if (!task) return null;
 
   return (
@@ -228,22 +246,40 @@ export function AuditReviewModal({ task, open, onOpenChange, onSuccess }: AuditR
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {inventoryRows.map((item, idx) => (
-                              <TableRow key={item.id || idx}>
-                                <TableCell>
-                                  <div className="font-medium text-sm">{item.inventory_products?.nombre}</div>
-                                  <div className="text-[10px] text-muted-foreground">SKU: {item.inventory_products?.codigo_sku}</div>
-                                </TableCell>
-                                <TableCell className="text-center font-bold text-blue-700 bg-blue-50">{item.fisico}</TableCell>
-                                <TableCell className="text-center text-muted-foreground">{item.esperado}</TableCell>
-                                <TableCell className="text-center">
-                                  <Badge variant="outline" className={item.diferencia === 0 ? "text-green-700 bg-green-50 border-green-200" : "text-red-700 bg-red-50 border-red-200"}>
-                                    {item.diferencia > 0 ? '+' : ''}{item.diferencia}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
+                            {inventoryRows.map((item, idx) => {
+                              // Calculamos visualmente por si la BD falla
+                              const diff = item.diferencia ?? (Number(item.fisico) - Number(item.esperado));
+                              
+                              return (
+                                <TableRow key={item.id || idx}>
+                                  <TableCell>
+                                    <div className="font-medium text-sm">{item.inventory_products?.nombre}</div>
+                                    <div className="text-[10px] text-muted-foreground">SKU: {item.inventory_products?.codigo_sku}</div>
+                                  </TableCell>
+                                  <TableCell className="text-center font-bold text-blue-700 bg-blue-50">{item.fisico}</TableCell>
+                                  <TableCell className="text-center text-muted-foreground">{item.esperado}</TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline" className={diff === 0 ? "text-green-700 bg-green-50 border-green-200" : "text-red-700 bg-red-50 border-red-200"}>
+                                      {diff > 0 ? '+' : ''}{diff}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
+                          {/* FOOTER CON TOTALES */}
+                          <TableFooter>
+                            <TableRow>
+                              <TableCell className="font-bold">TOTALES</TableCell>
+                              <TableCell className="text-center font-bold">{inventoryTotals.fisico}</TableCell>
+                              <TableCell className="text-center font-bold">{inventoryTotals.esperado}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge className={inventoryTotals.diferencia === 0 ? "bg-green-600" : "bg-red-600"}>
+                                  {inventoryTotals.diferencia > 0 ? '+' : ''}{inventoryTotals.diferencia}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          </TableFooter>
                         </Table>
                       </div>
                     )}
