@@ -53,7 +53,6 @@ serve(async (req) => {
       const title = isApproved ? '✅ Tarea Aprobada' : '🚨 Tarea Rechazada'
       
       // Insertar en tabla de notificaciones.
-      // EL TRIGGER 'on_notification_created_push' DETECTARÁ ESTO Y ENCOLARÁ EL PUSH AUTOMÁTICAMENTE.
       await supabase.from('notifications').insert({
         tenant_id: task.tenant_id,
         user_id: task.completado_por,
@@ -63,7 +62,7 @@ serve(async (req) => {
         leido: false
       })
       
-      console.log(`[Audit] Notificación insertada para ${task.completado_por}. El Trigger DB se encargará del Push.`);
+      console.log(`[Audit] Notificación insertada para ${task.completado_por}.`);
     }
 
     return new Response(JSON.stringify({ success: true }), {

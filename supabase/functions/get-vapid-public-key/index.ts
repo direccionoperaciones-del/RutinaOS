@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    // Leer la llave de las variables de entorno de Supabase
+    // IMPORTANTE: Debes configurar VAPID_PUBLIC_KEY en los secretos de Supabase
     const publicKey = Deno.env.get('VAPID_PUBLIC_KEY')
 
     if (!publicKey) {

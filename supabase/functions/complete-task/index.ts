@@ -52,7 +52,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Task ID required' }), { status: 400, headers: corsHeaders })
     }
 
-    // 2. Fetch User Profile for Security Checks (Tenant & Role)
+    // 2. Fetch User Profile
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('tenant_id, role')
@@ -63,7 +63,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Profile not found' }), { status: 403, headers: corsHeaders })
     }
 
-    // 3. Fetch Task Context (Routine Rules + PDV Location)
+    // 3. Fetch Task Context
     const { data: task, error: taskError } = await supabase
       .from('task_instances')
       .select(`
@@ -79,19 +79,15 @@ serve(async (req) => {
     }
 
     // 4. SECURITY: Authorization Check
-    // 4.1 Tenant Isolation
     if (task.tenant_id !== profile.tenant_id) {
-        console.error(`[complete-task] Security Violation: Tenant mismatch. User ${user.id} (${profile.tenant_id}) tried to access Task ${taskId} (${task.tenant_id})`);
         return new Response(JSON.stringify({ error: 'Unauthorized: Access denied' }), { status: 403, headers: corsHeaders })
     }
 
-    // 4.2 Role/Ownership Check
     const isAssigned = task.responsable_id === user.id;
     const isExecutor = task.completado_por === user.id; 
     const isAdmin = ['director', 'lider', 'auditor'].includes(profile.role);
 
     if (!isAssigned && !isExecutor && !isAdmin) {
-        console.error(`[complete-task] Security Violation: User ${user.id} is not authorized to complete Task ${taskId}`);
         return new Response(JSON.stringify({ error: 'Unauthorized: You do not have permission to complete this task' }), { status: 403, headers: corsHeaders })
     }
 
@@ -110,12 +106,10 @@ serve(async (req) => {
              return new Response(JSON.stringify({ error: 'PDV location not configured.' }), { status: 400, headers: corsHeaders })
         }
 
-        console.log(`[complete-task] Validating GPS for User ${user.id} at Task ${taskId}`);
         const distance = calculateDistance(gpsData.lat, gpsData.lng, pdv.latitud, pdv.longitud)
         const maxRadio = pdv.radio_gps || 100
 
         if (distance > maxRadio) {
-             console.warn(`[complete-task] GPS Reject: Distance ${Math.round(distance)}m > ${maxRadio}m`);
              return new Response(JSON.stringify({ 
                  error: `Ubicación fuera de rango (${Math.round(distance)}m). Máximo permitido: ${maxRadio}m.` 
              }), { status: 400, headers: corsHeaders })
@@ -123,14 +117,13 @@ serve(async (req) => {
         
         gps_en_rango = true;
     } else {
-        // Optional validation for non-mandatory tasks
         if (gpsData?.lat && gpsData?.lng && pdv.latitud && pdv.longitud) {
              const distance = calculateDistance(gpsData.lat, gpsData.lng, pdv.latitud, pdv.longitud)
              gps_en_rango = distance <= (pdv.radio_gps || 100);
         }
     }
 
-    // 6. Calculate Status (Server-side Deadline Check)
+    // 6. Calculate Status
     const deadlineStr = `${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:59'}`;
     const [dDate, dTime] = deadlineStr.split('T');
     const [dYear, dMonth, dDay] = dDate.split('-').map(Number);
@@ -150,14 +143,10 @@ serve(async (req) => {
     if (inventory && inventory.length > 0) {
         await supabase.from('inventory_submission_rows').delete().eq('task_id', taskId)
         
-        // --- CORRECCIÓN CRÍTICA PARA INVENTARIO ---
-        // Sanitizar valores para asegurar que son numéricos y evitar "undefined" string
         const rows = inventory.map((r: any) => {
-            // Convertir cualquier valor no numérico a 0 o al número correcto
             let safeFisico = r.fisico;
             let safeEsperado = r.esperado;
 
-            // Check para strings "undefined" o vacíos
             if (safeFisico === undefined || safeFisico === null || safeFisico === 'undefined' || safeFisico === '') safeFisico = 0;
             if (safeEsperado === undefined || safeEsperado === null || safeEsperado === 'undefined' || safeEsperado === '') safeEsperado = 0;
 
@@ -170,10 +159,7 @@ serve(async (req) => {
         });
 
         const { error: invError } = await supabase.from('inventory_submission_rows').insert(rows)
-        if (invError) {
-            console.error('[complete-task] Inventory Insert Error:', invError);
-            throw new Error(`Error guardando inventario: ${invError.message}`)
-        }
+        if (invError) throw new Error(`Error guardando inventario: ${invError.message}`)
     }
 
     // 7.2 LOGICA AUDITORIA AUTOMÁTICA

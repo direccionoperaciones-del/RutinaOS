@@ -18,11 +18,10 @@ serve(async (req) => {
     // Cliente Admin (Service Role) para poder crear usuarios
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 1. Verificar quien hace la petición (Seguridad)
+    // 1. Verificar quien hace la petición
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Missing Authorization header')
     
-    // Obtenemos el usuario que llama a la función usando el token del cliente
     const supabaseClient = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY') ?? '', {
         global: { headers: { Authorization: authHeader } }
     })
@@ -49,8 +48,6 @@ serve(async (req) => {
     }
 
     // 3. Crear el usuario en Auth
-    // Pasamos el tenant_id en los metadatos para que el Trigger de la base de datos
-    // se encargue de crear el perfil automáticamente vinculado a esta organización.
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: email,
         password: password,
@@ -58,21 +55,20 @@ serve(async (req) => {
         user_metadata: {
             nombre: nombre,
             apellido: apellido,
-            tenant_id: requesterProfile.tenant_id, // VINCULACIÓN CRÍTICA
+            tenant_id: requesterProfile.tenant_id,
             role: role 
         }
     })
 
     if (createError) {
         console.error("Error creating user in Auth:", createError)
-        // Devolvemos 200 OK pero con el error en el body para que el cliente lo muestre
         return new Response(
             JSON.stringify({ error: createError.message }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
         )
     }
 
-    // 4. Asegurar que el perfil tenga el rol correcto (por si el trigger por defecto asigna otro)
+    // 4. Asegurar rol correcto en el perfil (backup)
     if (newUser.user) {
         await supabaseAdmin
             .from('profiles')
@@ -87,7 +83,6 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error("Critical error in create-user:", error)
-    // Devolvemos 200 para evitar "non-2xx status code" en el cliente y mostrar el mensaje real
     return new Response(
       JSON.stringify({ error: error.message || 'Error interno del servidor' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
