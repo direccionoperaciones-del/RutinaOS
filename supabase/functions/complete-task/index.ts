@@ -150,36 +150,47 @@ serve(async (req) => {
     if (inventory && inventory.length > 0) {
         await supabase.from('inventory_submission_rows').delete().eq('task_id', taskId)
         
-        const rows = inventory.map((r: any) => ({
-            task_id: taskId,
-            producto_id: r.producto_id,
-            esperado: r.esperado,
-            fisico: r.fisico
-        }))
+        // --- CORRECCIÓN CRÍTICA PARA INVENTARIO ---
+        // Sanitizar valores para asegurar que son numéricos y evitar "undefined" string
+        const rows = inventory.map((r: any) => {
+            // Convertir cualquier valor no numérico a 0 o al número correcto
+            let safeFisico = r.fisico;
+            let safeEsperado = r.esperado;
+
+            // Check para strings "undefined" o vacíos
+            if (safeFisico === undefined || safeFisico === null || safeFisico === 'undefined' || safeFisico === '') safeFisico = 0;
+            if (safeEsperado === undefined || safeEsperado === null || safeEsperado === 'undefined' || safeEsperado === '') safeEsperado = 0;
+
+            return {
+                task_id: taskId,
+                producto_id: r.producto_id,
+                esperado: Number(safeEsperado),
+                fisico: Number(safeFisico)
+            };
+        });
+
         const { error: invError } = await supabase.from('inventory_submission_rows').insert(rows)
-        if (invError) throw new Error(`Inventory error: ${invError.message}`)
+        if (invError) {
+            console.error('[complete-task] Inventory Insert Error:', invError);
+            throw new Error(`Error guardando inventario: ${invError.message}`)
+        }
     }
 
     // 7.2 LOGICA AUDITORIA AUTOMÁTICA
-    // Si la rutina NO requiere auditoría, se auto-aprueba
     let nextAuditStatus = task.audit_status;
     let auditAt = task.audit_at;
     let auditNotas = task.audit_notas;
     let auditBy = task.audit_by;
 
-    const requiresAudit = routine.requiere_auditoria ?? true; // Default true por seguridad
+    const requiresAudit = routine.requiere_auditoria ?? true; 
 
-    // Si la tarea fue rechazada, SIEMPRE vuelve a pendiente para que el auditor verifique la corrección
     if (task.audit_status === 'rechazado') {
         nextAuditStatus = 'pendiente';
     } else if (!requiresAudit) {
-        // Flujo normal auto-aprobado
         nextAuditStatus = 'aprobado';
         auditAt = new Date().toISOString();
         auditNotas = 'Aprobación automática por sistema (Configuración de rutina)';
-        // auditBy se deja nulo o se podría poner un ID de sistema si existiera
     } else {
-        // Flujo normal con auditoría
         nextAuditStatus = 'pendiente';
     }
     
@@ -204,16 +215,16 @@ serve(async (req) => {
         .update(updatePayload)
         .eq('id', taskId)
 
-    if (updateError) throw new Error(`Update error: ${updateError.message}`)
+    if (updateError) throw new Error(`Error actualizando tarea: ${updateError.message}`)
 
     return new Response(JSON.stringify({ success: true, status: newStatus }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[complete-task] Critical Error:`, error)
-    return new Response(JSON.stringify({ error: "An internal server error occurred." }), {
+    return new Response(JSON.stringify({ error: error.message || "Error interno del servidor" }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })
