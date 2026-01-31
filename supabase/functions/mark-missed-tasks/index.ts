@@ -21,6 +21,7 @@ serve(async (req) => {
     
     let isAuthorized = false
     let triggeredBy = 'cron'
+    let requesterTenantId: string | null = null;
 
     // 1. Verificar si es Cron (Service Key)
     if (token === supabaseServiceKey) {
@@ -33,13 +34,14 @@ serve(async (req) => {
       if (user && !error) {
         const { data: profile } = await supabaseClient
           .from('profiles')
-          .select('role')
+          .select('role, tenant_id')
           .eq('id', user.id)
           .single()
         
         if (profile?.role === 'director') {
           isAuthorized = true
           triggeredBy = `manual_${user.email}`
+          requesterTenantId = profile.tenant_id;
         }
       }
     }
@@ -67,15 +69,21 @@ serve(async (req) => {
       targetDateStr = nowColombia.toISOString().split('T')[0]
     }
 
-    console.log(`[mark-missed-tasks] Ejecutando cierre (${triggeredBy}) para fecha (<=): ${targetDateStr}`)
+    console.log(`[mark-missed-tasks] Ejecutando cierre (${triggeredBy}) para fecha (<=): ${targetDateStr}. Tenant: ${requesterTenantId || 'ALL'}`)
 
     // Actualizar tareas pendientes que vencieron en la fecha target o antes
-    const { data, error } = await supabase
+    let query = supabase
       .from('task_instances')
       .update({ estado: 'incumplida' })
       .eq('estado', 'pendiente')
-      .lte('fecha_programada', targetDateStr)
-      .select('id')
+      .lte('fecha_programada', targetDateStr);
+
+    // Apply security filter if triggered manually
+    if (requesterTenantId) {
+        query = query.eq('tenant_id', requesterTenantId);
+    }
+
+    const { data, error } = await query.select('id');
 
     if (error) throw error
 

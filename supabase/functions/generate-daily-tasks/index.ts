@@ -33,6 +33,7 @@ serve(async (req) => {
 
     let isAuthorized = false;
     let triggeredBy = 'unknown';
+    let requesterTenantId: string | null = null;
     const token = authHeader.replace('Bearer ', '');
 
     // Caso A: Cron (Service Key)
@@ -51,16 +52,17 @@ serve(async (req) => {
         )
       }
 
-      // Verificar rol
+      // Verificar rol y obtener tenant_id
       const { data: profile } = await supabaseAuth
         .from('profiles')
-        .select('role')
+        .select('role, tenant_id')
         .eq('id', user.id)
         .single();
       
       if (profile?.role === 'director') {
         isAuthorized = true;
         triggeredBy = `manual_${user.email}`;
+        requesterTenantId = profile.tenant_id;
       } else {
         return new Response(
           JSON.stringify({ ok: false, error: 'Permiso denegado. Solo directores pueden ejecutar esta acción.' }),
@@ -90,10 +92,10 @@ serve(async (req) => {
     const nowColombia = new Date(now.getTime() + colombiaOffset);
     const targetDate = manualDate || nowColombia.toISOString().split('T')[0];
 
-    console.log(`[Job] Iniciando generación. Fecha: ${targetDate}, Trigger: ${triggeredBy}, Force: ${force}`);
+    console.log(`[Job] Iniciando generación. Fecha: ${targetDate}, Trigger: ${triggeredBy}, Force: ${force}, Tenant: ${requesterTenantId || 'ALL'}`);
 
-    // IDEMPOTENCIA
-    if (!force) {
+    // IDEMPOTENCIA (Solo para Cron o ejecuciones globales, manual forzado suele ignorarlo)
+    if (!force && !requesterTenantId) {
       const { data: existingRun } = await supabaseAdmin
         .from('task_generation_runs')
         .select('*')
@@ -112,25 +114,34 @@ serve(async (req) => {
       }
     }
 
-    // REGISTRAR INICIO
-    const { data: runRecord, error: runError } = await supabaseAdmin
-      .from('task_generation_runs')
-      .upsert({
-        fecha: targetDate,
-        status: 'running',
-        started_at: new Date().toISOString(),
-        triggered_by: triggeredBy,
-        error_message: null
-      }, { onConflict: 'fecha' })
-      .select()
-      .single();
+    // REGISTRAR INICIO (Solo para CRON o si no hay log previo ese día, para no ensuciar logs con intentos manuales fallidos)
+    let runRecordId = null;
+    if (!requesterTenantId) {
+      const { data: runRecord, error: runError } = await supabaseAdmin
+        .from('task_generation_runs')
+        .upsert({
+          fecha: targetDate,
+          status: 'running',
+          started_at: new Date().toISOString(),
+          triggered_by: triggeredBy,
+          error_message: null
+        }, { onConflict: 'fecha' })
+        .select()
+        .single();
 
-    if (runError) throw new Error(`Error DB iniciando log: ${runError.message}`);
+      if (!runError) runRecordId = runRecord.id;
+    }
 
     // --- CORE LOGIC START ---
     
-    // Obtener tenants activos
-    const { data: tenants } = await supabaseAdmin.from('tenants').select('id').eq('activo', true);
+    // Obtener tenants activos (filtrando si es ejecución manual)
+    let tenantQuery = supabaseAdmin.from('tenants').select('id').eq('activo', true);
+    
+    if (requesterTenantId) {
+      tenantQuery = tenantQuery.eq('id', requesterTenantId);
+    }
+    
+    const { data: tenants } = await tenantQuery;
     
     // Configuración de fecha para reglas
     const [y, m, d] = targetDate.split('-').map(Number);
@@ -233,23 +244,26 @@ serve(async (req) => {
     }
     // --- CORE LOGIC END ---
 
-    // REGISTRAR FIN
-    await supabaseAdmin
-      .from('task_generation_runs')
-      .update({
-        status: 'success',
-        finished_at: new Date().toISOString(),
-        tasks_created: totalTasksCreated,
-        error_message: logs.length > 0 ? logs.join('; ') : null
-      })
-      .eq('id', runRecord.id);
+    // REGISTRAR FIN (Si fue una ejecución global registrada)
+    if (runRecordId) {
+      await supabaseAdmin
+        .from('task_generation_runs')
+        .update({
+          status: 'success',
+          finished_at: new Date().toISOString(),
+          tasks_created: totalTasksCreated,
+          error_message: logs.length > 0 ? logs.join('; ') : null
+        })
+        .eq('id', runRecordId);
+    }
 
     return new Response(
       JSON.stringify({ 
         ok: true, 
         generated: totalTasksCreated, 
         date: targetDate,
-        logs: logs 
+        logs: logs,
+        scope: requesterTenantId ? 'single_tenant' : 'global'
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
