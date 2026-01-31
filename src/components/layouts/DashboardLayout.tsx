@@ -21,7 +21,8 @@ import {
   Settings2,
   Bell,
   Users,
-  CalendarOff
+  CalendarOff,
+  RefreshCw // Icono agregado
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,7 @@ const DashboardLayout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   
   const { unreadCount } = useNotifications();
 
@@ -157,6 +159,12 @@ const DashboardLayout = () => {
       description: "Has cerrado sesión correctamente.",
     });
     navigate("/login");
+  };
+
+  const handleRefreshApp = () => {
+    setRefreshing(true);
+    // Recargar la página completa para limpiar caché y reconectar sockets
+    window.location.reload();
   };
 
   const hasPermission = (roles: string[]) => {
@@ -308,6 +316,19 @@ const DashboardLayout = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
+            
+            {/* BOTÓN ACTUALIZAR AGREGADO */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+              onClick={handleRefreshApp}
+              title="Actualizar aplicación"
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn("h-5 w-5", refreshing && "animate-spin")} />
+            </Button>
+
             <ThemeToggle />
             
             <Button 

@@ -8,13 +8,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Bell, Check, Clock, Mail, MessageSquare, Megaphone, AlertCircle, Send, CheckCheck, Eye, ShieldAlert, ShieldCheck } from "lucide-react";
-import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { 
+  Bell, Check, Clock, Mail, MessageSquare, Megaphone, 
+  AlertCircle, Send, CheckCheck, Eye, ShieldAlert, ShieldCheck,
+  Filter, Calendar as CalendarIcon, X
+} from "lucide-react";
+import { format, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { NewMessageModal } from "./NewMessageModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { NOTIFICATIONS_QUERY_KEY } from "@/hooks/use-notifications";
+import { cn } from "@/lib/utils";
 
 export default function MessageList() {
   const { toast } = useToast();
@@ -26,20 +34,25 @@ export default function MessageList() {
   const [loading, setLoading] = useState(true);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   
-  // Estado para controlar qué acordeón está abierto y evitar que se cierre al recargar
+  // Estado para controlar qué acordeón está abierto
   const [openedItem, setOpenedItem] = useState<string | undefined>(undefined);
   
   const [readDetailsOpen, setReadDetailsOpen] = useState(false);
   const [selectedSentMessage, setSelectedSentMessage] = useState<any>(null);
   const [readReceiptsDetail, setReadReceiptsDetail] = useState<any[]>([]);
 
-  // Función de carga de datos (con opción de carga silenciosa)
+  // --- NUEVOS FILTROS ---
+  const [filterType, setFilterType] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterDate, setFilterDate] = useState<Date | undefined>(undefined);
+
+  // Función de carga de datos
   const fetchMessages = async (isBackground = false) => {
     if (!user) return;
     if (!isBackground) setLoading(true);
     
     try {
-      // 1. RECIBIDOS (Mensajes Directos / Comunicados)
+      // 1. RECIBIDOS
       const { data: receipts, error: rxError } = await supabase
         .from('message_receipts')
         .select(`
@@ -57,7 +70,7 @@ export default function MessageList() {
       if (rxError) console.error("Error inbox:", rxError);
       
       const formattedMessages = receipts?.map((r: any) => ({
-        unique_id: `msg_${r.id}`, // ID único para la lista
+        unique_id: `msg_${r.id}`,
         receipt_id: r.id,
         source: 'message',
         ...r.messages,
@@ -66,7 +79,7 @@ export default function MessageList() {
         timestamp: new Date(r.messages.created_at).getTime()
       })) || [];
 
-      // 2. NOTIFICACIONES DEL SISTEMA (Auditoría, Alertas, etc)
+      // 2. NOTIFICACIONES
       const { data: notifications, error: notifError } = await supabase
         .from('notifications')
         .select('*')
@@ -75,13 +88,10 @@ export default function MessageList() {
 
       if (notifError) console.error("Error notifications:", notifError);
 
-      // --- ENRIQUECIMIENTO DE DATOS ---
-      // Obtenemos los IDs de las tareas referenciadas en las notificaciones
       const taskIds = notifications
         ?.filter(n => n.type === 'routine_rejected' || n.type === 'routine_approved')
         .map(n => n.entity_id) || [];
       
-      // Consultamos los detalles de esas tareas (PDV, Rutina, Fecha)
       let tasksMap = new Map();
       if (taskIds.length > 0) {
         const { data: tasksInfo } = await supabase
@@ -102,7 +112,6 @@ export default function MessageList() {
         let cuerpo = "Notificación del sistema.";
         let asunto = n.title;
 
-        // Construimos un mensaje detallado si encontramos la tarea asociada
         if (task) {
           if (n.type === 'routine_rejected') {
             cuerpo = `⚠️ **TAREA RECHAZADA**\n\n📍 **PDV:** ${task.pdv?.nombre} (${task.pdv?.ciudad})\n📋 **Rutina:** ${task.routine_templates?.nombre}\n📅 **Fecha:** ${task.fecha_programada}\n\nPor favor ve a "Mis Tareas" y revisa la nota del auditor para corregirla.`;
@@ -110,7 +119,6 @@ export default function MessageList() {
             cuerpo = `✅ **TAREA APROBADA**\n\n📍 **PDV:** ${task.pdv?.nombre}\n📋 **Rutina:** ${task.routine_templates?.nombre}\n📅 **Fecha:** ${task.fecha_programada}`;
           }
         } else if (n.type === 'routine_rejected') {
-          // Fallback si no se encuentra la tarea (ej. fue borrada)
           cuerpo = "Tu tarea ha sido rechazada. Revisa el módulo de Mis Tareas para más detalles.";
         }
 
@@ -130,13 +138,13 @@ export default function MessageList() {
         };
       }) || [];
       
-      // 3. UNIFICAR Y ORDENAR
+      // 3. UNIFICAR
       const combinedInbox = [...formattedMessages, ...formattedNotifications];
       combinedInbox.sort((a, b) => b.timestamp - a.timestamp);
       
       setInboxMessages(combinedInbox);
 
-      // 4. ENVIADOS (Solo si aplica)
+      // 4. ENVIADOS
       if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
         const { data: sent } = await supabase
           .from('messages')
@@ -154,56 +162,38 @@ export default function MessageList() {
   };
 
   useEffect(() => {
-    fetchMessages(false); // Carga inicial con spinner
+    fetchMessages(false);
   }, [user, profile]);
 
-  // SUSCRIPCIÓN EN TIEMPO REAL
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
       .channel('inbox-unified-realtime')
-      // Usamos isBackground=true para evitar parpadeos
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_receipts', filter: `user_id=eq.${user.id}` }, () => fetchMessages(true))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, () => fetchMessages(true))
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   const handleOpenMessage = async (val: string) => {
-    setOpenedItem(val); // Actualizamos estado del acordeón
-    if (!val) return; // Si está cerrando, no hacemos nada más
+    setOpenedItem(val);
+    if (!val) return;
 
     const msg = inboxMessages.find(m => m.unique_id === val);
-    if (!msg || msg.leido_at) return; // Si ya está leído, no hacemos update
+    if (!msg || msg.leido_at) return;
 
     const now = new Date().toISOString();
-    
-    // 1. Optimistic Update UI (Quitar badge de 'Nuevo' localmente)
     setInboxMessages(prev => prev.map(m => 
       m.unique_id === val ? { ...m, leido_at: now } : m
     ));
 
     try {
-      // 2. Update DB según la fuente
       if (msg.source === 'message') {
-        await supabase
-          .from('message_receipts')
-          .update({ leido_at: now })
-          .eq('id', msg.receipt_id);
+        await supabase.from('message_receipts').update({ leido_at: now }).eq('id', msg.receipt_id);
       } else {
-        await supabase
-          .from('notifications')
-          .update({ leido: true })
-          .eq('id', msg.receipt_id);
+        await supabase.from('notifications').update({ leido: true }).eq('id', msg.receipt_id);
       }
-      
-      // 3. ACTUALIZAR CONTADOR GLOBAL (Campanita)
       await queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
-      
     } catch (err) {
       console.error("Error marking as read", err);
     }
@@ -214,12 +204,7 @@ export default function MessageList() {
     setInboxMessages(prev => prev.map(m => 
       m.receipt_id === receiptId && m.source === 'message' ? { ...m, confirmado_at: now, leido_at: m.leido_at || now } : m
     ));
-
-    await supabase
-      .from('message_receipts')
-      .update({ confirmado_at: now, leido_at: now })
-      .eq('id', receiptId);
-      
+    await supabase.from('message_receipts').update({ confirmado_at: now, leido_at: now }).eq('id', receiptId);
     toast({ title: "Confirmado", description: "Recepción confirmada exitosamente." });
     queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
   };
@@ -228,10 +213,7 @@ export default function MessageList() {
     setSelectedSentMessage(msg);
     setReadReceiptsDetail([]);
     setReadDetailsOpen(true);
-    const { data } = await supabase
-      .from('message_receipts')
-      .select(`leido_at, confirmado_at, profiles (nombre, apellido, email)`)
-      .eq('message_id', msg.id);
+    const { data } = await supabase.from('message_receipts').select(`leido_at, confirmado_at, profiles (nombre, apellido, email)`).eq('message_id', msg.id);
     if (data) setReadReceiptsDetail(data);
   };
 
@@ -246,6 +228,34 @@ export default function MessageList() {
   };
 
   const canCreate = ['director', 'lider'].includes(profile?.role || '');
+
+  // --- LÓGICA DE FILTRADO ---
+  const filteredInbox = inboxMessages.filter(msg => {
+    // Filtro Tipo
+    if (filterType !== 'all') {
+      if (filterType === 'comunicado' && msg.tipo !== 'comunicado') return false;
+      if (filterType === 'mensaje' && msg.tipo !== 'mensaje') return false;
+      if (filterType === 'sistema' && (msg.source === 'message' || msg.tipo === 'comunicado' || msg.tipo === 'mensaje')) return false;
+    }
+    
+    // Filtro Prioridad
+    if (filterPriority !== 'all' && msg.prioridad !== filterPriority) return false;
+    
+    // Filtro Fecha
+    if (filterDate) {
+      if (!isSameDay(new Date(msg.created_at), filterDate)) return false;
+    }
+    
+    return true;
+  });
+
+  const clearFilters = () => {
+    setFilterType("all");
+    setFilterPriority("all");
+    setFilterDate(undefined);
+  };
+
+  const hasActiveFilters = filterType !== 'all' || filterPriority !== 'all' || filterDate;
 
   return (
     <div className="space-y-6">
@@ -276,13 +286,85 @@ export default function MessageList() {
           )}
         </TabsList>
 
-        <TabsContent value="inbox" className="mt-4">
+        <TabsContent value="inbox" className="mt-4 space-y-4">
+          
+          {/* --- BARRA DE FILTROS --- */}
+          <div className="flex flex-col sm:flex-row gap-3 p-3 bg-muted/20 rounded-lg border border-border/50 items-start sm:items-center">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mr-2">
+              <Filter className="w-4 h-4" /> Filtros:
+            </div>
+            
+            <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto">
+              {/* Tipo */}
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-full sm:w-[140px] h-8 text-xs bg-background">
+                  <SelectValue placeholder="Tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los tipos</SelectItem>
+                  <SelectItem value="comunicado">Comunicados</SelectItem>
+                  <SelectItem value="mensaje">Mensajes</SelectItem>
+                  <SelectItem value="sistema">Notificaciones</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Prioridad */}
+              <Select value={filterPriority} onValueChange={setFilterPriority}>
+                <SelectTrigger className="w-full sm:w-[130px] h-8 text-xs bg-background">
+                  <SelectValue placeholder="Prioridad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas prioridades</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                </SelectContent>
+              </Select>
+            
+              {/* Fecha */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={"outline"}
+                    className={cn(
+                      "w-full sm:w-[140px] h-8 text-xs justify-start text-left font-normal bg-background",
+                      !filterDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-3 w-3" />
+                    {filterDate ? format(filterDate, "P", { locale: es }) : <span>Fecha</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={filterDate}
+                    onSelect={setFilterDate}
+                    initialFocus
+                    locale={es}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {hasActiveFilters && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={clearFilters}
+                className="h-8 text-xs text-destructive hover:bg-destructive/10 ml-auto"
+              >
+                <X className="w-3 h-3 mr-1" /> Borrar
+              </Button>
+            )}
+          </div>
+
+          {/* --- LISTA DE MENSAJES --- */}
           {loading ? (
             <div className="text-center py-10">Cargando mensajes...</div>
-          ) : inboxMessages.length === 0 ? (
+          ) : filteredInbox.length === 0 ? (
             <div className="text-center py-16 border-2 border-dashed rounded-lg text-muted-foreground bg-muted/10">
               <Bell className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p>No tienes mensajes nuevos.</p>
+              <p>No se encontraron mensajes con los filtros seleccionados.</p>
             </div>
           ) : (
             <Accordion 
@@ -292,7 +374,7 @@ export default function MessageList() {
               value={openedItem}
               onValueChange={handleOpenMessage}
             >
-              {inboxMessages.map((msg) => (
+              {filteredInbox.map((msg) => (
                 <AccordionItem 
                   key={msg.unique_id} 
                   value={msg.unique_id} 
@@ -323,7 +405,7 @@ export default function MessageList() {
                     <div className="prose prose-sm max-w-none text-gray-800 dark:text-slate-200 whitespace-pre-line mb-4 pl-9">
                       {msg.cuerpo}
                     </div>
-                    {/* Botones de acción según tipo */}
+                    {/* Botones de acción */}
                     <div className="flex justify-end pl-9 gap-2">
                       {msg.requiere_confirmacion && msg.source === 'message' && (
                         msg.confirmado_at ? (
@@ -337,7 +419,6 @@ export default function MessageList() {
                           </Button>
                         )
                       )}
-                      
                       {msg.source === 'notification' && msg.tipo === 'routine_rejected' && (
                         <Button size="sm" variant="outline" asChild>
                           <a href="/tasks">
