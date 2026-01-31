@@ -22,53 +22,38 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401, headers: corsHeaders })
     }
     
-    // Verificar token de usuario
     const { data: { user: auditor }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''))
 
     if (authError || !auditor) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
     }
 
-    // 1.1 Verificar Rol y Tenant (Autorización)
-    const { data: profile, error: profileError } = await supabase
+    // 1.1 Verificar Rol
+    const { data: profile } = await supabase
       .from('profiles')
       .select('role, tenant_id')
       .eq('id', auditor.id)
       .single()
 
-    if (profileError || !profile) {
-      return new Response(JSON.stringify({ error: 'Profile not found' }), { status: 403, headers: corsHeaders })
-    }
-
-    const allowedRoles = ['director', 'lider', 'auditor']
-    if (!allowedRoles.includes(profile.role)) {
-      return new Response(JSON.stringify({ error: 'No tienes permisos para auditar tareas.' }), { status: 403, headers: corsHeaders })
+    if (!['director', 'lider', 'auditor'].includes(profile?.role || '')) {
+      return new Response(JSON.stringify({ error: 'No tienes permisos.' }), { status: 403, headers: corsHeaders })
     }
 
     // 2. Parsear Body
     const { taskId, status, note } = await req.json()
 
-    if (status === 'rejected' && (!note || !note.trim())) {
-      return new Response(JSON.stringify({ error: 'La nota de auditoría es obligatoria para rechazar.' }), { status: 400, headers: corsHeaders })
-    }
-
-    // 3. Obtener Tarea y Detalles
-    const { data: task, error: taskError } = await supabase
+    // 3. Obtener Tarea
+    const { data: task } = await supabase
       .from('task_instances')
-      .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre), tenant_id, pdv_id')
+      .select('id, completado_por, fecha_programada, routine_templates(nombre), pdv(nombre, ciudad), tenant_id')
       .eq('id', taskId)
       .single()
 
-    if (taskError || !task) {
+    if (!task) {
       return new Response(JSON.stringify({ error: 'Tarea no encontrada' }), { status: 404, headers: corsHeaders })
     }
 
-    // 3.1 Verificar aislamiento de Tenant
-    if (task.tenant_id !== profile.tenant_id) {
-      return new Response(JSON.stringify({ error: 'Acceso denegado a otra organización.' }), { status: 403, headers: corsHeaders })
-    }
-
-    // 4. Actualizar Tarea (Con manejo de errores explícito)
+    // 4. Actualizar Tarea
     const updateData = {
       audit_status: status === 'approved' ? 'aprobado' : 'rechazado',
       audit_at: new Date().toISOString(),
@@ -81,33 +66,42 @@ serve(async (req) => {
       .update(updateData)
       .eq('id', taskId)
 
-    if (updateError) {
-      console.error("Update DB Error:", updateError);
-      // Retornar el mensaje específico de la base de datos (útil si el trigger lo bloquea)
-      return new Response(JSON.stringify({ error: `Error guardando auditoría: ${updateError.message}` }), { status: 400, headers: corsHeaders })
-    }
+    if (updateError) throw updateError
 
-    // 5. Notificar al Ejecutor (Opcional, no bloqueante)
+    // 5. NOTIFICACIÓN PUSH REAL (Server-Side Trigger)
+    // Esto asegura que llegue aunque la app esté cerrada
     if (task.completado_por && task.completado_por !== auditor.id) {
       const isApproved = status === 'approved'
-      const title = isApproved ? 'Rutina Aprobada ✅' : 'Tarea Rechazada ⚠️'
+      const title = isApproved ? '✅ Tarea Aprobada' : '🚨 Tarea Rechazada'
       const routineName = task.routine_templates?.nombre || 'Rutina'
       const pdvName = task.pdv?.nombre || 'PDV'
-      const dateStr = task.fecha_programada
       
       const body = isApproved 
-        ? `Tu ejecución de "${routineName}" en ${pdvName} del ${dateStr} ha sido aprobada.` 
-        : `⚠️ Se ha rechazado tu tarea.\n\n📍 PDV: ${pdvName}\n📅 Fecha: ${dateStr}\n📋 Rutina: ${routineName}\n\n📝 Motivo: "${note}"`
+        ? `Tu ejecución de "${routineName}" ha sido aprobada.` 
+        : `CORRECCIÓN REQUERIDA:\nRutina: ${routineName}\nMotivo: ${note}\n\nToca para corregir ahora.`
 
-      // Insertar notificación sin await para no demorar la respuesta
-      supabase.from('notifications').insert({
+      // A) Insertar en base de datos (Historial)
+      await supabase.from('notifications').insert({
         tenant_id: task.tenant_id,
         user_id: task.completado_por,
         type: isApproved ? 'routine_approved' : 'routine_rejected',
         title: title,
         entity_id: taskId, 
         leido: false
-      }).then(() => {})
+      })
+
+      // B) Disparar Push Notification (Fuego real)
+      console.log(`[Audit] Disparando Push a usuario ${task.completado_por}`)
+      
+      // Llamamos a la función send-push internamente usando invoke
+      await supabase.functions.invoke('send-push', {
+        body: {
+          userId: task.completado_por,
+          title: title,
+          body: body,
+          url: '/tasks' // Redirigir directo a mis tareas
+        }
+      })
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -116,8 +110,8 @@ serve(async (req) => {
     })
 
   } catch (error: any) {
-    console.error("[audit-execution] Unhandled Error:", error)
-    return new Response(JSON.stringify({ error: error.message || "Error interno del servidor." }), {
+    console.error("[audit-execution] Error:", error)
+    return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })
