@@ -1,10 +1,48 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UploadCloud, Loader2, Camera, Paperclip, FileText, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { validateFileSecurity } from "@/utils/file-validation";
 import { useToast } from "@/hooks/use-toast";
+
+// Sub-componente para cargar imágenes seguras
+const EvidenceThumbnail = ({ path, alt }: { path: string, alt: string }) => {
+  const [url, setUrl] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const fetchUrl = async () => {
+      // Solicitar URL firmada (temporal) para ver archivo privado
+      const { data, error } = await supabase.storage
+        .from('evidence')
+        .createSignedUrl(path, 3600); // Validez de 1 hora
+
+      if (active) {
+        if (data?.signedUrl) {
+          setUrl(data.signedUrl);
+        } else {
+          console.error("Error cargando imagen:", error);
+        }
+        setLoading(false);
+      }
+    };
+
+    if (path) fetchUrl();
+    return () => { active = false; };
+  }, [path]);
+
+  if (loading) {
+    return <div className="w-full h-full flex items-center justify-center bg-muted/50"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground"/></div>;
+  }
+
+  if (!url) {
+    return <div className="w-full h-full flex items-center justify-center bg-muted/50 text-[10px] text-muted-foreground">No disponible</div>;
+  }
+
+  return <img src={url} className="object-cover w-full h-full transition-transform hover:scale-105" alt={alt} />;
+};
 
 interface EvidenceStepProps {
   type: 'foto' | 'archivo';
@@ -36,11 +74,6 @@ export function EvidenceStep({
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-
-  const getPublicUrl = (path: string) => {
-    const { data } = supabase.storage.from('evidence').getPublicUrl(path);
-    return data.publicUrl;
-  };
 
   // Manejar selección de archivos input tradicional con validación
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,8 +169,8 @@ export function EvidenceStep({
           <Icon className="w-4 h-4" /> {label}
         </h4>
         {required ? (
-          <Badge variant="destructive" className="text-[10px]">
-            {isPhoto && minCount > 0 ? `Mínimo ${minCount}` : 'Requerido'}
+          <Badge variant={files.length >= minCount ? "outline" : "destructive"} className={files.length >= minCount ? "bg-green-50 text-green-700 border-green-200" : "text-[10px]"}>
+            {isPhoto && minCount > 0 ? (files.length >= minCount ? `Completado (${files.length}/${minCount})` : `Faltan ${minCount - files.length}`) : 'Requerido'}
           </Badge>
         ) : (
           <Badge variant="outline" className="text-[10px] bg-background">Opcional</Badge>
@@ -148,7 +181,7 @@ export function EvidenceStep({
         
         {/* VISTA DE CÁMARA ACTIVA */}
         {isCameraOpen ? (
-          <div className="relative rounded-lg overflow-hidden bg-black aspect-[3/4] md:aspect-video flex items-center justify-center">
+          <div className="relative rounded-lg overflow-hidden bg-black aspect-[3/4] md:aspect-video flex items-center justify-center border-2 border-primary/50 shadow-lg animate-in fade-in zoom-in duration-300">
             <video 
               ref={videoRef} 
               autoPlay 
@@ -157,11 +190,11 @@ export function EvidenceStep({
               className="w-full h-full object-cover"
             />
             
-            <div className="absolute bottom-4 left-0 right-0 flex justify-center items-center gap-6 pb-2">
+            <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-8">
               <Button 
-                variant="destructive" 
+                variant="secondary" 
                 size="icon" 
-                className="rounded-full h-12 w-12"
+                className="rounded-full h-12 w-12 bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/20 text-white"
                 onClick={stopCamera}
               >
                 <X className="w-6 h-6" />
@@ -170,10 +203,10 @@ export function EvidenceStep({
               <Button 
                 variant="default" 
                 size="icon" 
-                className="rounded-full h-16 w-16 border-4 border-white bg-transparent hover:bg-white/20"
+                className="rounded-full h-20 w-20 border-4 border-white bg-transparent hover:bg-white/20 transition-all active:scale-95 ring-4 ring-black/20"
                 onClick={takePhoto}
               >
-                <div className="h-12 w-12 bg-white rounded-full" />
+                <div className="h-16 w-16 bg-white rounded-full shadow-inner" />
               </Button>
             </div>
           </div>
@@ -183,26 +216,30 @@ export function EvidenceStep({
             {isPhoto && (
               <Button 
                 variant="outline" 
-                className="h-24 flex flex-col gap-2 border-dashed border-2 hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                className="h-24 flex flex-col gap-2 border-dashed border-2 hover:bg-blue-50 hover:border-blue-300 transition-all group"
                 onClick={startCamera}
                 disabled={isUploading}
               >
-                <Camera className="w-8 h-8 text-blue-500" />
-                <span className="text-xs font-medium text-blue-700">Tomar Foto</span>
+                <div className="p-3 rounded-full bg-blue-50 group-hover:bg-blue-100 transition-colors">
+                  <Camera className="w-6 h-6 text-blue-500" />
+                </div>
+                <span className="text-xs font-medium text-blue-700">Abrir Cámara</span>
               </Button>
             )}
 
             <label 
-              className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-md cursor-pointer bg-background hover:bg-muted/50 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+              className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-md cursor-pointer bg-background hover:bg-muted/50 transition-all group ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
             >
-              <div className="flex flex-col items-center justify-center pt-2">
+              <div className="flex flex-col items-center justify-center">
                 {isUploading ? (
                   <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 ) : (
-                  <UploadCloud className="w-8 h-8 text-muted-foreground mb-2" />
+                  <div className="p-3 rounded-full bg-muted group-hover:bg-muted/80 transition-colors mb-1">
+                    <UploadCloud className="w-6 h-6 text-muted-foreground" />
+                  </div>
                 )}
-                <p className="text-xs text-muted-foreground font-medium">
-                  {isUploading ? "Subiendo..." : "Subir Archivo / Galería"}
+                <p className="text-xs text-muted-foreground font-medium mt-1">
+                  {isUploading ? "Subiendo..." : "Subir Archivo"}
                 </p>
               </div>
               <input 
@@ -219,37 +256,36 @@ export function EvidenceStep({
 
         {/* File List / Grid */}
         {files.length > 0 && (
-          <div className={isPhoto ? "grid grid-cols-3 gap-2 mt-4" : "space-y-2 mt-4"}>
+          <div className={isPhoto ? "grid grid-cols-3 sm:grid-cols-4 gap-3 mt-4" : "space-y-2 mt-4"}>
             {files.map(file => (
               isPhoto ? (
-                // Photo Item
-                <div key={file.id} className="relative group aspect-square rounded-md overflow-hidden border bg-background shadow-sm">
-                  <img 
-                    src={getPublicUrl(file.storage_path)} 
-                    className="object-cover w-full h-full" 
-                    alt="Evidencia"
-                  />
+                // Photo Item con Thumbnail seguro
+                <div key={file.id} className="relative group aspect-square rounded-lg overflow-hidden border bg-background shadow-sm animate-in fade-in zoom-in duration-300">
+                  <EvidenceThumbnail path={file.storage_path} alt="Evidencia" />
+                  
                   <button 
                     onClick={() => onDelete(file.id, file.storage_path)}
-                    className="absolute top-1 right-1 bg-red-500/80 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-black/60 hover:bg-red-600 text-white p-1.5 rounded-full backdrop-blur-sm transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
               ) : (
                 // File Item
-                <div key={file.id} className="flex items-center justify-between p-2 bg-background border rounded text-sm">
-                  <div className="flex items-center gap-2 truncate">
-                    <FileText className="w-4 h-4 text-blue-500" />
-                    <span className="truncate max-w-[200px]">{file.filename}</span>
+                <div key={file.id} className="flex items-center justify-between p-3 bg-background border rounded-lg text-sm shadow-sm animate-in slide-in-from-bottom-2">
+                  <div className="flex items-center gap-3 truncate">
+                    <div className="p-2 bg-blue-50 rounded text-blue-600">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <span className="truncate max-w-[180px] font-medium text-slate-700">{file.filename}</span>
                   </div>
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="h-6 w-6 text-destructive"
+                    className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50"
                     onClick={() => onDelete(file.id, file.storage_path)}
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
               )
