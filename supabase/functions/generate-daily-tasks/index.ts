@@ -19,7 +19,6 @@ serve(async (req) => {
       throw new Error('Configuración incompleta.')
     }
 
-    // 1. Auth Check
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Falta autorización.')
 
@@ -43,7 +42,6 @@ serve(async (req) => {
       }
     }
 
-    // 2. Parse Body
     let body: any = {};
     try { 
       const text = await req.text();
@@ -58,7 +56,6 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // --- LOGICA GENERACIÓN ---
     let tenantQuery = supabaseAdmin.from('tenants').select('id, nombre').eq('activo', true);
     if (requesterTenantId) tenantQuery = tenantQuery.eq('id', requesterTenantId);
     
@@ -67,16 +64,18 @@ serve(async (req) => {
 
     const [y, m, d] = targetDate.split('-').map(Number);
     const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-    const dayOfWeek = dateObj.getUTCDay(); // 0=Dom
+    const dayOfWeek = dateObj.getUTCDay(); 
     const dayOfMonth = dateObj.getUTCDate();
 
     let totalTasksCreated = 0;
-    const detailedLogs: string[] = []; // Log detallado para el usuario
+    const detailedLogs: string[] = [];
 
     detailedLogs.push(`📅 Fecha Objetivo: ${targetDate} (Día semana: ${dayOfWeek})`);
 
     for (const tenant of tenants) {
-      // 1. Obtener Asignaciones
+      detailedLogs.push(`🏢 Organización: ${tenant.nombre}`);
+
+      // 1. Obtener Asignaciones de Rutinas
       const { data: assignments } = await supabaseAdmin
         .from('routine_assignments')
         .select(`
@@ -92,19 +91,26 @@ serve(async (req) => {
         .eq('estado', 'activa');
 
       if (!assignments || assignments.length === 0) {
-        detailedLogs.push(`⚠️ Tenant ${tenant.nombre}: No hay rutinas asignadas.`);
+        detailedLogs.push(`⚠️ Sin rutinas asignadas.`);
         continue;
       }
 
-      // 2. Obtener Responsables
-      const { data: responsibles } = await supabaseAdmin
+      // 2. Obtener Responsables (Debugged)
+      // Primero intentamos query normal vigente=true
+      const { data: responsibles, error: respError } = await supabaseAdmin
         .from('pdv_assignments')
         .select('pdv_id, user_id, profiles(nombre, apellido)')
         .eq('tenant_id', tenant.id)
         .eq('vigente', true);
-        
+      
+      if (respError) {
+        detailedLogs.push(`🔥 Error consultando responsables: ${respError.message}`);
+      }
+
       const respMap = new Map();
       responsibles?.forEach(r => respMap.set(r.pdv_id, r));
+      
+      detailedLogs.push(`ℹ️ Responsables activos encontrados: ${responsibles?.length || 0}`);
 
       // 3. Ausencias
       const { data: absences } = await supabaseAdmin
@@ -123,11 +129,10 @@ serve(async (req) => {
         const pdvName = assign.pdv?.nombre || 'PDV ???';
         
         if (!r || !r.activo) {
-            detailedLogs.push(`❌ ${r?.nombre || 'Rutina'}: Inactiva.`);
             continue;
         }
 
-        // Evaluar Frecuencia
+        // Frecuencia Check
         let shouldRun = false;
         let skipReason = "";
 
@@ -135,44 +140,48 @@ serve(async (req) => {
            if (!r.dias_ejecucion || r.dias_ejecucion.length === 0 || r.dias_ejecucion.includes(dayOfWeek)) {
              shouldRun = true;
            } else {
-             skipReason = `No toca hoy (Día ${dayOfWeek} no está en [${r.dias_ejecucion}])`;
+             skipReason = `Día ${dayOfWeek} no programado.`;
            }
         }
         else if (r.frecuencia === 'semanal') {
            if (r.dias_ejecucion?.includes(dayOfWeek)) shouldRun = true;
-           else skipReason = `No toca hoy (Día ${dayOfWeek} no está en [${r.dias_ejecucion}])`;
+           else skipReason = `Día ${dayOfWeek} no programado.`;
         }
         else if (r.frecuencia === 'mensual') {
            if (dayOfMonth === 1) shouldRun = true;
-           else skipReason = `Solo se genera el día 1 (Hoy es ${dayOfMonth})`;
+           else skipReason = `Solo día 1 (Hoy: ${dayOfMonth})`;
         }
         else if (r.frecuencia === 'quincenal') {
            const c1 = r.corte_1_inicio || 1;
            const c2 = r.corte_2_inicio || 16;
            if (dayOfMonth === c1 || dayOfMonth === c2) shouldRun = true;
-           else skipReason = `Solo cortes días ${c1} y ${c2}`;
+           else skipReason = `Solo días ${c1} y ${c2}`;
         }
         else if (r.frecuencia === 'fechas_especificas') {
            if (r.fechas_especificas?.includes(targetDate)) shouldRun = true;
-           else skipReason = `Fecha ${targetDate} no está en lista específica.`;
+           else skipReason = `Fecha no listada.`;
         }
 
         if (!shouldRun) {
-            // Loguear solo si es una prueba manual para no saturar el log diario
-            if (triggeredBy !== 'cron') detailedLogs.push(`⏭️ Saltada: ${r.nombre} en ${pdvName} -> ${skipReason}`);
+            // Solo loguear skips si es manual para no ensuciar
+            // detailedLogs.push(`⏭️ ${r.nombre} @ ${pdvName}: ${skipReason}`);
             continue;
         }
 
-        // Buscar responsable
+        // Check Responsable
         const assignmentInfo = respMap.get(assign.pdv_id);
         let userId = assignmentInfo?.user_id;
         
         if (!userId) {
-          detailedLogs.push(`⚠️ ${r.nombre} en ${pdvName}: PDV SIN RESPONSABLE ASIGNADO.`);
+          // Debugging info: Check if there's ANY assignment for this PDV, even inactive
+          const { data: anyAssign } = await supabaseAdmin.from('pdv_assignments').select('id, vigente').eq('pdv_id', assign.pdv_id).limit(1);
+          const status = anyAssign && anyAssign.length > 0 ? (anyAssign[0].vigente ? 'Activo (Pero no cargó?)' : 'Inactivo') : 'Sin registro';
+          
+          detailedLogs.push(`⚠️ ${r.nombre} en ${pdvName}: SIN RESPONSABLE. (Estado BD: ${status})`);
           continue; 
         }
 
-        // Ausencias
+        // Check Absence
         const absence = absMap.get(userId);
         if (absence) {
           if (absence.politica === 'omitir') {
@@ -181,7 +190,7 @@ serve(async (req) => {
           }
           if (absence.politica === 'reasignar' && absence.receptor_id) {
             userId = absence.receptor_id; 
-            detailedLogs.push(`info: Reasignado por ausencia.`);
+            detailedLogs.push(`ℹ️ Reasignación por ausencia aplicada.`);
           }
         }
 
@@ -199,7 +208,7 @@ serve(async (req) => {
           created_at: new Date().toISOString()
         });
         
-        detailedLogs.push(`✅ Generar: ${r.nombre} para ${assignmentInfo?.profiles?.nombre || 'Usuario'} en ${pdvName}`);
+        detailedLogs.push(`✅ Generada: ${r.nombre} -> ${pdvName} (${assignmentInfo?.profiles?.nombre || 'Usuario'})`);
       }
 
       if (tasksToInsert.length > 0) {
@@ -208,10 +217,12 @@ serve(async (req) => {
           .upsert(tasksToInsert, { onConflict: 'assignment_id,fecha_programada', ignoreDuplicates: true });
         
         if (insertError) {
-          detailedLogs.push(`🔥 Error Base de Datos: ${insertError.message}`);
+          detailedLogs.push(`🔥 Error BD: ${insertError.message}`);
         } else {
           totalTasksCreated += tasksToInsert.length;
         }
+      } else {
+        detailedLogs.push(`ℹ️ No se generaron tareas para esta organización hoy.`);
       }
     }
 
