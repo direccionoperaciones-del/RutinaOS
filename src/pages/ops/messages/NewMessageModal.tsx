@@ -24,8 +24,8 @@ const messageSchema = z.object({
   recipient_type: z.enum(["all", "role", "pdv", "user"]),
   recipient_id: z.union([z.string(), z.array(z.string())]), 
   rutina_id: z.string().optional(),
-  scheduled_date: z.string().optional(), // Nuevo
-  scheduled_time: z.string().optional(), // Nuevo
+  scheduled_date: z.string().optional(),
+  scheduled_time: z.string().optional(),
 }).refine((data) => {
   if (data.tipo === 'tarea_flash' && !data.rutina_id) {
     return false;
@@ -132,7 +132,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         finalRecipientId = values.recipient_id as string;
       }
 
-      // Preparar argumentos para la función RPC actualizada
       const rpcArgs = {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -150,11 +149,13 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
 
       if (error) throw error;
 
+      let desc = "El mensaje ha sido enviado.";
+      if (values.tipo === 'tarea_flash') desc = "Se ha enviado el mensaje y programado la tarea.";
+      if (values.scheduled_date) desc += " (Programado)";
+
       toast({ 
         title: "Enviado Correctamente", 
-        description: values.tipo === 'tarea_flash' 
-          ? "Se ha enviado el mensaje y programado la tarea." 
-          : "El mensaje ha sido enviado." 
+        description: desc
       });
       
       onSuccess();
@@ -213,7 +214,42 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               />
             </div>
 
-            {/* CONFIGURACIÓN TAREA FLASH */}
+            {/* SECCIÓN PROGRAMACIÓN (Visible para todos los tipos) */}
+            <div className="p-4 bg-muted/40 border rounded-md space-y-4">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <CalendarClock className="w-3 h-3" /> Programación de Envío
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="scheduled_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Fecha</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} className="bg-white h-8 text-xs" />
+                        </FormControl>
+                        <FormDescription className="text-[10px]">Dejar vacío para envío inmediato.</FormDescription>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="scheduled_time"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Hora</FormLabel>
+                        <FormControl>
+                          <Input type="time" {...field} className="bg-white h-8 text-xs" />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+            </div>
+
+            {/* CONFIGURACIÓN ESPECÍFICA TAREA FLASH */}
             {messageType === 'tarea_flash' && (
               <div className="p-4 bg-orange-50 border border-orange-200 rounded-md animate-in fade-in slide-in-from-top-2 space-y-4">
                 <FormField
@@ -240,39 +276,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     </FormItem>
                   )}
                 />
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="scheduled_date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-orange-900 flex items-center gap-2 text-xs">
-                          <CalendarClock className="w-3 h-3" /> Fecha Programada
-                        </FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} className="bg-white border-orange-200 h-8 text-xs" />
-                        </FormControl>
-                        <FormDescription className="text-[10px]">Dejar vacío para hoy.</FormDescription>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="scheduled_time"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-orange-900 flex items-center gap-2 text-xs">
-                          <Clock className="w-3 h-3" /> Hora Inicio
-                        </FormLabel>
-                        <FormControl>
-                          <Input type="time" {...field} className="bg-white border-orange-200 h-8 text-xs" />
-                        </FormControl>
-                        <FormDescription className="text-[10px]">Dejar vacío para inmediato.</FormDescription>
-                      </FormItem>
-                    )}
-                  />
-                </div>
               </div>
             )}
 
