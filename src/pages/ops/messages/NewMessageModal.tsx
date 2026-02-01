@@ -11,7 +11,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, ClipboardList, CalendarClock } from "lucide-react";
+import { Loader2, Send, ClipboardList, CalendarClock, Clock } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
 
 // Esquema actualizado
