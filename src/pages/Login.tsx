@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Lock, Mail, User, Building, ArrowRight } from "lucide-react";
+import { Loader2, Lock, Mail, User, Building, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -40,6 +40,10 @@ const Login = () => {
   // Estado para Reset Password
   const [resetEmail, setResetEmail] = useState("");
   const [isResetting, setIsResetting] = useState(false);
+
+  // Estados para visibilidad de contraseña
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
 
   // Forms
   const formLogin = useForm<z.infer<typeof loginSchema>>({
@@ -208,7 +212,24 @@ const Login = () => {
                     <FormControl>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input type="password" placeholder="••••••••" className="pl-9" {...field} />
+                        <Input 
+                          type={showLoginPassword ? "text" : "password"} 
+                          placeholder="••••••••" 
+                          className="pl-9 pr-10" 
+                          {...field} 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword(!showLoginPassword)}
+                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+                          tabIndex={-1}
+                        >
+                          {showLoginPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
                     </FormControl>
                     <FormMessage />
@@ -361,7 +382,24 @@ const Login = () => {
                     <FormControl>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input type="password" placeholder="******" className="pl-9" {...field} />
+                        <Input 
+                          type={showRegisterPassword ? "text" : "password"} 
+                          placeholder="******" 
+                          className="pl-9 pr-10" 
+                          {...field} 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors focus:outline-none"
+                          tabIndex={-1}
+                        >
+                          {showRegisterPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
                     </FormControl>
                     <FormMessage />
