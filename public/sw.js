@@ -1,56 +1,71 @@
 self.addEventListener('push', function(event) {
   let data = {};
+  
   try {
-    data = event.data ? event.data.json() : {};
+    if (event.data) {
+      data = event.data.json();
+    }
   } catch (e) {
     console.error('Error parsing push data', e);
-    data = { title: 'Nueva notificación', body: 'Tienes una nueva actividad en Movacheck' };
+    // Fallback básico si el JSON falla
+    data = { 
+      title: 'Nueva notificación', 
+      body: 'Tienes una nueva actividad en Movacheck',
+      url: '/'
+    };
   }
 
   const title = data.title || 'Movacheck';
+  
+  // Configuración base segura
   const options = {
-    body: data.body || 'Tienes una nueva notificación.',
+    body: data.body || 'Revisa tu actividad reciente.',
+    // Icono principal (Logo app)
     icon: 'https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4',
-    badge: 'https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4', // Badge monocromático idealmente
+    // Badge pequeño para barra de estado (Android) - Debe ser monocromático idealmente, o usa el mismo icono pequeño
+    badge: 'https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4',
     data: {
       url: data.url || '/'
     },
-    // Opciones críticas para asegurar atención
-    requireInteraction: true, // No desaparece sola
-    renotify: true, // Vibra/Suena aunque haya otra notificación
-    tag: data.tag || 'movacheck-notification', // Agrupa si es necesario, o usa timestamp para únicas
-    vibrate: [200, 100, 200],
-    dir: 'auto',
-    lang: 'es'
+    tag: 'movacheck-notification', // Reemplaza notificaciones viejas para no llenar la barra
+    renotify: true, // Vuelve a sonar/vibrar si llega una nueva con el mismo tag
+    vibrate: [100, 50, 100], // Patrón estándar
+    requireInteraction: false, // Permitir que desaparezca sola para evitar bloqueos en algunos OS
+    actions: [
+      { action: 'open', title: 'Ver ahora' }
+    ]
   };
 
   event.waitUntil(
     self.registration.showNotification(title, options)
+      .catch(err => {
+        console.error('Error mostrando notificación con opciones completas, intentando modo simple:', err);
+        // Fallback a modo texto puro si falla por imágenes
+        return self.registration.showNotification(title, {
+          body: options.body,
+          data: options.data
+        });
+      })
   );
 });
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || '/';
+  
+  // URL destino
+  const urlToOpen = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // 1. Si ya hay una ventana abierta con esa URL, enfocarla
+      // 1. Si la app ya está abierta, enfocarla y navegar
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
-        if (client.url.includes(urlToOpen) && 'focus' in client) {
-          return client.focus();
+        if (client.url && 'focus' in client) {
+          // Si es la misma URL o interna, navegar
+          return client.focus().then(() => client.navigate(urlToOpen));
         }
       }
-      // 2. Si hay una ventana abierta pero en otra URL, navegar
-      for (var i = 0; i < clientList.length; i++) {
-        var client = clientList[i];
-        if ('navigate' in client && 'focus' in client) {
-          client.focus();
-          return client.navigate(urlToOpen);
-        }
-      }
-      // 3. Si no hay ventanas, abrir una nueva
+      // 2. Si no, abrir nueva ventana
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }
