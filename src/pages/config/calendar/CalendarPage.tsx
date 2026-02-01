@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Loader2, Calendar as CalendarIcon, MapPin, CheckCircle2, AlertCircle, Clock, XCircle } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { getColombiaDate } from "@/lib/utils";
 
 export default function CalendarPage() {
   const { tenantId, profile } = useCurrentUser();
@@ -37,7 +38,9 @@ export default function CalendarPage() {
       
       if (data) {
         const tempStatus: Record<string, { hasFailure: boolean, hasPending: boolean, count: number }> = {};
-        const now = new Date();
+        
+        // CRÍTICO: Usar hora de Colombia para validaciones de vencimiento
+        const now = getColombiaDate();
 
         data.forEach(t => {
           const d = t.fecha_programada;
@@ -196,7 +199,8 @@ export default function CalendarPage() {
                 <div className="space-y-4">
                   {tasks.map((task) => {
                     // --- LÓGICA DE SEMÁFORO ---
-                    const now = new Date();
+                    // CRÍTICO: Usar hora de Colombia
+                    const now = getColombiaDate();
                     const deadline = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:00'}`);
                     
                     const isSuccess = task.estado === 'completada_a_tiempo' || task.estado === 'completada';

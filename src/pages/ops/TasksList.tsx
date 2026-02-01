@@ -21,7 +21,7 @@ import { TaskExecutionModal } from "./TaskExecutionModal";
 import { CancelTaskModal } from "./components/CancelTaskModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMyTasks } from "@/hooks/useMyTasks";
-import { getLocalDate, parseLocalDate } from "@/lib/utils";
+import { getLocalDate, parseLocalDate, getColombiaDate } from "@/lib/utils";
 import { calculateTaskDeadline } from "./logic/task-deadline";
 import { Label } from "@/components/ui/label";
 import { DateRangePicker } from "@/components/common/DateRangePicker";
@@ -44,7 +44,8 @@ const getFrequencyIcon = (freq: string) => {
 };
 
 const getStatusBadge = (task: any) => {
-  const now = new Date();
+  // CRÍTICO: Usar hora de Colombia para comparación visual, no la del navegador
+  const now = getColombiaDate(); 
   const deadline = calculateTaskDeadline(task);
   const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
