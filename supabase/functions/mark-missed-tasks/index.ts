@@ -46,10 +46,15 @@ serve(async (req) => {
     
     let targetDateStr = body.date;
     if (!targetDateStr) {
-      const now = new Date()
-      const colombiaOffset = -5 * 60 * 60 * 1000
-      const nowColombia = new Date(now.getTime() + colombiaOffset)
-      targetDateStr = nowColombia.toISOString().split('T')[0]
+      const now = new Date();
+      // 'en-CA' formato es YYYY-MM-DD, perfecto para ISO
+      const formatter = new Intl.DateTimeFormat('en-CA', { 
+        timeZone: 'America/Bogota',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      targetDateStr = formatter.format(now);
     }
 
     // Actualizar tareas pendientes

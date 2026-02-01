@@ -50,11 +50,20 @@ serve(async (req) => {
       if (text) body = JSON.parse(text);
     } catch (e) {}
     
-    const manualDate = body.date;
-    const now = new Date();
-    const colombiaOffset = -5 * 60 * 60 * 1000;
-    const nowColombia = new Date(now.getTime() + colombiaOffset);
-    const targetDate = manualDate || nowColombia.toISOString().split('T')[0];
+    // --- FECHA OBJETIVO ROBUSTA (AMERICA/BOGOTA) ---
+    // Si no viene fecha manual, calculamos la fecha actual en Colombia
+    let targetDate = body.date;
+    if (!targetDate) {
+      const now = new Date();
+      // 'en-CA' formato es YYYY-MM-DD, perfecto para ISO
+      const formatter = new Intl.DateTimeFormat('en-CA', { 
+        timeZone: 'America/Bogota',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      targetDate = formatter.format(now);
+    }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -65,8 +74,11 @@ serve(async (req) => {
     const { data: tenants } = await tenantQuery;
     if (!tenants || tenants.length === 0) throw new Error("No se encontraron organizaciones activas.");
 
+    // Construir objeto Date UTC seguro para obtener día de la semana
     const [y, m, d] = targetDate.split('-').map(Number);
+    // Usamos medio día UTC para evitar bordes de cambio de día
     const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    
     const dayOfWeek = dateObj.getUTCDay(); // 0=Dom
     const dayOfMonth = dateObj.getUTCDate();
 
@@ -74,6 +86,7 @@ serve(async (req) => {
     const detailedLogs: string[] = [];
 
     detailedLogs.push(`📅 Fecha Objetivo: ${targetDate} (Día semana: ${dayOfWeek})`);
+    detailedLogs.push(`🌍 Zona Horaria: America/Bogota (Detectada)`);
 
     for (const tenant of tenants) {
       detailedLogs.push(`🏢 Organización: ${tenant.nombre}`);
@@ -99,7 +112,6 @@ serve(async (req) => {
       }
 
       // 2. Obtener Responsables
-      // CRITICO: Usamos 'profiles:user_id(...)' para decirle a Supabase explícitamente cuál Foreign Key usar
       const { data: responsibles, error: respError } = await supabaseAdmin
         .from('pdv_assignments')
         .select('pdv_id, user_id, profiles:user_id(nombre, apellido)') 
@@ -107,10 +119,7 @@ serve(async (req) => {
         .eq('vigente', true);
       
       if (respError) {
-        // Loguear el error real pero intentar continuar
-        detailedLogs.push(`🔥 Error consultando responsables: ${respError.message} (Code: ${respError.code})`);
-      } else {
-        detailedLogs.push(`ℹ️ Responsables activos encontrados: ${responsibles?.length || 0}`);
+        detailedLogs.push(`🔥 Error consultando responsables: ${respError.message}`);
       }
 
       const respMap = new Map();
@@ -132,9 +141,7 @@ serve(async (req) => {
         const r = assign.routine_templates;
         const pdvName = assign.pdv?.nombre || 'PDV ???';
         
-        if (!r || !r.activo) {
-            continue;
-        }
+        if (!r || !r.activo) continue;
 
         // Frecuencia Check
         let shouldRun = false;
@@ -167,7 +174,6 @@ serve(async (req) => {
         }
 
         if (!shouldRun) {
-            // Solo loguear skips si es manual para no ensuciar
             if (triggeredBy !== 'cron') detailedLogs.push(`⏭️ Saltada: ${r.nombre} en ${pdvName} -> ${skipReason}`);
             continue;
         }
@@ -177,11 +183,7 @@ serve(async (req) => {
         let userId = assignmentInfo?.user_id;
         
         if (!userId) {
-          // Debugging info: Check if there's ANY assignment for this PDV, even inactive
-          const { data: anyAssign } = await supabaseAdmin.from('pdv_assignments').select('id, vigente').eq('pdv_id', assign.pdv_id).limit(1);
-          const status = anyAssign && anyAssign.length > 0 ? (anyAssign[0].vigente ? 'Activo (Error lectura)' : 'Inactivo') : 'Sin registro';
-          
-          detailedLogs.push(`⚠️ ${r.nombre} en ${pdvName}: SIN RESPONSABLE. (Estado BD: ${status})`);
+          detailedLogs.push(`⚠️ ${r.nombre} en ${pdvName}: SIN RESPONSABLE.`);
           continue; 
         }
 
@@ -212,7 +214,7 @@ serve(async (req) => {
           created_at: new Date().toISOString()
         });
         
-        detailedLogs.push(`✅ Generar: ${r.nombre} para ${assignmentInfo?.profiles?.nombre || 'Usuario'} en ${pdvName}`);
+        detailedLogs.push(`✅ Generar: ${r.nombre} en ${pdvName}`);
       }
 
       if (tasksToInsert.length > 0) {
@@ -221,16 +223,22 @@ serve(async (req) => {
           .upsert(tasksToInsert, { onConflict: 'assignment_id,fecha_programada', ignoreDuplicates: true });
         
         if (insertError) {
-          detailedLogs.push(`🔥 Error Insertando Tareas: ${insertError.message}`);
+          detailedLogs.push(`🔥 Error Insertando: ${insertError.message}`);
         } else {
           totalTasksCreated += tasksToInsert.length;
         }
-      } else {
-        if (assignments.length > 0) {
-           detailedLogs.push(`ℹ️ Procesado sin tareas creadas (Ver motivos arriba).`);
-        }
       }
     }
+
+    // Guardar log en BD para trazabilidad
+    await supabaseAdmin.from('task_generation_runs').insert({
+      fecha: targetDate,
+      status: totalTasksCreated > 0 ? 'success' : 'warning',
+      tasks_created: totalTasksCreated,
+      triggered_by: triggeredBy,
+      started_at: new Date().toISOString(), // Usar ISO para timestamp
+      finished_at: new Date().toISOString()
+    });
 
     return new Response(
       JSON.stringify({ 
