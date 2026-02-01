@@ -472,27 +472,54 @@ export default function TasksList() {
         </div>
       )}
 
+      {/* --- STANDARDIZED FILTERS SECTION --- */}
       <Card className="bg-muted/20 border-primary/10">
         <CardHeader className="pb-2 pt-4 px-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-medium text-primary"><Filter className="w-4 h-4" /> Filtros</div>
-            <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></Button>
+            <div className="flex gap-2">
+                {hasActiveFilters && (
+                    <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs h-7 text-destructive hover:bg-destructive/10">
+                        <X className="w-3 h-3 mr-1" /> Limpiar
+                    </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-            <DateRangePicker 
-              dateFrom={dateFrom}
-              setDateFrom={setDateFrom}
-              dateTo={dateTo}
-              setDateTo={setDateTo}
-              className="col-span-1 md:col-span-2 lg:col-span-2"
-            />
-            <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Puntos de Venta</Label><MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" /></div>
-            <div className="space-y-1 w-full min-w-0"><Label className="text-xs">Rutinas</Label><MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" /></div>
-            {profile?.role !== 'administrador' && (<div className="space-y-1 w-full min-w-0"><Label className="text-xs">Usuarios</Label><MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" /></div>)}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            
+            {/* 1. Standard Filters First */}
+            <div className="space-y-1 w-full min-w-0">
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Puntos de Venta</Label>
+                <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos" />
+            </div>
+            
+            <div className="space-y-1 w-full min-w-0">
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Rutinas</Label>
+                <MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas" />
+            </div>
+            
+            {profile?.role !== 'administrador' && (
+                <div className="space-y-1 w-full min-w-0">
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Usuarios</Label>
+                    <MultiSelect options={userOptions} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos" />
+                </div>
+            )}
+
+            {/* 2. Date Range Last */}
+            <div className={profile?.role !== 'administrador' ? "col-span-1 md:col-span-2 lg:col-span-2" : "col-span-1 md:col-span-2 lg:col-span-3"}>
+               <DateRangePicker 
+                dateFrom={dateFrom}
+                setDateFrom={setDateFrom}
+                dateTo={dateTo}
+                setDateTo={setDateTo}
+                compact={false}
+              />
+            </div>
+
           </div>
-          {hasActiveFilters && (<div className="mt-3 flex justify-end"><Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs h-7 text-destructive hover:bg-destructive/10"><X className="w-3 h-3 mr-1" /> Restablecer</Button></div>)}
         </CardContent>
       </Card>
 

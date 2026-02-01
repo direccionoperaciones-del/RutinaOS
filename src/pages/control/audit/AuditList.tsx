@@ -147,7 +147,15 @@ export default function AuditList() {
               <AccordionContent className="px-4 pb-4">
                 <div className="grid grid-cols-1 gap-3">
                   
-                  {/* MOBILE DATE PICKER - COMPACTO */}
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Estado Auditoría</Label>
+                    <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Puntos de Venta</Label>
+                    <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
+                  </div>
+
                   <DateRangePicker 
                     dateFrom={dateFrom}
                     setDateFrom={setDateFrom}
@@ -156,14 +164,6 @@ export default function AuditList() {
                     compact={true}
                   />
 
-                  <div className="space-y-1">
-                    <Label className="text-xs">Estado Auditoría</Label>
-                    <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Puntos de Venta</Label>
-                    <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
-                  </div>
                   {hasActiveFilters && (
                     <Button variant="ghost" size="sm" onClick={clearFilters} className="w-full mt-2 text-destructive">
                       Limpiar Filtros
@@ -186,33 +186,36 @@ export default function AuditList() {
               </Button>
             )}
           </div>
-          <div className="grid grid-cols-6 gap-3">
+          <div className="grid grid-cols-6 gap-4">
             
-            {/* DESKTOP DATE PICKER - GRID */}
-            <DateRangePicker 
-              dateFrom={dateFrom}
-              setDateFrom={setDateFrom}
-              dateTo={dateTo}
-              setDateTo={setDateTo}
-              className="col-span-2" // Ocupa 2 columnas de 6
-            />
-
+            {/* FIRST 4 COLS: DROPDOWNS */}
             <div className="space-y-1">
-              <Label className="text-xs">Estado Auditoría</Label>
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Estado Auditoría</Label>
               <MultiSelect options={auditStatusOptions} selected={selectedAuditStatus} onChange={setSelectedAuditStatus} placeholder="Estado..." />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Puntos de Venta</Label>
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Puntos de Venta</Label>
               <MultiSelect options={pdvOptions} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Rutinas</Label>
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Rutinas</Label>
               <MultiSelect options={routineOptions} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas las Rutinas" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Ejecución</Label>
+              <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Ejecución</Label>
               <MultiSelect options={executionStatusOptions} selected={selectedExecutionStatus} onChange={setSelectedExecutionStatus} placeholder="A tiempo / Vencida" />
             </div>
+
+            {/* LAST 2 COLS: DATES */}
+            <div className="col-span-2">
+               <DateRangePicker 
+                dateFrom={dateFrom}
+                setDateFrom={setDateFrom}
+                dateTo={dateTo}
+                setDateTo={setDateTo}
+              />
+            </div>
+
           </div>
         </CardContent>
       </Card>

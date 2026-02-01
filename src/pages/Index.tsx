@@ -70,16 +70,16 @@ const Index = () => {
               />
 
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-500 uppercase">Punto de Venta</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Punto de Venta</Label>
                 <MultiSelect options={options.pdvs} selected={selectedPdvs} onChange={setSelectedPdvs} placeholder="Todos los PDV" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-slate-500 uppercase">Rutinas</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Rutinas</Label>
                 <MultiSelect options={options.routines} selected={selectedRoutines} onChange={setSelectedRoutines} placeholder="Todas las Rutinas" />
               </div>
               {profile?.role !== 'administrador' && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-slate-500 uppercase">Responsable</Label>
+                  <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Responsable</Label>
                   <MultiSelect options={options.users} selected={selectedUsers} onChange={setSelectedUsers} placeholder="Todos los Usuarios" />
                 </div>
               )}

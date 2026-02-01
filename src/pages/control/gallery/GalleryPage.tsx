@@ -166,16 +166,9 @@ export default function GalleryPage() {
         <CardContent className="p-4">
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <DateRangePicker 
-                dateFrom={dateFrom}
-                setDateFrom={setDateFrom}
-                dateTo={dateTo}
-                setDateTo={setDateTo}
-                className="col-span-1 md:col-span-2"
-              />
               
               <div className="space-y-1">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Puntos de Venta</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Puntos de Venta</Label>
                 <MultiSelect 
                   options={pdvOptions} 
                   selected={selectedPdvs} 
@@ -185,12 +178,21 @@ export default function GalleryPage() {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase">Rutinas</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Rutinas</Label>
                 <MultiSelect 
                   options={routineOptions} 
                   selected={selectedRoutines} 
                   onChange={setSelectedRoutines} 
                   placeholder="Filtrar Rutinas..." 
+                />
+              </div>
+
+              <div className="col-span-1 md:col-span-2">
+                <DateRangePicker 
+                    dateFrom={dateFrom}
+                    setDateFrom={setDateFrom}
+                    dateTo={dateTo}
+                    setDateTo={setDateTo}
                 />
               </div>
             </div>
