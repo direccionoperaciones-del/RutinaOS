@@ -11,7 +11,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Send, ClipboardList } from "lucide-react";
+import { Loader2, Send, ClipboardList, CalendarClock } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
 
 // Esquema actualizado
@@ -22,10 +22,11 @@ const messageSchema = z.object({
   prioridad: z.enum(["normal", "alta"]),
   requiere_confirmacion: z.boolean().default(false),
   recipient_type: z.enum(["all", "role", "pdv", "user"]),
-  recipient_id: z.union([z.string(), z.array(z.string())]), // Ahora acepta array o string
+  recipient_id: z.union([z.string(), z.array(z.string())]), 
   rutina_id: z.string().optional(),
+  scheduled_date: z.string().optional(), // Nuevo
+  scheduled_time: z.string().optional(), // Nuevo
 }).refine((data) => {
-  // Si es tarea flash, la rutina es obligatoria
   if (data.tipo === 'tarea_flash' && !data.rutina_id) {
     return false;
   }
@@ -34,7 +35,6 @@ const messageSchema = z.object({
   message: "Debe seleccionar una rutina para la Tarea Flash",
   path: ["rutina_id"],
 }).refine((data) => {
-  // Validación de destinatario
   if (data.recipient_type !== 'all') {
     if (Array.isArray(data.recipient_id)) {
       return data.recipient_id.length > 0;
@@ -80,6 +80,8 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
       recipient_type: "role",
       recipient_id: "",
       rutina_id: "",
+      scheduled_date: "",
+      scheduled_time: ""
     },
   });
 
@@ -89,17 +91,14 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   useEffect(() => {
     if (open) {
       const fetchData = async () => {
-        // Cargar PDVs
         const { data: pdvData } = await supabase.from('pdv').select('id, nombre, ciudad').eq('activo', true);
         if (pdvData) {
           setPdvOptions(pdvData.map(p => ({ label: `${p.nombre} (${p.ciudad})`, value: p.id })));
         }
 
-        // Cargar Usuarios
         const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido, role').eq('activo', true);
         if (userData) setUsers(userData);
 
-        // Cargar Rutinas
         const { data: routineData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
         if (routineData) setRoutines(routineData);
       };
@@ -108,7 +107,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     }
   }, [open]);
 
-  // Autocompletar asunto en Tarea Flash
   useEffect(() => {
     if (messageType === 'tarea_flash' && !form.getValues('asunto')) {
       form.setValue('asunto', '🚨 Tarea Flash Prioritaria');
@@ -117,7 +115,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     }
   }, [messageType]);
 
-  // Resetear recipient_id al cambiar el tipo
   useEffect(() => {
     form.setValue("recipient_id", recipientType === 'pdv' ? [] : "");
   }, [recipientType]);
@@ -127,18 +124,16 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     try {
       let finalRecipientId: string | null = null;
 
-      // Lógica para formatear el recipient_id según el tipo
       if (values.recipient_type === 'all') {
         finalRecipientId = null;
       } else if (values.recipient_type === 'pdv') {
-        // Si es PDV, convertimos el array a JSON string para la función SQL
         finalRecipientId = JSON.stringify(values.recipient_id);
       } else {
-        // Para usuario o rol es un string simple
         finalRecipientId = values.recipient_id as string;
       }
 
-      const { error } = await supabase.rpc('send_broadcast_message', {
+      // Preparar argumentos para la función RPC actualizada
+      const rpcArgs = {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
         p_tipo: values.tipo,
@@ -146,15 +141,19 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
         p_recipient_id: finalRecipientId,
-        p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null
-      });
+        p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null,
+        p_fecha_programada: values.scheduled_date || null,
+        p_hora_programada: values.scheduled_time || null
+      };
+
+      const { error } = await supabase.rpc('send_broadcast_message', rpcArgs);
 
       if (error) throw error;
 
       toast({ 
         title: "Enviado Correctamente", 
         description: values.tipo === 'tarea_flash' 
-          ? "Se ha enviado el mensaje y generado la tarea para los usuarios." 
+          ? "Se ha enviado el mensaje y programado la tarea." 
           : "El mensaje ha sido enviado." 
       });
       
@@ -170,7 +169,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nuevo Mensaje</DialogTitle>
         </DialogHeader>
@@ -214,9 +213,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               />
             </div>
 
-            {/* SELECTOR DE RUTINA - SOLO SI ES TAREA FLASH */}
+            {/* CONFIGURACIÓN TAREA FLASH */}
             {messageType === 'tarea_flash' && (
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-md animate-in fade-in slide-in-from-top-2">
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-md animate-in fade-in slide-in-from-top-2 space-y-4">
                 <FormField
                   control={form.control}
                   name="rutina_id"
@@ -237,13 +236,43 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription className="text-orange-700/80 text-xs">
-                        Esta rutina será asignada automáticamente en "Mis Tareas" a los destinatarios.
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="scheduled_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-orange-900 flex items-center gap-2 text-xs">
+                          <CalendarClock className="w-3 h-3" /> Fecha Programada
+                        </FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} className="bg-white border-orange-200 h-8 text-xs" />
+                        </FormControl>
+                        <FormDescription className="text-[10px]">Dejar vacío para hoy.</FormDescription>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="scheduled_time"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-orange-900 flex items-center gap-2 text-xs">
+                          <Clock className="w-3 h-3" /> Hora Inicio
+                        </FormLabel>
+                        <FormControl>
+                          <Input type="time" {...field} className="bg-white border-orange-200 h-8 text-xs" />
+                        </FormControl>
+                        <FormDescription className="text-[10px]">Dejar vacío para inmediato.</FormDescription>
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
             )}
 
@@ -257,7 +286,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     <Select 
                       onValueChange={(val) => {
                         field.onChange(val);
-                        // Resetear ID al cambiar tipo
                         form.setValue("recipient_id", val === 'pdv' ? [] : ""); 
                       }} 
                       defaultValue={field.value}

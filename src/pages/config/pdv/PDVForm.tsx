@@ -37,6 +37,7 @@ interface PDVFormProps {
 export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormProps) {
   const { toast } = useToast();
   const [users, setUsers] = useState<any[]>([]);
+  const [cities, setCities] = useState<any[]>([]); // Estado para ciudades
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<PDVFormValues>({
@@ -55,26 +56,35 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
     },
   });
 
-  // Cargar usuarios para el selector
+  // Cargar usuarios y ciudades
   useEffect(() => {
     if (open) {
-      const fetchUsers = async () => {
-        const { data } = await supabase
+      const loadData = async () => {
+        // Cargar usuarios
+        const { data: usersData } = await supabase
           .from('profiles')
           .select('id, nombre, apellido, role')
           .eq('activo', true)
           .order('nombre');
-        if (data) setUsers(data);
+        if (usersData) setUsers(usersData);
+
+        // Cargar ciudades
+        const { data: citiesData } = await supabase
+          .from('cities')
+          .select('nombre')
+          .eq('activo', true)
+          .order('nombre');
+        
+        if (citiesData) setCities(citiesData);
       };
-      fetchUsers();
+      loadData();
     }
   }, [open]);
 
-  // Cargar datos al editar (incluyendo responsable actual)
+  // Cargar datos al editar
   useEffect(() => {
     const loadPDVData = async () => {
       if (pdvToEdit) {
-        // Buscar responsable vigente
         const { data: assignment } = await supabase
           .from('pdv_assignments')
           .select('user_id')
@@ -113,7 +123,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
     if (open) {
       loadPDVData();
     }
-  }, [pdvToEdit, open]); // form excluido para evitar re-renders innecesarios
+  }, [pdvToEdit, open]);
 
   const getCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -138,7 +148,6 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
 
-      // Obtener tenant del usuario actual
       const { data: profile } = await supabase
         .from('profiles')
         .select('tenant_id')
@@ -165,14 +174,12 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       let pdvId = pdvToEdit?.id;
 
       if (pdvToEdit) {
-        // Update
         const { error } = await supabase
           .from('pdv')
           .update(pdvData)
           .eq('id', pdvToEdit.id);
         if (error) throw error;
       } else {
-        // Insert
         const { data, error } = await supabase
           .from('pdv')
           .insert(pdvData)
@@ -182,10 +189,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
         pdvId = data.id;
       }
 
-      // --- MANEJO INTELIGENTE DE RESPONSABLE ---
       const newResponsableId = values.responsable_id;
-      
-      // 1. Verificar asignación actual
       const { data: currentAssignment } = await supabase
         .from('pdv_assignments')
         .select('id, user_id')
@@ -195,9 +199,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       
       const oldUserId = currentAssignment?.user_id || "sin_asignar";
 
-      // 2. Si hubo cambio
       if (newResponsableId !== oldUserId) {
-        // A. Cerrar asignación anterior (si existe)
         if (currentAssignment) {
           await supabase
             .from('pdv_assignments')
@@ -208,7 +210,6 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
             .eq('id', currentAssignment.id);
         }
 
-        // B. Crear nueva asignación (si se seleccionó un usuario válido)
         if (newResponsableId && newResponsableId !== "sin_asignar") {
           const { error: assignError } = await supabase.from('pdv_assignments').insert({
             tenant_id: profile.tenant_id,
@@ -227,11 +228,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       onOpenChange(false);
     } catch (error: any) {
       console.error(error);
-      toast({ 
-        variant: "destructive", 
-        title: "Error", 
-        description: error.message || "Error al guardar PDV" 
-      });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setIsLoading(false);
     }
@@ -254,7 +251,6 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
               </TabsList>
 
               <div className="py-4">
-                {/* TAB GENERAL */}
                 <TabsContent value="general" className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
@@ -279,11 +275,13 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                               <SelectTrigger><SelectValue placeholder="Seleccione..." /></SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="Bogotá">Bogotá</SelectItem>
-                              <SelectItem value="Medellín">Medellín</SelectItem>
-                              <SelectItem value="Cali">Cali</SelectItem>
-                              <SelectItem value="Barranquilla">Barranquilla</SelectItem>
-                              <SelectItem value="Cartagena">Cartagena</SelectItem>
+                              {cities.length > 0 ? (
+                                cities.map((city) => (
+                                  <SelectItem key={city.nombre} value={city.nombre}>{city.nombre}</SelectItem>
+                                ))
+                              ) : (
+                                <SelectItem value="temp" disabled>Configure ciudades en Parámetros</SelectItem>
+                              )}
                             </SelectContent>
                           </Select>
                           <FormMessage />
@@ -346,7 +344,6 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                   />
                 </TabsContent>
 
-                {/* TAB GEO */}
                 <TabsContent value="geo" className="space-y-4">
                   <div className="bg-muted p-4 rounded-md text-sm text-muted-foreground mb-4">
                     Las coordenadas son obligatorias si asignas rutinas con validación GPS.
@@ -392,7 +389,6 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                   />
                 </TabsContent>
 
-                {/* TAB RESPONSABLE */}
                 <TabsContent value="responsable" className="space-y-4">
                   <FormField
                     control={form.control}

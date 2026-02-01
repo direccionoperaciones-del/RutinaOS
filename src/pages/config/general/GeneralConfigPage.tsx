@@ -2,7 +2,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AbsenceTypesList } from "./AbsenceTypesList";
 import { MeasurementUnitsList } from "./MeasurementUnitsList";
-import { Settings2, Scale, CalendarOff } from "lucide-react";
+import { CitiesList } from "./CitiesList";
+import { Settings2, Scale, CalendarOff, Map } from "lucide-react";
 
 export default function GeneralConfigPage() {
   return (
@@ -12,11 +13,26 @@ export default function GeneralConfigPage() {
         <p className="text-muted-foreground">Configura los maestros y listas desplegables del sistema.</p>
       </div>
 
-      <Tabs defaultValue="absences" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:w-[400px]">
+      <Tabs defaultValue="cities" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 md:w-[600px]">
+          <TabsTrigger value="cities"><Map className="w-4 h-4 mr-2"/> Ciudades</TabsTrigger>
           <TabsTrigger value="absences"><CalendarOff className="w-4 h-4 mr-2"/> Novedades</TabsTrigger>
           <TabsTrigger value="units"><Scale className="w-4 h-4 mr-2"/> Unidades</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="cities" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Ciudades y Zonas</CardTitle>
+              <CardDescription>
+                Administra las ciudades disponibles para asignar a los Puntos de Venta.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <CitiesList />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="absences" className="mt-6">
           <Card>
