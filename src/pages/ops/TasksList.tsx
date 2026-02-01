@@ -12,11 +12,10 @@ import {
   Repeat, CalendarDays, CalendarRange, ArrowRight,
   User, Filter, Loader2, RefreshCw, AlertCircle,
   Trophy, PartyPopper, Coffee, Info, ShieldCheck, ShieldAlert,
-  CheckCircle2, X, Eye, Trash2, Ban, AlertTriangle
+  CheckCircle2, X, Eye, Trash2, Ban
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { useToast } from "@/hooks/use-toast";
 import { TaskExecutionModal } from "./TaskExecutionModal";
 import { CancelTaskModal } from "./components/CancelTaskModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -44,9 +43,11 @@ const getFrequencyIcon = (freq: string) => {
 };
 
 const getStatusBadge = (task: any) => {
-  // CRÍTICO: Usar hora de Colombia para comparación visual, no la del navegador
+  // Comparación robusta usando hora de Colombia
   const now = getColombiaDate(); 
   const deadline = calculateTaskDeadline(task);
+  
+  // Como ambas fechas son "Timezone Agnostic" (representan hora muro), la comparación directa funciona
   const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
   if (task.audit_status === 'rechazado') return <Badge className="bg-red-600 text-white border-red-700 animate-pulse">RECHAZADA</Badge>;
@@ -68,6 +69,8 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
   const isCancelled = task.estado === 'cancelada';
   
   const deadline = calculateTaskDeadline(task);
+  // date-fns format usará los valores locales del objeto Date. 
+  // Como construimos el objeto manualmente con los valores de Colombia, mostrará la hora correcta.
   const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
   return (
@@ -109,7 +112,7 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
 
       <CardContent className="p-3 pt-2 flex-1">
         <div className="flex justify-between items-center bg-muted/30 p-1.5 rounded-md mb-2">
-          <div className="flex items-center gap-1.5 text-xs font-medium" title="Fecha límite de ejecución">
+          <div className="flex items-center gap-1.5 text-xs font-medium" title="Fecha límite de ejecución (Hora Colombia)">
             <Clock className="w-3 h-3 text-muted-foreground" />
             <span className="capitalize">{deadlineStr}</span>
           </div>

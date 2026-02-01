@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from "clsx";
+import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
@@ -6,70 +6,69 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Obtiene la fecha y hora actual exacta en Colombia (GMT-5).
- * Independiente de la zona horaria del navegador del usuario.
+ * Retorna un objeto Date que representa la hora actual en Colombia (UTC-5).
+ * El objeto Date retornado tendrá los valores numéricos (horas, minutos) correspondientes a Colombia,
+ * aunque internamente el navegador crea que es hora local.
+ * ESTO ES INTENCIONAL para permitir comparaciones directas de "Hora Muro".
  */
-export function getColombiaDate(): Date {
-  // Crear fecha basada en string ISO específico para Bogotá
+export const getColombiaDate = (): Date => {
   const now = new Date();
-  const bogotaString = now.toLocaleString("en-US", { timeZone: "America/Bogota" });
-  return new Date(bogotaString);
-}
+  // Obtenemos la cadena de fecha en hora colombiana
+  const colombiaTimeStr = now.toLocaleString("en-US", { timeZone: "America/Bogota" });
+  // Creamos un nuevo objeto fecha basado en esa cadena. 
+  // El navegador interpretará esta cadena como "Local", lo cual está bien para nuestras comparaciones relativas.
+  return new Date(colombiaTimeStr);
+};
 
 /**
- * Retorna la fecha actual de Colombia en formato YYYY-MM-DD
+ * Parsea una fecha (YYYY-MM-DD) y una hora (HH:MM o HH:MM:SS) 
+ * y retorna un objeto Date que representa ese momento exacto en "Tiempo Colombia".
+ * Evita conversiones de zona horaria automáticas del navegador.
  */
-export function getLocalDate(): string {
+export const parseColombiaDeadline = (dateStr: string, timeStr?: string | null): Date => {
+  // Si no hay fecha, retornamos "ahora" en tiempo Colombia
+  if (!dateStr) return getColombiaDate();
+
+  try {
+    // Descomponer YYYY-MM-DD
+    const [year, month, day] = dateStr.split('-').map(num => parseInt(num, 10));
+    
+    let hours = 23;
+    let minutes = 59;
+    let seconds = 0;
+
+    // Descomponer HH:MM:SS si existe
+    if (timeStr) {
+      const parts = timeStr.split(':');
+      if (parts.length >= 2) {
+        hours = parseInt(parts[0], 10);
+        minutes = parseInt(parts[1], 10);
+        if (parts.length >= 3) {
+          seconds = parseInt(parts[2], 10);
+        }
+      }
+    }
+
+    // Construir la fecha usando el constructor local (año, mes-indexado-0, día, horas...)
+    // Esto crea una fecha que "dice" tener la hora especificada en el reloj local.
+    // Al comparar con getColombiaDate() (que también está "falsificada" a local), la comparación es correcta.
+    return new Date(year, month - 1, day, hours, minutes, seconds);
+  } catch (e) {
+    console.error("Error parsing date/time:", dateStr, timeStr, e);
+    return getColombiaDate(); // Fallback seguro
+  }
+};
+
+// Deprecated or Aliased for compatibility
+export const getLocalDate = () => {
+  // Retorna la fecha actual en formato YYYY-MM-DD ajustada a Colombia
   const date = getColombiaDate();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
+};
 
-/**
- * Convierte un string YYYY-MM-DD (fecha BD) a un objeto Date
- * que representa las 00:00:00 de ese día EN COLOMBIA.
- */
-export function parseLocalDate(dateStr: string): Date {
-  if (!dateStr) return getColombiaDate();
-  
-  // Dividimos manualmente para evitar interpretaciones UTC del navegador
-  const [year, month, day] = dateStr.split('-').map(Number);
-  
-  // Creamos la fecha. OJO: new Date(y,m,d) crea la fecha en hora LOCAL del navegador.
-  // Esto está bien para componentes de calendario visuales, pero para lógica de vencimiento
-  // necesitamos asegurar que comparamos "peras con peras".
-  return new Date(year, month - 1, day);
-}
-
-/**
- * Verifica si una fecha ha pasado respecto a AHORA (Hora Colombia).
- * Útil para validaciones de vencimiento.
- */
-export function isOverdueInColombia(deadline: Date): boolean {
-  const nowColombia = getColombiaDate();
-  return nowColombia > deadline;
-}
-
-/**
- * Intenta abrir el selector de fecha nativo de forma segura.
- * Maneja excepciones de cross-origin iframe.
- */
-export function openDatePicker(id: string) {
-  const input = document.getElementById(id) as HTMLInputElement;
-  if (input) {
-    try {
-      if (typeof input.showPicker === 'function') {
-        input.showPicker();
-      } else {
-        input.focus(); // Fallback para navegadores viejos
-      }
-    } catch (error) {
-      // Fallback silencioso si falla por restricciones de seguridad (iframe)
-      // Simplemente damos foco para permitir escribir
-      console.warn("showPicker blocked:", error);
-      input.focus();
-    }
-  }
-}
+export const parseLocalDate = (dateStr: string): Date => {
+  return parseColombiaDeadline(dateStr, "00:00:00");
+};
