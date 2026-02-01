@@ -45,7 +45,8 @@ export default function AuditList() {
   ];
 
   const fetchTasks = async () => {
-    setLoading(true);
+    // No seteamos setLoading(true) para evitar el parpadeo en filtros.
+    // Solo será true en la primera carga.
     try {
       let query = supabase
         .from('task_instances')

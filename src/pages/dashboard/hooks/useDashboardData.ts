@@ -68,8 +68,10 @@ export const useDashboardData = () => {
   // Fetch Data
   const fetchData = async () => {
     if (!profile || !user || !dateFrom || !dateTo) return;
-    setLoading(true);
-
+    
+    // NOTA: No seteamos loading(true) aquí para evitar el parpadeo de esqueletos
+    // Solo será true en la carga inicial (default state)
+    
     try {
       let query = supabase
         .from('task_instances')
@@ -84,7 +86,6 @@ export const useDashboardData = () => {
 
       // --- LOGICA DE FILTRADO POR ROL ---
       if (profile.role === 'administrador') {
-        // 1. Obtener PDVs asignados al administrador
         const { data: assignments } = await supabase
           .from('pdv_assignments')
           .select('pdv_id')
@@ -109,8 +110,7 @@ export const useDashboardData = () => {
       
       if (error) throw error;
 
-      // FILTRO CRÍTICO: Excluir 'cancelada' de todos los cálculos de métricas
-      // Solo el rol director podría querer verlas en listas, pero para KPIs se excluyen
+      // FILTRO CRÍTICO: Excluir 'cancelada'
       const activeTasks = (rawTasks || []).filter((t: any) => t.estado !== 'cancelada');
 
       processData(activeTasks);

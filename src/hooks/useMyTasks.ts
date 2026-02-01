@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
@@ -8,6 +8,7 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
   return useQuery({
     queryKey: ['my-tasks', user?.id, dateFrom, dateTo],
     enabled: !!user && !!profile,
+    placeholderData: keepPreviousData, // Mantiene los datos anteriores mientras carga los nuevos
     queryFn: async () => {
       if (!user) throw new Error("No autenticado");
 
@@ -29,7 +30,6 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
 
       // --- FILTRO RADICAL Y ESTRICTO ---
       // Solo traemos tareas cuya fecha PROGRAMADA esté en el rango.
-      // Eliminamos la condición "OR completado_at" que traía tareas de otros días.
       query = query
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
@@ -48,7 +48,6 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           query = query.in('pdv_id', myPdvIds);
         } else {
           // Si no tiene PDV, solo ve lo que haya completado él (histórico)
-          // pero respetando el filtro de fecha estricto de arriba
           query = query.eq('completado_por', user.id);
         }
       }
