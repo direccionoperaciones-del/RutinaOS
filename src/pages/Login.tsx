@@ -146,7 +146,7 @@ const Login = () => {
         <CardHeader className="text-center pb-8 pt-8">
           <div className="w-16 h-16 mx-auto mb-6 overflow-hidden rounded-xl shadow-sm border bg-white p-2 flex items-center justify-center">
             <img 
-              src="/LogoRunOP.jpeg" 
+              src="https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg" 
               alt="RunOp" 
               className="max-w-full max-h-full object-contain"
             />

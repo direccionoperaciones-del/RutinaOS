@@ -88,7 +88,7 @@ const NAV_CONFIG = [
   }
 ];
 
-const DEFAULT_LOGO = "/LogoRunOP.jpeg";
+const DEFAULT_LOGO = "https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg";
 
 const DashboardLayout = () => {
   const navigate = useNavigate();
