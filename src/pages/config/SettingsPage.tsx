@@ -1,4 +1,3 @@
-character">
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,7 +126,7 @@ export default function SettingsPage() {
                     ) : isIOS && !isStandalone ? (
                       <div className="text-orange-600 bg-orange-50 p-2 rounded border border-orange-200 text-xs">
                         <p className="font-bold mb-1">Requiere instalación (iOS):</p>
-                        <p>Usa el botón "Compartir" y "Agregar a Inicio".</p>
+                        <p>Usa el botón "Compartir" {'>'} "Agregar a Inicio".</p>
                       </div>
                     ) : isSubscribed ? (
                       <p className="text-green-700 font-medium flex items-center gap-2">
