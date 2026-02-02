@@ -6,10 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Lock, User, UserPlus } from "lucide-react";
+import { Loader2, Mail, Lock, UserPlus, ArrowRight } from "lucide-react";
 
 const createUserSchema = z.object({
   nombre: z.string().min(2, "Mínimo 2 caracteres"),
@@ -49,8 +49,24 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
         body: values
       });
 
-      if (error) throw new Error(error.message || "Error al conectar con el servidor");
-      if (data.error) throw new Error(data.error);
+      if (error) {
+        // Intentar parsear el cuerpo del error si viene como string JSON
+        let errorMessage = error.message;
+        try {
+          if (error instanceof  Error && 'context' in error) {
+             // @ts-ignore
+             const body = await error.context.json();
+             if (body.error) errorMessage = body.error;
+          }
+        } catch (e) {
+          // Fallback al mensaje original
+        }
+        throw new Error(errorMessage || "Error al conectar con el servidor");
+      }
+
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
 
       toast({ 
         title: "Usuario creado", 
@@ -171,8 +187,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
             <DialogFooter className="mt-4">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button type="submit" disabled={isLoading}>
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UserPlus className="mr-2 h-4 w-4" />}
-                Crear Usuario
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <span className="flex items-center">Registrar <ArrowRight className="ml-2 h-4 w-4"/></span>}
               </Button>
             </DialogFooter>
           </form>
