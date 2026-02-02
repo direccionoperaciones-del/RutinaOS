@@ -11,11 +11,11 @@ serve(async (req) => {
   }
 
   try {
-    // TRIMMING CRÍTICO: Elimina espacios accidentales al copiar/pegar
     const publicKey = Deno.env.get('VAPID_PUBLIC_KEY')?.trim()
 
     if (!publicKey) {
-      throw new Error('VAPID_PUBLIC_KEY no configurada en servidor (o vacía).')
+      console.error("[get-vapid] VAPID_PUBLIC_KEY está vacía o no existe.");
+      throw new Error('La configuración del servidor no tiene la llave pública VAPID.')
     }
 
     return new Response(
@@ -24,6 +24,7 @@ serve(async (req) => {
     )
 
   } catch (error) {
+    console.error("[get-vapid] Error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
