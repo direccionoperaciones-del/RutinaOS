@@ -4,85 +4,90 @@
 
 @layer base {
   :root {
-    /* --- PALETA MOVACHECK (Base HSL para Shadcn) --- */
+    /* --- PALETA MOVACHECK (Rediseño 2026) --- */
     
-    /* Azul Principal (#2563EB) - Usado para acciones primarias */
-    --primary: 221 83% 53%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary: #e94e1b (Naranja) -> 15 83% 51% */
+    --primary: 15 83% 51%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Verde Mint (#34D399) - Usado para éxito/validación */
-    --success: 158 64% 52%;
-    --success-foreground: 210 40% 98%;
+    /* Secondary: #091056 (Navy) -> 235 81% 19% */
+    --secondary: 235 81% 19%;
+    --secondary-foreground: 0 0% 100%;
 
-    /* Navy (#1E293B) - Sidebar y fondos oscuros */
-    --navy: 215 28% 17%;
-    
-    /* MODO CLARO */
-    --background: 210 20% 96%; /* #F1F5F9 (Slate-100) */
-    --foreground: 222.2 47.4% 11.2%; /* #1E293B */
+    /* Background: #ffffff */
+    --background: 0 0% 100%;
+    /* Foreground: #333331 (Dark Gray) -> 60 2% 20% */
+    --foreground: 60 2% 20%;
 
-    --card: 0 0% 100%; /* White */
-    --card-foreground: 222.2 47.4% 11.2%;
+    /* Cards */
+    --card: 0 0% 100%;
+    --card-foreground: 60 2% 20%;
 
+    /* Popovers */
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
+    --popover-foreground: 60 2% 20%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Muted: #f5f5f4 -> 40 5% 96% */
+    --muted: 40 5% 96%;
+    --muted-foreground: 0 0% 45%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Accent: #fef3f2 (Light Orange) -> 5 67% 97% */
+    --accent: 5 67% 97%;
+    --accent-foreground: 15 83% 51%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
+    /* Destructive */
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 214 32% 84%; /* #CBD5E1 */
-    --input: 214 32% 84%;
-    --ring: 221 83% 53%;
+    /* Borders & Inputs: #e5e5e5 -> 0 0% 90% */
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    
+    /* Ring: Match Primary */
+    --ring: 15 83% 51%;
 
-    --radius: 0.75rem;
+    /* Radius: 0.5rem (8px) - Moderno y suave */
+    --radius: 0.5rem;
     
     /* Custom Backgrounds */
-    --bg-app: #F1F5F9;
-    --bg-sidebar: #1E293B;
+    --bg-app: #ffffff;
+    --bg-sidebar: #ffffff;
   }
 
   .dark {
-    /* MODO OSCURO - CRÍTICO: Fondo #0F172A */
-    --background: 222 47% 11%; /* #0F172A */
-    --foreground: 210 40% 98%;
+    /* Background: #0a0a0a -> 0 0% 4% */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
 
-    --card: 215 28% 17%; /* #1E293B (Navy) */
-    --card-foreground: 210 40% 98%;
+    /* Cards: #1a1a1a -> 0 0% 10% */
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 98%;
 
-    --popover: 215 28% 17%;
-    --popover-foreground: 210 40% 98%;
+    /* Popovers */
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 98%;
 
-    --primary: 217 91% 60%; /* Azul más brillante para dark mode */
-    --primary-foreground: 222.2 47.4% 11.2%;
+    /* Muted: #262626 -> 0 0% 15% */
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    /* Accent: #2d1410 (Dark Orange Tint) -> 13 47% 12% */
+    --accent: 13 47% 12%;
+    --accent-foreground: 15 83% 51%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
+    /* Destructive */
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 217 91% 60%;
+    /* Borders: #262626 -> 0 0% 15% */
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
     
-    /* Custom Backgrounds Dark */
-    --bg-app: #0F172A;
-    --bg-sidebar: #0F172A; /* Sidebar se funde con el fondo en dark mode */
+    --ring: 15 83% 51%;
+    
+    /* Custom Backgrounds */
+    --bg-app: #0a0a0a;
+    --bg-sidebar: #1a1a1a;
   }
 }
 
@@ -92,21 +97,20 @@
   }
   
   html, body {
-    @apply bg-background text-foreground transition-colors duration-300 min-h-screen font-sans antialiased;
-    background-color: var(--bg-app); /* Forzar color de fondo específico */
+    @apply bg-background text-foreground transition-colors duration-300 min-h-screen font-sans antialiased selection:bg-primary/20 selection:text-primary;
   }
 
-  /* Jerarquía Tipográfica */
+  /* Jerarquía Tipográfica Refinada */
   h1, .h1 {
-    @apply text-3xl md:text-4xl font-bold tracking-tight text-foreground mb-2;
+    @apply text-3xl font-bold tracking-tight text-foreground mb-4;
   }
   
   h2, .h2 {
-    @apply text-2xl font-semibold tracking-tight text-foreground mb-4;
+    @apply text-2xl font-semibold tracking-tight text-foreground mb-3;
   }
   
   h3, .h3 {
-    @apply text-lg font-semibold text-foreground;
+    @apply text-lg font-semibold text-foreground mb-2;
   }
   
   p, .body {
@@ -114,32 +118,22 @@
   }
   
   small, .caption {
-    @apply text-xs text-muted-foreground;
+    @apply text-sm text-muted-foreground;
   }
 }
 
 @layer components {
-  /* Scrollbar personalizado para el sidebar */
+  /* Scrollbar personalizado moderno */
   .sidebar-scroll::-webkit-scrollbar {
-    width: 5px;
+    width: 6px;
   }
   .sidebar-scroll::-webkit-scrollbar-track {
     background: transparent;
   }
   .sidebar-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
+    @apply bg-muted-foreground/20 rounded-full;
   }
   .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-  }
-  
-  /* Utilidad para inputs autofill en dark mode */
-  .dark input:-webkit-autofill,
-  .dark input:-webkit-autofill:hover, 
-  .dark input:-webkit-autofill:focus, 
-  .dark input:-webkit-autofill:active{
-      -webkit-box-shadow: 0 0 0 30px #1E293B inset !important;
-      -webkit-text-fill-color: white !important;
+    @apply bg-muted-foreground/40;
   }
 }

@@ -2,27 +2,11 @@ import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { 
-  LayoutDashboard, 
-  CheckSquare, 
-  MessageSquare, 
-  Activity, 
-  FileCheck, 
-  Image, 
-  FileText, 
-  Settings, 
-  LogOut, 
-  Menu,
-  Store,
-  Calendar,
-  Link,
-  ClipboardList,
-  Package,
-  History,
-  Settings2,
-  Bell,
-  Users,
-  CalendarOff,
-  RefreshCw // Icono agregado
+  LayoutDashboard, CheckSquare, MessageSquare, Activity, 
+  FileCheck, Image, FileText, Settings, LogOut, Menu,
+  Store, Calendar, Link, ClipboardList, Package,
+  History, Settings2, Bell, Users, CalendarOff, RefreshCw,
+  ChevronRight
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -34,7 +18,7 @@ import { Button } from "@/components/ui/button";
 // Sidebar Group Component
 const SidebarGroup = ({ title, children }: any) => (
   <div className="mb-6 px-4">
-    <h3 className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wider text-slate-400/80">
+    <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
       {title}
     </h3>
     <div className="space-y-1">
@@ -43,25 +27,25 @@ const SidebarGroup = ({ title, children }: any) => (
   </div>
 );
 
-// Sidebar Item Component
+// Sidebar Item Component (Modern Style)
 const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <button
     className={cn(
       "group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
       active 
-        ? "bg-movacheck-blue text-white shadow-md shadow-blue-900/20" 
-        : "text-slate-400 hover:bg-white/5 hover:text-white"
+        ? "bg-primary/10 text-primary" 
+        : "text-muted-foreground hover:bg-muted hover:text-foreground"
     )}
     onClick={onClick}
   >
     <div className="flex items-center gap-3">
-      <Icon className={cn("h-5 w-5", active ? "text-white" : "text-slate-400 group-hover:text-white")} />
+      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
       <span>{label}</span>
     </div>
     {badgeCount > 0 && (
       <span className={cn(
         "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
-        active ? "bg-white text-movacheck-blue" : "bg-movacheck-blue text-white"
+        active ? "bg-primary text-white" : "bg-muted text-foreground group-hover:bg-background"
       )}>
         {badgeCount > 99 ? '99+' : badgeCount}
       </span>
@@ -163,7 +147,6 @@ const DashboardLayout = () => {
 
   const handleRefreshApp = () => {
     setRefreshing(true);
-    // Recargar la página completa para limpiar caché y reconectar sockets
     window.location.reload();
   };
 
@@ -178,16 +161,21 @@ const DashboardLayout = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-movacheck-navy">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-20 w-20 rounded-full overflow-hidden shadow-lg shadow-blue-500/20">
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-6">
+          <div className="h-16 w-16 rounded-xl overflow-hidden shadow-xl ring-1 ring-border">
              <img 
                src={DEFAULT_LOGO} 
                alt="Loading..." 
                className="h-full w-full object-cover" 
              />
           </div>
-          <p className="text-sm font-medium text-slate-400 animate-pulse">Cargando sistema...</p>
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-1 w-24 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary animate-progress origin-left w-full" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">Iniciando sistema...</p>
+          </div>
         </div>
       </div>
     );
@@ -199,29 +187,29 @@ const DashboardLayout = () => {
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-movacheck-navy/80 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar - Ahora blanco/dark con borde sutil */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-movacheck-navy text-white transition-transform duration-300 lg:translate-x-0 border-r border-white/5 shadow-2xl",
+          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-card border-r border-border shadow-sm transition-transform duration-300 lg:translate-x-0",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Logo Area (Sidebar) */}
-        <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/5 bg-movacheck-navy">
+        {/* Logo Area */}
+        <div className="flex h-16 shrink-0 items-center px-6 border-b border-border/50">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 overflow-hidden rounded-lg bg-white/5 p-0.5 border border-white/10">
+            <div className="h-8 w-8 overflow-hidden rounded-lg border border-border shadow-sm">
               <img 
                 src={appLogo} 
                 alt="Logo" 
-                className="h-full w-full object-contain rounded-md" 
+                className="h-full w-full object-contain" 
               />
             </div>
-            <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]">
+            <span className="text-lg font-bold tracking-tight text-foreground truncate max-w-[150px]">
               {appName}
             </span>
           </div>
@@ -254,39 +242,36 @@ const DashboardLayout = () => {
           })}
         </div>
 
-        {/* User Profile & Branding */}
-        <div className="border-t border-white/5 bg-black/20">
-          <div className="p-4">
-            <div className="flex items-center gap-3 rounded-lg bg-white/5 p-3 hover:bg-white/10 transition-colors cursor-pointer group" onClick={handleLogout}>
-              <Avatar className="h-9 w-9 border border-white/10">
-                <AvatarImage src={userProfile?.avatar_url} />
-                <AvatarFallback className="bg-slate-800 text-white font-bold text-xs">
-                  {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-medium text-white group-hover:text-movacheck-blue transition-colors">
-                  {userProfile?.nombre}
-                </p>
-                <p className="truncate text-xs text-slate-400 capitalize">
-                  {userProfile?.role}
-                </p>
-              </div>
-              <LogOut className="h-4 w-4 text-slate-500 group-hover:text-white transition-colors" />
+        {/* User Profile Footer */}
+        <div className="border-t border-border/50 bg-muted/20 p-4">
+          <div className="flex items-center gap-3 mb-4">
+            <Avatar className="h-9 w-9 border border-border">
+              <AvatarImage src={userProfile?.avatar_url} />
+              <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+                {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 overflow-hidden">
+              <p className="truncate text-sm font-medium text-foreground">
+                {userProfile?.nombre}
+              </p>
+              <p className="truncate text-xs text-muted-foreground capitalize">
+                {userProfile?.role}
+              </p>
             </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" 
+              onClick={handleLogout}
+              title="Cerrar Sesión"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
           
-          {/* BRANDING FOOTER */}
-          <div className="pb-4 pt-0 flex items-center justify-center gap-2 opacity-50 hover:opacity-100 transition-opacity duration-300 select-none cursor-default">
-            <span className="text-[10px] text-slate-400 font-medium">Powered by</span>
-            <div className="flex items-center gap-1.5">
-               <img 
-                src={DEFAULT_LOGO} 
-                alt="Movacheck" 
-                className="h-4 w-4 rounded-full object-cover border border-white/10" 
-              />
-              <span className="text-[10px] font-bold text-slate-300 tracking-wide uppercase">Movacheck</span>
-            </div>
+          <div className="flex items-center justify-center gap-2 opacity-40 hover:opacity-80 transition-opacity select-none">
+            <span className="text-[10px] font-medium uppercase tracking-widest">Powered by Movacheck</span>
           </div>
         </div>
       </aside>
@@ -294,36 +279,37 @@ const DashboardLayout = () => {
       {/* Main Content */}
       <div className="flex flex-1 flex-col lg:pl-[260px] transition-all duration-300 min-h-screen">
         
-        {/* Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-card/80 backdrop-blur-md px-6 shadow-sm">
+        {/* Header - Minimalista */}
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-6 shadow-sm">
           <div className="flex items-center gap-4">
             <button 
-              className="lg:hidden p-2 -ml-2 hover:bg-accent rounded-full text-foreground" 
+              className="lg:hidden p-2 -ml-2 hover:bg-muted rounded-full text-foreground transition-colors" 
               onClick={() => setIsMobileMenuOpen(true)}
             >
               <Menu className="h-6 w-6" />
             </button>
             
-            {/* Mobile/Tablet Brand (Visible when sidebar is hidden) */}
+            {/* Breadcrumb simulado / Título dinámico podría ir aquí */}
+            <div className="hidden md:flex items-center text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{appName}</span>
+              <ChevronRight className="h-4 w-4 mx-2" />
+              <span className="capitalize">{location.pathname.split('/')[1] || 'Dashboard'}</span>
+            </div>
+
+            {/* Mobile Brand */}
             <div className="lg:hidden flex items-center gap-2">
-                <img 
-                  src={appLogo} 
-                  alt="Brand" 
-                  className="h-8 w-8 rounded-md object-contain border bg-white/10" 
-                />
                 <span className="font-bold text-lg tracking-tight truncate max-w-[120px]">{appName}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             
-            {/* BOTÓN ACTUALIZAR AGREGADO */}
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+              className="text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
               onClick={handleRefreshApp}
-              title="Actualizar aplicación"
+              title="Actualizar datos"
               disabled={refreshing}
             >
               <RefreshCw className={cn("h-5 w-5", refreshing && "animate-spin")} />
@@ -334,25 +320,21 @@ const DashboardLayout = () => {
             <Button 
               variant="ghost" 
               size="icon" 
-              className="relative" 
+              className="relative text-muted-foreground hover:text-primary hover:bg-primary/5" 
               onClick={() => navigate('/messages')}
             >
-              <Bell className="h-5 w-5 text-muted-foreground" />
+              <Bell className="h-5 w-5" />
               {unreadCount > 0 && (
-                <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-red-500 border-2 border-card" />
+                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-destructive border-2 border-background animate-pulse" />
               )}
             </Button>
 
-            <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
+            <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
 
-            <div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('/settings')}>
-              <div className="hidden sm:block text-right">
-                <p className="text-sm font-medium leading-none text-foreground">{userProfile?.nombre}</p>
-                <p className="text-xs text-muted-foreground mt-1">{userProfile?.tenants?.nombre}</p>
-              </div>
-              <Avatar className="h-8 w-8 ring-2 ring-transparent group-hover:ring-movacheck-blue transition-all">
+            <div className="flex items-center gap-3 cursor-pointer pl-1" onClick={() => navigate('/settings')}>
+              <Avatar className="h-8 w-8 border border-border ring-2 ring-transparent hover:ring-primary/20 transition-all">
                 <AvatarImage src={userProfile?.avatar_url} />
-                <AvatarFallback className="bg-gradient-to-br from-movacheck-blue to-indigo-600 text-white font-bold text-xs">
+                <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
                   {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
                 </AvatarFallback>
               </Avatar>
@@ -360,9 +342,9 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        {/* Main */}
-        <main className="flex-1 p-4 md:p-8 bg-background">
-          <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {/* Main Content Area */}
+        <main className="flex-1 p-4 md:p-8 bg-muted/10">
+          <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-2 duration-500">
             <Outlet />
           </div>
         </main>
