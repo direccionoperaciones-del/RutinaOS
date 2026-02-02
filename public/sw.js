@@ -1,69 +1,56 @@
 self.addEventListener('push', function(event) {
-  console.log('[SW] 🔔 PUSH RECIBIDO', event);
+  console.log('[SW] 🔔 Push Recibido');
 
-  // Datos por defecto para evitar errores si el payload está vacío
-  let data = { title: 'RunOp', body: 'Nueva notificación', url: '/' };
+  // Payload por defecto
+  let data = { 
+    title: 'RunOp', 
+    body: 'Tienes una nueva notificación.', 
+    url: '/',
+    icon: 'https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg'
+  };
 
-  try {
-    if (event.data) {
-      // Intentamos leer como texto primero
-      const rawText = event.data.text();
-      console.log('[SW] Raw Data:', rawText);
-
-      try {
-        // Intentamos parsear JSON
-        const json = JSON.parse(rawText);
-        // Mezclamos con los defaults
-        data = { ...data, ...json };
-      } catch (e) {
-        console.warn('[SW] JSON inválido, usando texto plano como cuerpo');
-        data.body = rawText;
-      }
+  if (event.data) {
+    try {
+      const json = event.data.json();
+      data = { ...data, ...json };
+    } catch (e) {
+      console.log('[SW] Push es texto plano');
+      data.body = event.data.text();
     }
-  } catch (err) {
-    console.error('[SW] Error procesando datos del evento:', err);
   }
-
-  // URL del icono fija para asegurar que siempre cargue
-  const iconUrl = 'https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg';
 
   const options = {
     body: data.body,
-    icon: iconUrl,
-    badge: iconUrl,
+    icon: data.icon,
+    badge: data.icon,
     data: { url: data.url },
     vibrate: [100, 50, 100],
-    tag: 'runop-notification', // Agrupa notificaciones
-    renotify: true, // Vuelve a vibrar si llega una nueva con el mismo tag
-    requireInteraction: true // Mantiene la notificación en pantalla hasta que el usuario interactúa
+    requireInteraction: true // Importante para que no desaparezca sola en algunos Android
   };
 
   event.waitUntil(
     self.registration.showNotification(data.title, options)
-      .then(() => console.log('[SW] Notificación mostrada visualmente'))
-      .catch(err => console.error('[SW] FALLO mostrando notificación:', err))
   );
 });
 
 self.addEventListener('notificationclick', function(event) {
-  console.log('[SW] Click en notificación');
   event.notification.close();
   
-  // Normalizar URL (asegurar que sea absoluta)
-  const urlToOpen = new URL(event.notification.data?.url || '/', self.location.origin).href;
+  // URL destino
+  const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // 1. Si ya hay una pestaña abierta con la app, enfocarla y navegar
+      // 1. Enfocar pestaña existente si hay
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
         if (client.url && 'focus' in client) {
-          return client.focus().then(c => c.navigate(urlToOpen));
+          return client.focus().then(c => c.navigate(targetUrl));
         }
       }
-      // 2. Si no, abrir una nueva ventana
+      // 2. Abrir nueva
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
+        return clients.openWindow(targetUrl);
       }
     })
   );
