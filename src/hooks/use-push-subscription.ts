@@ -23,6 +23,7 @@ export function usePushSubscription() {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
+    // Chequeos de entorno (sincronos)
     const hasSW = 'serviceWorker' in navigator;
     const hasPush = 'PushManager' in window;
     setIsSupported(hasSW && hasPush);
@@ -34,18 +35,19 @@ export function usePushSubscription() {
     const isStand = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
     setIsStandalone(isStand);
 
+    // Solo verificamos estado actual, no intentamos suscribir
     if (hasSW && hasPush && user) {
-      checkSubscription();
+      checkSubscriptionState();
     }
   }, [user]);
 
-  const checkSubscription = async () => {
+  const checkSubscriptionState = async () => {
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setIsSubscribed(true);
-        // Sincronización silenciosa en background
+        // Actualizamos DB en background sin bloquear
         updateSubscriptionInDb(subscription);
       } else {
         setIsSubscribed(false);
@@ -69,6 +71,7 @@ export function usePushSubscription() {
     }
   };
 
+  // --- FLUJO CRÍTICO CORREGIDO ---
   const subscribeToPush = async () => {
     if (!user) return false;
     setLoading(true);
@@ -82,33 +85,31 @@ export function usePushSubscription() {
     }
 
     try {
-      // 1. CRÍTICO: Pedir permiso PRIMERO, dentro del click del usuario.
-      // Esto DEBE ser lo primero que sucede.
+      // PASO 1: Permiso INMEDIATO (User Gesture Safe)
+      // Esto debe ser lo primero que se ejecuta tras el click
       const permission = await Notification.requestPermission();
       
       if (permission !== 'granted') {
-        throw new Error("Permiso de notificaciones denegado.");
+        throw new Error("Permiso de notificaciones denegado por el usuario.");
       }
 
-      // 2. Solo si tenemos permiso, hacemos el fetch de la llave (Async)
+      // PASO 2: Obtener llave VAPID (Ahora sí podemos hacer fetch)
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
       
       if (keyError || !keyData?.publicKey) {
-        throw new Error("Error obteniendo VAPID Public Key del servidor.");
+        throw new Error("No se pudo obtener la configuración del servidor.");
       }
 
-      // 3. Obtenemos el Service Worker activo
-      const registration = await navigator.serviceWorker.ready;
-      
-      // 4. Convertimos llave y suscribimos
+      // PASO 3: Registrar SW y Suscribir
       const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
+      const registration = await navigator.serviceWorker.ready;
       
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
       });
 
-      // 5. Guardamos en BD
+      // PASO 4: Guardar en BD
       await updateSubscriptionInDb(subscription);
       
       setIsSubscribed(true);
@@ -116,14 +117,14 @@ export function usePushSubscription() {
 
     } catch (err: any) {
       console.error("Error subscribing:", err);
-      setError(err.message || "Error desconocido al suscribirse.");
+      setError(err.message || "Error desconocido al activar notificaciones.");
       return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // --- DIAGNÓSTICO PROFUNDO ---
+  // --- DIAGNÓSTICO ---
   const runDiagnostics = async () => {
     const logs: string[] = [];
     const log = (msg: string) => { console.log(`[Diag] ${msg}`); logs.push(msg); };
