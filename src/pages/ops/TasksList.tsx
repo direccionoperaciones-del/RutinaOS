@@ -145,8 +145,13 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
       <CardFooter className="p-2 bg-muted/10 flex gap-1">
         {!isCancelled && (
           <Button 
-            className={`flex-1 h-8 text-xs shadow-sm hover:shadow transition-all ${isRejected ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
-            variant={isDone ? "secondary" : "default"}
+            className={`flex-1 h-8 text-xs shadow-sm hover:shadow transition-all text-white ${
+              isRejected 
+                ? 'bg-red-600 hover:bg-red-700' // Rojo para corregir
+                : isDone 
+                  ? 'bg-slate-600 hover:bg-slate-700' // Gris para ver detalle
+                  : 'bg-[#091056] hover:bg-[#091056]/90' // NAVY BLUE BRAND para ejecutar (FIXED)
+            }`}
             size="sm"
             onClick={() => onAction(task)}
           >

@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, ClipboardList, CalendarClock, Clock } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
+import { useCurrentUser } from "@/hooks/use-current-user"; // Importar hook para tenant
 
 // Esquema actualizado
 const messageSchema = z.object({
@@ -57,6 +58,7 @@ interface NewMessageModalProps {
 
 export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageModalProps) {
   const { toast } = useToast();
+  const { profile } = useCurrentUser(); // Obtener perfil para tenant_id
   const [isLoading, setIsLoading] = useState(false);
   
   const [roles] = useState([
@@ -122,6 +124,8 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   const onSubmit = async (values: MessageFormValues) => {
     setIsLoading(true);
     try {
+      if (!profile?.tenant_id) throw new Error("Error de sesión: Sin Tenant ID.");
+
       let finalRecipientId: string | null = null;
 
       if (values.recipient_type === 'all') {
@@ -132,7 +136,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         finalRecipientId = values.recipient_id as string;
       }
 
-      // 1. Guardar en Base de Datos (Function RPC)
+      // 1. Guardar Mensaje en Base de Datos (Function RPC)
+      // Pasamos NULL en rutina_id al RPC para que NO intente crear tareas vía SQL (que está fallando)
+      // Nosotros manejaremos la creación manualmente abajo.
       const { data: messageId, error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -141,26 +147,97 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
         p_recipient_id: finalRecipientId,
-        p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null,
+        p_rutina_id: null, // <--- DESACTIVAMOS CREACIÓN AUTOMÁTICA EN SQL
         p_fecha_programada: values.scheduled_date || null,
         p_hora_programada: values.scheduled_time || null
       });
 
       if (error) throw error;
 
-      // 2. Disparar Notificaciones Push (Solo si no es programado)
+      // 2. LÓGICA MANUAL DE CREACIÓN DE TAREAS FLASH (Frontend)
+      if (values.tipo === 'tarea_flash' && values.rutina_id) {
+        
+        // A. Resolver Usuarios Destino
+        let targetUserIds: string[] = [];
+        
+        if (values.recipient_type === 'user') {
+          targetUserIds = [values.recipient_id as string];
+        } else if (values.recipient_type === 'role') {
+          const { data } = await supabase.from('profiles').select('id').eq('role', values.recipient_id).eq('activo', true);
+          targetUserIds = (data || []).map(u => u.id);
+        } else if (values.recipient_type === 'pdv') {
+          const pdvIds = values.recipient_id as string[];
+          const { data } = await supabase.from('pdv_assignments')
+            .select('user_id')
+            .in('pdv_id', pdvIds)
+            .eq('vigente', true);
+          targetUserIds = (data || []).map(u => u.user_id);
+        } else if (values.recipient_type === 'all') {
+          const { data } = await supabase.from('profiles').select('id').eq('activo', true);
+          targetUserIds = (data || []).map(u => u.id);
+        }
+
+        // Eliminar duplicados
+        targetUserIds = [...new Set(targetUserIds)];
+
+        if (targetUserIds.length > 0) {
+          // B. Buscar PDVs asignados a estos usuarios (Requisito para crear tarea)
+          const { data: assignments } = await supabase
+            .from('pdv_assignments')
+            .select('user_id, pdv_id')
+            .in('user_id', targetUserIds)
+            .eq('vigente', true);
+          
+          const mapUserPdv = new Map();
+          assignments?.forEach(a => mapUserPdv.set(a.user_id, a.pdv_id));
+
+          // C. Construir Tareas
+          const tasksToInsert = targetUserIds.map(uid => {
+            const pdvId = mapUserPdv.get(uid);
+            
+            // Si el usuario no tiene PDV, no podemos crearle una tarea geolocalizada.
+            // Opcional: Podríamos asignar un PDV "Dummy" o saltarlo. Lo saltamos por seguridad de datos.
+            if (!pdvId) return null; 
+
+            // Fecha: Hoy o Programada
+            const fecha = values.scheduled_date || new Date().toISOString().split('T')[0];
+
+            return {
+              tenant_id: profile.tenant_id,
+              rutina_id: values.rutina_id,
+              pdv_id: pdvId,
+              responsable_id: uid,
+              fecha_programada: fecha,
+              hora_inicio_snapshot: '00:00:00',
+              hora_limite_snapshot: '23:59:59',
+              estado: 'pendiente',
+              prioridad_snapshot: 'critica', // Flash siempre es crítica visualmente
+              created_at: new Date().toISOString()
+            };
+          }).filter(t => t !== null);
+
+          // D. Insertar Tareas
+          if (tasksToInsert.length > 0) {
+            const { error: taskError } = await supabase.from('task_instances').insert(tasksToInsert);
+            if (taskError) {
+              console.error("Error creating flash tasks:", taskError);
+              toast({ variant: "destructive", title: "Error Parcial", description: "Mensaje enviado, pero falló la creación de algunas tareas." });
+            }
+          }
+        }
+      }
+
+      // 3. Disparar Notificaciones Push
       if (!values.scheduled_date && messageId) {
-        // Invocamos la función de manera "fire and forget" para no bloquear la UI
         supabase.functions.invoke('notify-message', {
           body: { message_id: messageId }
         }).then(({ error }) => {
           if (error) console.error("Error triggering push:", error);
-          else console.log("Push trigger sent");
         });
       }
 
       let desc = "El mensaje ha sido enviado.";
-      if (values.tipo === 'tarea_flash') desc = "Se ha enviado el mensaje y programado la tarea.";
+      if (values.tipo === 'tarea_flash') desc = "Se ha enviado el mensaje y creado las tareas críticas.";
       if (values.scheduled_date) desc += " (Programado)";
 
       toast({ 
