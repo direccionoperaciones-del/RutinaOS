@@ -132,7 +132,8 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         finalRecipientId = values.recipient_id as string;
       }
 
-      const rpcArgs = {
+      // 1. Guardar en Base de Datos (Function RPC)
+      const { data: messageId, error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
         p_tipo: values.tipo,
@@ -143,11 +144,20 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_rutina_id: values.tipo === 'tarea_flash' ? values.rutina_id : null,
         p_fecha_programada: values.scheduled_date || null,
         p_hora_programada: values.scheduled_time || null
-      };
-
-      const { error } = await supabase.rpc('send_broadcast_message', rpcArgs);
+      });
 
       if (error) throw error;
+
+      // 2. Disparar Notificaciones Push (Solo si no es programado)
+      if (!values.scheduled_date && messageId) {
+        // Invocamos la función de manera "fire and forget" para no bloquear la UI
+        supabase.functions.invoke('notify-message', {
+          body: { message_id: messageId }
+        }).then(({ error }) => {
+          if (error) console.error("Error triggering push:", error);
+          else console.log("Push trigger sent");
+        });
+      }
 
       let desc = "El mensaje ha sido enviado.";
       if (values.tipo === 'tarea_flash') desc = "Se ha enviado el mensaje y programado la tarea.";
