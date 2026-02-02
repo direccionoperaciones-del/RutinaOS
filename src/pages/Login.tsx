@@ -151,7 +151,7 @@ const Login = () => {
               className="max-w-full max-h-full object-contain"
             />
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-foreground">Bienvenido</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight text-foreground">Bienvenido a RunOp</CardTitle>
           <CardDescription className="text-base">Inicia sesión para gestionar tus operaciones</CardDescription>
         </CardHeader>
         
