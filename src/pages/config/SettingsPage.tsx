@@ -26,6 +26,9 @@ export default function SettingsPage() {
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [orgLogoUrl, setOrgLogoUrl] = useState<string | null>(null);
+  
+  // Estado para forzar recarga de imágenes (cache busting)
+  const [imgKey, setImgKey] = useState(Date.now());
 
   useEffect(() => {
     if (profile) {
@@ -99,8 +102,10 @@ export default function SettingsPage() {
           const { error: updateError } = await supabase.from('profiles').update({ avatar_url: data.publicUrl }).eq('id', profile.id);
           if (updateError) throw updateError;
           setAvatarUrl(data.publicUrl);
-          toast({ title: "Foto actualizada", description: "Recargando..." });
-          setTimeout(() => window.location.reload(), 1500); 
+          setImgKey(Date.now()); // Forzar actualización visual
+          toast({ title: "Foto actualizada", description: "Tu perfil se ha actualizado." });
+          // Recargar para actualizar header
+          setTimeout(() => window.location.reload(), 1000); 
       }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -116,23 +121,34 @@ export default function SettingsPage() {
       if (!profile?.tenant_id) return;
       
       const file = event.target.files[0];
-      // Usamos el bucket 'logos' (debe existir y ser publico) o fallback a 'evidence' si no existe
-      // Recomendación: Crear bucket 'logos' público en Supabase
-      const filePath = `${profile.tenant_id}/logo_${Date.now()}.${file.name.split('.').pop()}`;
+      // CAMBIO CRITICO: Usar bucket 'avatars' (público) en lugar de 'evidence' (privado)
+      // Usamos una carpeta virtual 'tenants' dentro de avatars para organizar
+      const fileExt = file.name.split('.').pop();
+      const filePath = `tenants/${profile.tenant_id}/logo_${Date.now()}.${fileExt}`;
       
-      const { error: uploadError } = await supabase.storage.from('evidence').upload(filePath, file, { upsert: true });
-      if (uploadError) throw uploadError;
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
       
-      const { data } = supabase.storage.from('evidence').getPublicUrl(filePath);
+      if (uploadError) {
+         console.error("Upload error:", uploadError);
+         throw new Error("No se pudo subir la imagen. Verifica permisos.");
+      }
+      
+      const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      
       if (data) {
           const { error: updateError } = await supabase.from('tenants').update({ logo_url: data.publicUrl }).eq('id', profile.tenant_id);
           if (updateError) throw updateError;
+          
           setOrgLogoUrl(data.publicUrl);
-          toast({ title: "Logo actualizado", description: "La imagen de la organización ha cambiado." });
+          setImgKey(Date.now()); // Forzar actualización visual
+          
+          toast({ title: "Logo actualizado", description: "El cambio se reflejará en toda la aplicación." });
+          
+          // Recargar página para actualizar el sidebar
           setTimeout(() => window.location.reload(), 1500); 
       }
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: "Fallo al subir logo. Verifica permisos." });
+      toast({ variant: "destructive", title: "Error al subir", description: error.message });
     } finally {
       setUploading(false);
     }
@@ -272,8 +288,8 @@ export default function SettingsPage() {
             <CardContent className="space-y-6">
                <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
                 <div className="relative group">
-                  <Avatar className="w-24 h-24 border-2 border-muted">
-                    <AvatarImage src={avatarUrl || ""} className="object-cover" />
+                  <Avatar className="w-24 h-24 border-2 border-muted bg-white">
+                    <AvatarImage src={`${avatarUrl}?t=${imgKey}`} className="object-cover" />
                     <AvatarFallback className="text-2xl bg-slate-100">{profile?.nombre?.[0]}{profile?.apellido?.[0]}</AvatarFallback>
                   </Avatar>
                   <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 p-1.5 bg-primary text-white rounded-full cursor-pointer hover:bg-primary/90 transition-colors shadow-sm">
@@ -329,9 +345,9 @@ export default function SettingsPage() {
             <CardContent className="space-y-6">
                <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
                 <div className="relative group">
-                  <div className="h-24 w-24 rounded-lg border-2 border-dashed border-muted bg-muted/20 flex items-center justify-center overflow-hidden">
+                  <div className="h-24 w-24 rounded-lg border-2 border-dashed border-muted bg-white flex items-center justify-center overflow-hidden">
                     {orgLogoUrl ? (
-                      <img src={orgLogoUrl} alt="Logo Organización" className="h-full w-full object-contain" />
+                      <img src={`${orgLogoUrl}?t=${imgKey}`} alt="Logo Organización" className="h-full w-full object-contain" />
                     ) : (
                       <Building className="h-8 w-8 text-muted-foreground/50" />
                     )}
