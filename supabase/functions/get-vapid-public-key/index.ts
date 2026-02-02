@@ -11,10 +11,11 @@ serve(async (req) => {
   }
 
   try {
-    const publicKey = Deno.env.get('VAPID_PUBLIC_KEY')
+    // TRIMMING CRÍTICO: Elimina espacios accidentales al copiar/pegar
+    const publicKey = Deno.env.get('VAPID_PUBLIC_KEY')?.trim()
 
     if (!publicKey) {
-      throw new Error('VAPID_PUBLIC_KEY no configurada en servidor.')
+      throw new Error('VAPID_PUBLIC_KEY no configurada en servidor (o vacía).')
     }
 
     return new Response(

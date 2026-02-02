@@ -102,9 +102,8 @@ export default function SettingsPage() {
           const { error: updateError } = await supabase.from('profiles').update({ avatar_url: data.publicUrl }).eq('id', profile.id);
           if (updateError) throw updateError;
           setAvatarUrl(data.publicUrl);
-          setImgKey(Date.now()); // Forzar actualización visual
+          setImgKey(Date.now());
           toast({ title: "Foto actualizada", description: "Tu perfil se ha actualizado." });
-          // Recargar para actualizar header
           setTimeout(() => window.location.reload(), 1000); 
       }
     } catch (error: any) {
@@ -121,8 +120,6 @@ export default function SettingsPage() {
       if (!profile?.tenant_id) return;
       
       const file = event.target.files[0];
-      // CAMBIO CRITICO: Usar bucket 'avatars' (público) en lugar de 'evidence' (privado)
-      // Usamos una carpeta virtual 'tenants' dentro de avatars para organizar
       const fileExt = file.name.split('.').pop();
       const filePath = `tenants/${profile.tenant_id}/logo_${Date.now()}.${fileExt}`;
       
@@ -138,13 +135,9 @@ export default function SettingsPage() {
       if (data) {
           const { error: updateError } = await supabase.from('tenants').update({ logo_url: data.publicUrl }).eq('id', profile.tenant_id);
           if (updateError) throw updateError;
-          
           setOrgLogoUrl(data.publicUrl);
-          setImgKey(Date.now()); // Forzar actualización visual
-          
+          setImgKey(Date.now());
           toast({ title: "Logo actualizado", description: "El cambio se reflejará en toda la aplicación." });
-          
-          // Recargar página para actualizar el sidebar
           setTimeout(() => window.location.reload(), 1500); 
       }
     } catch (error: any) {
@@ -170,10 +163,11 @@ export default function SettingsPage() {
         className: "bg-green-50 border-green-200"
       });
     } else {
+      // El error ya se maneja en el hook, pero podemos dar feedback extra si fue por llaves
       toast({ 
         variant: "destructive",
         title: "Error de envío", 
-        description: "Revisa que las llaves VAPID estén configuradas en Supabase." 
+        description: "Hubo un problema enviando la alerta. Si cambiaste las llaves VAPID recientemente, usa el botón 'Resetear'." 
       });
     }
   };
@@ -184,8 +178,9 @@ export default function SettingsPage() {
       for (const registration of registrations) {
         await registration.unregister();
       }
-      toast({ title: "Reiniciado", description: "Sistema de notificaciones reiniciado. Recargando..." });
-      setTimeout(() => window.location.reload(), 1000);
+      // Limpiar suscripciones locales si las hubiere
+      toast({ title: "Reiniciado", description: "Sistema de notificaciones reiniciado. Vuelve a activar las notificaciones." });
+      setTimeout(() => window.location.reload(), 1500);
     }
   };
 
@@ -218,7 +213,7 @@ export default function SettingsPage() {
                   <CardDescription>Alertas en tiempo real sobre tareas y mensajes.</CardDescription>
                 </div>
                 {isSubscribed && (
-                  <Button variant="ghost" size="sm" onClick={handleResetSW} title="Si no recibes notificaciones, reinicia aquí" className="text-xs text-muted-foreground h-6">
+                  <Button variant="ghost" size="sm" onClick={handleResetSW} title="Si no recibes notificaciones, reinicia aquí" className="text-xs text-muted-foreground h-6 hover:text-red-600">
                     <RefreshCw className="w-3 h-3 mr-1" /> Resetear
                   </Button>
                 )}
@@ -273,9 +268,21 @@ export default function SettingsPage() {
                 )}
                 
                 {pushError && (
-                  <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <span><strong>Error:</strong> {pushError}</span>
+                  <div className="flex flex-col gap-2 text-xs bg-red-50 p-3 rounded border border-red-200">
+                    <div className="flex items-center gap-2 text-red-700 font-bold">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span>Error de conexión:</span>
+                    </div>
+                    <p className="text-red-600 pl-6">{pushError}</p>
+                    
+                    {/* Sugerencia inteligente si parece ser un error de llaves */}
+                    {(pushError.includes('VAPID') || pushError.includes('desincronización') || pushError.includes('llaves')) && (
+                        <div className="mt-2 pl-6">
+                            <Button size="sm" variant="destructive" onClick={handleResetSW} className="h-7 text-xs">
+                                <RefreshCw className="w-3 h-3 mr-1"/> Reiniciar Conexión (Recomendado)
+                            </Button>
+                        </div>
+                    )}
                   </div>
                 )}
               </div>

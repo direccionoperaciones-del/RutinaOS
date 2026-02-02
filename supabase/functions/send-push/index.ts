@@ -8,7 +8,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Manejo de CORS para preflight requests
+  // Manejo de CORS
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -17,29 +17,43 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
-    const vapidPublic = Deno.env.get('VAPID_PUBLIC_KEY')
-    const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY')
+    // TRIMMING CRÍTICO: Limpiar llaves de espacios/newlines
+    const vapidPublic = Deno.env.get('VAPID_PUBLIC_KEY')?.trim()
+    const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY')?.trim()
 
     if (!supabaseUrl || !supabaseServiceKey || !vapidPublic || !vapidPrivate) {
-      throw new Error("Faltan variables de entorno (VAPID keys o Supabase credentials).")
+      throw new Error("Configuración incompleta: Verifique VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY en Supabase Secrets.")
     }
 
     // Configuración VAPID
-    webpush.setVapidDetails(
-      'mailto:admin@movacheck.app',
-      vapidPublic,
-      vapidPrivate
-    )
+    try {
+      webpush.setVapidDetails(
+        'mailto:admin@movacheck.app',
+        vapidPublic,
+        vapidPrivate
+      )
+    } catch (configError) {
+      console.error("VAPID Config Error:", configError);
+      throw new Error("Las llaves VAPID tienen un formato inválido. Verifique que sean las generadas correctamente.")
+    }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
     
-    const { user_id, title, body, url } = await req.json()
-
-    if (!user_id) {
-      throw new Error("Falta user_id en el cuerpo de la petición.")
+    // Parseo seguro del body
+    let bodyData;
+    try {
+        bodyData = await req.json()
+    } catch(e) {
+        throw new Error("Body inválido (JSON malformado)")
     }
 
-    // Obtener suscripciones del usuario
+    const { user_id, title, body, url } = bodyData
+
+    if (!user_id) {
+      throw new Error("Falta user_id.")
+    }
+
+    // Obtener suscripciones
     const { data: subscriptions, error: subError } = await supabaseAdmin
       .from('push_subscriptions')
       .select('*')
@@ -49,13 +63,13 @@ serve(async (req) => {
 
     if (!subscriptions || subscriptions.length === 0) {
       return new Response(
-        JSON.stringify({ success: false, message: 'No hay dispositivos registrados.' }), 
+        JSON.stringify({ success: false, message: 'El usuario no tiene dispositivos registrados para notificaciones.' }), 
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       )
     }
 
-    // Enviar notificaciones
     const payload = JSON.stringify({ title, body, url: url || '/' })
+    let successCount = 0;
     
     const results = await Promise.all(
       subscriptions.map(async (sub) => {
@@ -67,20 +81,36 @@ serve(async (req) => {
             }, 
             payload
           )
-          return { success: true }
+          successCount++;
+          return { success: true, id: sub.id }
         } catch (error) {
-          console.error(`Error enviando a ${sub.id}:`, error)
-          // Eliminar suscripción si ya no es válida (404/410)
+          console.error(`Error enviando a sub ${sub.id}:`, error)
+          
+          // Manejo de errores específicos
+          // 410 (Gone) / 404 (Not Found): La suscripción ya no existe en el navegador -> Borrar de BD
           if (error.statusCode === 410 || error.statusCode === 404) {
             await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id)
+            return { success: false, error: "Dispositivo no disponible (Suscripción eliminada)", removed: true }
           }
-          return { success: false, error: error.message }
+          
+          // 401/403: Problema de llaves VAPID (Mismatch entre llave servidor y suscripción cliente)
+          if (error.statusCode === 401 || error.statusCode === 403) {
+             return { success: false, error: "Error de Autenticación Push (Posible cambio de llaves VAPID). El usuario debe reconectar.", authError: true }
+          }
+
+          return { success: false, error: error.message || "Error desconocido de envío" }
         }
       })
     )
 
+    // Si fallaron todos por auth, lanzamos error general para que el cliente sepa que debe resetear
+    const authFailures = results.filter(r => r.authError).length;
+    if (authFailures > 0 && authFailures === subscriptions.length) {
+        throw new Error("Desincronización de llaves VAPID. Por favor reinicia las notificaciones en el dispositivo.");
+    }
+
     return new Response(
-      JSON.stringify({ success: true, results }), 
+      JSON.stringify({ success: successCount > 0, results, sent: successCount }), 
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
