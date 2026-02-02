@@ -23,7 +23,6 @@ export function usePushSubscription() {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    // Chequeos de entorno (sincronos)
     const hasSW = 'serviceWorker' in navigator;
     const hasPush = 'PushManager' in window;
     setIsSupported(hasSW && hasPush);
@@ -35,7 +34,6 @@ export function usePushSubscription() {
     const isStand = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
     setIsStandalone(isStand);
 
-    // Solo verificamos estado actual, no intentamos suscribir
     if (hasSW && hasPush && user) {
       checkSubscriptionState();
     }
@@ -47,7 +45,6 @@ export function usePushSubscription() {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setIsSubscribed(true);
-        // Actualizamos DB en background sin bloquear
         updateSubscriptionInDb(subscription);
       } else {
         setIsSubscribed(false);
@@ -71,13 +68,11 @@ export function usePushSubscription() {
     }
   };
 
-  // --- FLUJO CRÍTICO CORREGIDO ---
   const subscribeToPush = async () => {
     if (!user) return false;
     setLoading(true);
     setError(null);
 
-    // Validación iOS
     if (isIOS && !isStandalone) {
       setLoading(false);
       setError("En iOS, debes instalar la app en inicio para recibir notificaciones.");
@@ -85,22 +80,15 @@ export function usePushSubscription() {
     }
 
     try {
-      // PASO 1: Permiso INMEDIATO (User Gesture Safe)
-      // Esto debe ser lo primero que se ejecuta tras el click
+      // 1. Permiso INMEDIATO (User Gesture)
       const permission = await Notification.requestPermission();
-      
-      if (permission !== 'granted') {
-        throw new Error("Permiso de notificaciones denegado por el usuario.");
-      }
+      if (permission !== 'granted') throw new Error("Permiso denegado.");
 
-      // PASO 2: Obtener llave VAPID (Ahora sí podemos hacer fetch)
+      // 2. Obtener llave
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
-      
-      if (keyError || !keyData?.publicKey) {
-        throw new Error("No se pudo obtener la configuración del servidor.");
-      }
+      if (keyError || !keyData?.publicKey) throw new Error("Error obteniendo VAPID Public Key.");
 
-      // PASO 3: Registrar SW y Suscribir
+      // 3. Suscribir
       const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
       const registration = await navigator.serviceWorker.ready;
       
@@ -109,7 +97,7 @@ export function usePushSubscription() {
         applicationServerKey
       });
 
-      // PASO 4: Guardar en BD
+      // 4. Guardar
       await updateSubscriptionInDb(subscription);
       
       setIsSubscribed(true);
@@ -117,63 +105,71 @@ export function usePushSubscription() {
 
     } catch (err: any) {
       console.error("Error subscribing:", err);
-      setError(err.message || "Error desconocido al activar notificaciones.");
+      setError(err.message || "Error al suscribirse.");
       return false;
     } finally {
       setLoading(false);
     }
   };
 
-  // --- DIAGNÓSTICO ---
   const runDiagnostics = async () => {
     const logs: string[] = [];
     const log = (msg: string) => { console.log(`[Diag] ${msg}`); logs.push(msg); };
     
-    log("Iniciando diagnóstico...");
+    log("=== INICIANDO DIAGNÓSTICO PUSH ===");
     
     try {
-        if (!('serviceWorker' in navigator)) throw new Error("Service Worker no soportado");
+        if (!('serviceWorker' in navigator)) throw new Error("SW no soportado");
         if (!('PushManager' in window)) throw new Error("PushManager no soportado");
-        log("✅ Navegador soporta Push");
-
+        
         const reg = await navigator.serviceWorker.ready;
-        log(`✅ Service Worker activo (Scope: ${reg.scope})`);
+        log(`✅ SW Activo. Scope: ${reg.scope}`);
 
         const sub = await reg.pushManager.getSubscription();
-        if (!sub) throw new Error("❌ El navegador NO tiene una suscripción activa.");
+        if (!sub) throw new Error("❌ Sin suscripción en navegador. Activa notificaciones primero.");
         
-        log("✅ Suscripción encontrada en navegador");
-        const subJSON = sub.toJSON();
+        log("✅ Suscripción detectada en navegador.");
         
-        const { data: dbSubs } = await supabase.from('push_subscriptions').select('*').eq('endpoint', sub.endpoint);
-        if (dbSubs && dbSubs.length > 0) {
-            log("✅ Suscripción sincronizada en Base de Datos");
-        } else {
-            log("⚠️ La suscripción no está en la BD. Intentando resincronizar...");
-            await updateSubscriptionInDb(sub);
-        }
-
-        log("🚀 Enviando prueba directa...");
+        // PRUEBA DE ENVÍO REAL
+        log("🚀 Enviando prueba directa a Edge Function...");
         
-        const { data: testResult, error: testError } = await supabase.functions.invoke('send-push', {
+        const { data: result, error: netError } = await supabase.functions.invoke('send-push', {
             body: {
                 title: "Diagnóstico",
-                body: "Si lees esto, el sistema funciona.",
-                direct_subscription: subJSON
+                body: "Prueba de envío directo con validación de estado.",
+                direct_subscription: sub.toJSON()
             }
         });
 
-        if (testError) {
-            log(`❌ Error de red: ${testError.message}`);
-        } else if (testResult.success) {
-            log(`✅ ÉXITO TOTAL: Status ${testResult.statusCode}`);
+        if (netError) {
+            log(`❌ Error de Red: ${netError.message}`);
+            return logs;
+        }
+
+        // ANÁLISIS DE RESULTADOS
+        if (result.results && result.results.length > 0) {
+            const res = result.results[0];
+            log(`📡 Respuesta Proveedor: Status ${res.status}`);
+            
+            if (res.success && (res.status === 201 || res.status === 200)) {
+                log("✅ ÉXITO: El proveedor aceptó la notificación.");
+                log("ℹ️ Si no la ves, revisa 'No Molestar' o permisos del SO.");
+            } else {
+                log(`❌ FALLO REAL: El proveedor rechazó el envío.`);
+                log(`🔍 Error: ${res.error || 'Desconocido'}`);
+                
+                if (res.status === 410 || res.status === 404) {
+                    log("🗑️ Diagnóstico: Suscripción caducada (Gone). Se requiere resuscribir.");
+                } else if (res.status === 401) {
+                    log("🔑 Diagnóstico: Llaves VAPID inválidas en backend.");
+                }
+            }
         } else {
-            log(`❌ FALLO DE ENVÍO: Status ${testResult.statusCode}`);
-            log(`Error detalle: ${testResult.error}`);
+            log("⚠️ Respuesta inesperada del backend (sin resultados).");
         }
 
     } catch (e: any) {
-        log(`❌ ERROR FATAL: ${e.message}`);
+        log(`❌ ERROR CRÍTICO: ${e.message}`);
     }
 
     return logs;

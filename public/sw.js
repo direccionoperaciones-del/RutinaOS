@@ -1,26 +1,25 @@
 self.addEventListener('push', function(event) {
-  console.log('[SW] Push recibido', event);
+  console.log('[SW] PUSH RECEIVED', event); // <-- EVIDENCIA EN CONSOLA
 
   let data = { title: 'RunOp', body: 'Nueva notificación', url: '/' };
 
   try {
     if (event.data) {
       const textData = event.data.text();
-      console.log('[SW] Data raw:', textData);
       try {
         data = JSON.parse(textData);
       } catch (e) {
-        console.warn('[SW] No es JSON válido, usando texto plano');
+        console.warn('[SW] JSON inválido, usando texto plano');
         data.body = textData;
       }
     }
   } catch (e) {
-    console.error('[SW] Error parseando datos:', e);
+    console.error('[SW] Error leyendo datos:', e);
   }
 
   const title = data.title || 'RunOp';
   
-  // Icono seguro (bucket público verificado)
+  // Icono seguro
   const iconUrl = 'https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg';
 
   const options = {
@@ -31,24 +30,18 @@ self.addEventListener('push', function(event) {
     vibrate: [100, 50, 100],
     tag: 'runop-notification',
     renotify: true,
-    requireInteraction: true // Fuerza a que el usuario la cierre (ayuda en debug)
+    requireInteraction: true 
   };
-
-  console.log('[SW] Mostrando notificación:', title, options);
 
   event.waitUntil(
     self.registration.showNotification(title, options)
-      .then(() => console.log('[SW] Notificación mostrada exitosamente'))
-      .catch(err => {
-        console.error('[SW] FALLO CRÍTICO mostrando notificación:', err);
-        // Intento desesperado sin icono por si es error de red de imagen
-        return self.registration.showNotification(title, { body: data.body });
-      })
+      .then(() => console.log('[SW] showNotification resuelto exitosamente'))
+      .catch(err => console.error('[SW] FALLO showNotification:', err))
   );
 });
 
 self.addEventListener('notificationclick', function(event) {
-  console.log('[SW] Click en notificación', event);
+  console.log('[SW] Click en notificación');
   event.notification.close();
   const urlToOpen = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
