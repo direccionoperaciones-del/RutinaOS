@@ -15,10 +15,10 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 
-// Sidebar Group Component
+// Sidebar Group Component - Ajustado para fondo oscuro/color
 const SidebarGroup = ({ title, children }: any) => (
   <div className="mb-6 px-4">
-    <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-muted-foreground/70">
+    <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-white/50">
       {title}
     </h3>
     <div className="space-y-1">
@@ -27,25 +27,25 @@ const SidebarGroup = ({ title, children }: any) => (
   </div>
 );
 
-// Sidebar Item Component (Modern Style)
+// Sidebar Item Component - Ajustado para contraste sobre naranja
 const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <button
     className={cn(
       "group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
       active 
-        ? "bg-white dark:bg-slate-800 text-primary shadow-sm ring-1 ring-border" 
-        : "text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50 hover:text-foreground"
+        ? "bg-white text-primary shadow-md ring-1 ring-black/5" 
+        : "text-white/80 hover:bg-white/10 hover:text-white"
     )}
     onClick={onClick}
   >
     <div className="flex items-center gap-3">
-      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-primary" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")} />
+      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-primary" : "text-white/70 group-hover:text-white")} />
       <span>{label}</span>
     </div>
     {badgeCount > 0 && (
       <span className={cn(
         "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold",
-        active ? "bg-primary text-white" : "bg-muted text-foreground group-hover:bg-background"
+        active ? "bg-primary text-white" : "bg-white/20 text-white group-hover:bg-white/30"
       )}>
         {badgeCount > 99 ? '99+' : badgeCount}
       </span>
@@ -192,24 +192,24 @@ const DashboardLayout = () => {
         />
       )}
 
-      {/* Sidebar - Gris suave para contraste */}
+      {/* Sidebar - Naranja Corporativo con Gradiente Sutil */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-slate-50 dark:bg-slate-900 border-r border-border shadow-sm transition-transform duration-300 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-gradient-to-b from-primary to-orange-600 shadow-xl transition-transform duration-300 lg:translate-x-0 border-r-0",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Logo Area */}
-        <div className="flex h-16 shrink-0 items-center px-6 border-b border-border/50 bg-white dark:bg-slate-900">
+        <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10 bg-black/5">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 overflow-hidden rounded-lg border border-border shadow-sm">
+            <div className="h-8 w-8 overflow-hidden rounded-lg bg-white border border-white/20 shadow-sm p-0.5">
               <img 
                 src={appLogo} 
                 alt="Logo" 
                 className="h-full w-full object-contain" 
               />
             </div>
-            <span className="text-lg font-bold tracking-tight text-foreground truncate max-w-[150px]">
+            <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]">
               {appName}
             </span>
           </div>
@@ -243,26 +243,26 @@ const DashboardLayout = () => {
         </div>
 
         {/* User Profile Footer */}
-        <div className="border-t border-border/50 bg-white/50 dark:bg-slate-800/50 p-4">
+        <div className="border-t border-white/10 bg-black/10 p-4">
           <div className="flex items-center gap-3 mb-4">
-            <Avatar className="h-9 w-9 border border-border">
+            <Avatar className="h-9 w-9 border-2 border-white/20">
               <AvatarImage src={userProfile?.avatar_url} />
-              <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+              <AvatarFallback className="bg-white/20 text-white font-bold text-xs">
                 {userProfile?.nombre?.[0]}{userProfile?.apellido?.[0]}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 overflow-hidden">
-              <p className="truncate text-sm font-medium text-foreground">
+              <p className="truncate text-sm font-medium text-white">
                 {userProfile?.nombre}
               </p>
-              <p className="truncate text-xs text-muted-foreground capitalize">
+              <p className="truncate text-xs text-white/60 capitalize">
                 {userProfile?.role}
               </p>
             </div>
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10" 
+              className="h-8 w-8 text-white/60 hover:text-white hover:bg-white/10" 
               onClick={handleLogout}
               title="Cerrar Sesión"
             >
@@ -270,7 +270,7 @@ const DashboardLayout = () => {
             </Button>
           </div>
           
-          <div className="flex items-center justify-center gap-2 opacity-40 hover:opacity-80 transition-opacity select-none">
+          <div className="flex items-center justify-center gap-2 opacity-30 text-white hover:opacity-80 transition-opacity select-none">
             <span className="text-[10px] font-medium uppercase tracking-widest">Powered by BackHouse 360</span>
           </div>
         </div>
@@ -298,7 +298,7 @@ const DashboardLayout = () => {
 
             {/* Mobile Brand */}
             <div className="lg:hidden flex items-center gap-2">
-                <span className="font-bold text-lg tracking-tight truncate max-w-[120px]">{appName}</span>
+                <span className="font-bold text-lg tracking-tight truncate max-w-[120px] text-primary">{appName}</span>
             </div>
           </div>
 
