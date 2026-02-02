@@ -1,6 +1,6 @@
 {
-  "name": "RunOP",
-  "short_name": "RunOP",
+  "name": "RunOp",
+  "short_name": "RunOp",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -9,19 +9,19 @@
   "id": "movacheck-app",
   "icons": [
     {
-      "src": "https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4",
+      "src": "/LogoRunOP.jpeg",
       "sizes": "192x192",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4",
+      "src": "/LogoRunOP.jpeg",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg?v=4",
+      "src": "/LogoRunOP.jpeg",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "maskable"

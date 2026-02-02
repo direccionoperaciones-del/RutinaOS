@@ -88,7 +88,7 @@ const NAV_CONFIG = [
   }
 ];
 
-const DEFAULT_LOGO = "https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg";
+const DEFAULT_LOGO = "/LogoRunOP.jpeg";
 
 const DashboardLayout = () => {
   const navigate = useNavigate();
@@ -157,7 +157,7 @@ const DashboardLayout = () => {
   };
 
   const appLogo = userProfile?.tenants?.logo_url || DEFAULT_LOGO;
-  const appName = userProfile?.tenants?.logo_url ? userProfile.tenants.nombre : "RunOP";
+  const appName = userProfile?.tenants?.logo_url ? userProfile.tenants.nombre : "RunOp";
 
   if (loading) {
     return (
