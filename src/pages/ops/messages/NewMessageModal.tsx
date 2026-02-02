@@ -13,9 +13,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Send, ClipboardList, CalendarClock, Clock } from "lucide-react";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { useCurrentUser } from "@/hooks/use-current-user"; // Importar hook para tenant
+import { useCurrentUser } from "@/hooks/use-current-user";
 
-// Esquema actualizado
 const messageSchema = z.object({
   asunto: z.string().min(1, "El asunto es obligatorio"),
   cuerpo: z.string().min(1, "El mensaje no puede estar vacío"),
@@ -58,7 +57,7 @@ interface NewMessageModalProps {
 
 export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageModalProps) {
   const { toast } = useToast();
-  const { profile } = useCurrentUser(); // Obtener perfil para tenant_id
+  const { profile } = useCurrentUser();
   const [isLoading, setIsLoading] = useState(false);
   
   const [roles] = useState([
@@ -136,9 +135,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         finalRecipientId = values.recipient_id as string;
       }
 
-      // 1. Guardar Mensaje en Base de Datos (Function RPC)
-      // Pasamos NULL en rutina_id al RPC para que NO intente crear tareas vía SQL (que está fallando)
-      // Nosotros manejaremos la creación manualmente abajo.
+      // 1. Enviar Mensaje (RPC)
       const { data: messageId, error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -147,17 +144,17 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
         p_recipient_id: finalRecipientId,
-        p_rutina_id: null, // <--- DESACTIVAMOS CREACIÓN AUTOMÁTICA EN SQL
+        p_rutina_id: null, // Desactivar creación automática SQL
         p_fecha_programada: values.scheduled_date || null,
         p_hora_programada: values.scheduled_time || null
       });
 
       if (error) throw error;
 
-      // 2. LÓGICA MANUAL DE CREACIÓN DE TAREAS FLASH (Frontend)
+      // 2. CREACIÓN MANUAL DE TAREAS (Frontend Logic para Tareas Flash)
       if (values.tipo === 'tarea_flash' && values.rutina_id) {
         
-        // A. Resolver Usuarios Destino
+        // A. Resolver Usuarios
         let targetUserIds: string[] = [];
         
         if (values.recipient_type === 'user') {
@@ -166,7 +163,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
           const { data } = await supabase.from('profiles').select('id').eq('role', values.recipient_id).eq('activo', true);
           targetUserIds = (data || []).map(u => u.id);
         } else if (values.recipient_type === 'pdv') {
-          const pdvIds = values.recipient_id as string[];
+          const pdvIds = Array.isArray(values.recipient_id) ? values.recipient_id : [values.recipient_id];
           const { data } = await supabase.from('pdv_assignments')
             .select('user_id')
             .in('pdv_id', pdvIds)
@@ -181,7 +178,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         targetUserIds = [...new Set(targetUserIds)];
 
         if (targetUserIds.length > 0) {
-          // B. Buscar PDVs asignados a estos usuarios (Requisito para crear tarea)
+          // B. Mapear PDVs
           const { data: assignments } = await supabase
             .from('pdv_assignments')
             .select('user_id, pdv_id')
@@ -191,15 +188,23 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
           const mapUserPdv = new Map();
           assignments?.forEach(a => mapUserPdv.set(a.user_id, a.pdv_id));
 
-          // C. Construir Tareas
-          const tasksToInsert = targetUserIds.map(uid => {
-            const pdvId = mapUserPdv.get(uid);
-            
-            // Si el usuario no tiene PDV, no podemos crearle una tarea geolocalizada.
-            // Opcional: Podríamos asignar un PDV "Dummy" o saltarlo. Lo saltamos por seguridad de datos.
-            if (!pdvId) return null; 
+          // C. Fallback: Obtener un PDV por defecto si el usuario no tiene (Para que la tarea se cree sí o sí)
+          const { data: fallbackPdv } = await supabase
+            .from('pdv')
+            .select('id')
+            .eq('tenant_id', profile.tenant_id)
+            .eq('activo', true)
+            .limit(1)
+            .maybeSingle();
+          
+          const defaultPdvId = fallbackPdv?.id;
 
-            // Fecha: Hoy o Programada
+          // D. Construir Tareas
+          const tasksToInsert = targetUserIds.map(uid => {
+            const pdvId = mapUserPdv.get(uid) || defaultPdvId;
+            
+            if (!pdvId) return null; // Si no hay ni PDV asignado ni default, no se puede crear
+
             const fecha = values.scheduled_date || new Date().toISOString().split('T')[0];
 
             return {
@@ -211,40 +216,31 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               hora_inicio_snapshot: '00:00:00',
               hora_limite_snapshot: '23:59:59',
               estado: 'pendiente',
-              prioridad_snapshot: 'critica', // Flash siempre es crítica visualmente
+              prioridad_snapshot: 'critica', // Flash siempre es crítica
               created_at: new Date().toISOString()
             };
           }).filter(t => t !== null);
 
-          // D. Insertar Tareas
           if (tasksToInsert.length > 0) {
             const { error: taskError } = await supabase.from('task_instances').insert(tasksToInsert);
             if (taskError) {
               console.error("Error creating flash tasks:", taskError);
-              toast({ variant: "destructive", title: "Error Parcial", description: "Mensaje enviado, pero falló la creación de algunas tareas." });
+              toast({ variant: "destructive", title: "Advertencia", description: "Mensaje enviado, pero hubo error creando algunas tareas." });
             }
           }
         }
       }
 
-      // 3. Disparar Notificaciones Push
+      // 3. Notificaciones Push
       if (!values.scheduled_date && messageId) {
-        supabase.functions.invoke('notify-message', {
-          body: { message_id: messageId }
-        }).then(({ error }) => {
-          if (error) console.error("Error triggering push:", error);
-        });
+        supabase.functions.invoke('notify-message', { body: { message_id: messageId } })
+          .catch(e => console.error("Push Error", e));
       }
 
-      let desc = "El mensaje ha sido enviado.";
-      if (values.tipo === 'tarea_flash') desc = "Se ha enviado el mensaje y creado las tareas críticas.";
-      if (values.scheduled_date) desc += " (Programado)";
+      let desc = "Mensaje enviado correctamente.";
+      if (values.tipo === 'tarea_flash') desc = "Tarea Flash asignada y notificada a los usuarios.";
 
-      toast({ 
-        title: "Enviado Correctamente", 
-        description: desc
-      });
-      
+      toast({ title: "Enviado", description: desc });
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
@@ -259,7 +255,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nuevo Mensaje</DialogTitle>
+          <DialogTitle>Nuevo Mensaje / Tarea Flash</DialogTitle>
         </DialogHeader>
         
         <Form {...form}>
@@ -275,9 +271,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="comunicado">Comunicado</SelectItem>
+                        <SelectItem value="comunicado">Comunicado (Info)</SelectItem>
                         <SelectItem value="mensaje">Mensaje Directo</SelectItem>
-                        <SelectItem value="tarea_flash">Tarea Flash</SelectItem>
+                        <SelectItem value="tarea_flash">Tarea Flash (Acción)</SelectItem>
                       </SelectContent>
                     </Select>
                   </FormItem>
@@ -301,12 +297,11 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               />
             </div>
 
-            {/* SECCIÓN PROGRAMACIÓN (Visible para todos los tipos) */}
+            {/* SECCIÓN PROGRAMACIÓN */}
             <div className="p-4 bg-muted/40 border rounded-md space-y-4">
                 <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-2">
-                    <CalendarClock className="w-3 h-3" /> Programación de Envío
+                    <CalendarClock className="w-3 h-3" /> Programación (Opcional)
                 </div>
-                
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -314,10 +309,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-xs">Fecha</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} className="bg-white h-8 text-xs" />
-                        </FormControl>
-                        <FormDescription className="text-[10px]">Dejar vacío para envío inmediato.</FormDescription>
+                        <FormControl><Input type="date" {...field} className="bg-white h-8 text-xs" /></FormControl>
                       </FormItem>
                     )}
                   />
@@ -327,9 +319,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-xs">Hora</FormLabel>
-                        <FormControl>
-                          <Input type="time" {...field} className="bg-white h-8 text-xs" />
-                        </FormControl>
+                        <FormControl><Input type="time" {...field} className="bg-white h-8 text-xs" /></FormControl>
                       </FormItem>
                     )}
                   />
@@ -345,12 +335,12 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-orange-900 flex items-center gap-2">
-                        <ClipboardList className="w-4 h-4" /> Seleccionar Rutina a Ejecutar
+                        <ClipboardList className="w-4 h-4" /> Rutina a Ejecutar
                       </FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger className="bg-white border-orange-200">
-                            <SelectValue placeholder="Seleccione una rutina del catálogo..." />
+                            <SelectValue placeholder="Seleccione una rutina..." />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -363,6 +353,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                     </FormItem>
                   )}
                 />
+                <div className="text-xs text-orange-800">
+                  <p><strong>Nota:</strong> Se creará una tarea crítica para todos los destinatarios seleccionados.</p>
+                </div>
               </div>
             )}
 
@@ -383,7 +376,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="pdv">Por PDV (Múltiple)</SelectItem>
-                        <SelectItem value="role">Por Rol</SelectItem>
+                        <SelectItem value="role">Por Rol (Grupo)</SelectItem>
                         <SelectItem value="user">Usuario Específico</SelectItem>
                         <SelectItem value="all">Todos (Global)</SelectItem>
                       </SelectContent>
@@ -467,7 +460,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
               name="cuerpo"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Contenido / Instrucciones</FormLabel>
+                  <FormLabel>Mensaje</FormLabel>
                   <FormControl>
                     <Textarea className="h-24" {...field} />
                   </FormControl>
@@ -484,7 +477,6 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
                   <FormControl><Checkbox checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                   <div className="space-y-1 leading-none">
                     <FormLabel>Solicitar confirmación de lectura</FormLabel>
-                    <FormDescription>Se registrará la fecha y hora exacta de lectura.</FormDescription>
                   </div>
                 </FormItem>
               )}

@@ -150,7 +150,7 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
                 ? 'bg-red-600 hover:bg-red-700' // Rojo para corregir
                 : isDone 
                   ? 'bg-slate-600 hover:bg-slate-700' // Gris para ver detalle
-                  : 'bg-[#091056] hover:bg-[#091056]/90' // NAVY BLUE BRAND para ejecutar (FIXED)
+                  : 'bg-[#091056] hover:bg-[#091056]/90' // NAVY BLUE BRAND para ejecutar
             }`}
             size="sm"
             onClick={() => onAction(task)}
