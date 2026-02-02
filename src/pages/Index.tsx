@@ -32,8 +32,14 @@ const Index = () => {
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-movacheck-navy dark:text-white">Dashboard Operativo</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <h2 className="text-3xl font-bold tracking-tight text-movacheck-navy dark:text-white">Dashboard Operativo</h2>
+            {profile?.tenants?.nombre && (
+              <span className="text-xl text-muted-foreground font-normal hidden sm:inline">| {profile.tenants.nombre}</span>
+            )}
+          </div>
           <p className="text-muted-foreground mt-1">
+            {profile?.tenants?.nombre && <span className="sm:hidden font-medium block mb-1">{profile.tenants.nombre}</span>}
             {profile?.role === 'administrador' ? "Tus métricas de desempeño personal." : "Visión estratégica del cumplimiento."}
           </p>
         </div>

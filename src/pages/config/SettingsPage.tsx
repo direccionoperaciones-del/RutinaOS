@@ -25,6 +25,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [orgLogoUrl, setOrgLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile) {
@@ -32,6 +33,7 @@ export default function SettingsPage() {
       setAvatarUrl(profile.avatar_url);
       if (profile.tenants) {
         setOrgData({ nombre: profile.tenants.nombre });
+        setOrgLogoUrl(profile.tenants.logo_url);
       }
     }
   }, [profile]);
@@ -102,6 +104,35 @@ export default function SettingsPage() {
       }
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleOrgLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      if (!event.target.files || event.target.files.length === 0) return;
+      if (!profile?.tenant_id) return;
+      
+      const file = event.target.files[0];
+      // Usamos el bucket 'logos' (debe existir y ser publico) o fallback a 'evidence' si no existe
+      // Recomendación: Crear bucket 'logos' público en Supabase
+      const filePath = `${profile.tenant_id}/logo_${Date.now()}.${file.name.split('.').pop()}`;
+      
+      const { error: uploadError } = await supabase.storage.from('evidence').upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      
+      const { data } = supabase.storage.from('evidence').getPublicUrl(filePath);
+      if (data) {
+          const { error: updateError } = await supabase.from('tenants').update({ logo_url: data.publicUrl }).eq('id', profile.tenant_id);
+          if (updateError) throw updateError;
+          setOrgLogoUrl(data.publicUrl);
+          toast({ title: "Logo actualizado", description: "La imagen de la organización ha cambiado." });
+          setTimeout(() => window.location.reload(), 1500); 
+      }
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: "Fallo al subir logo. Verifica permisos." });
     } finally {
       setUploading(false);
     }
@@ -289,13 +320,33 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="organization" className="mt-6">
+        <TabsContent value="organization" className="space-y-6 mt-6">
            <Card>
             <CardHeader>
               <CardTitle>Datos de la Empresa</CardTitle>
-              <CardDescription>Información general de tu organización.</CardDescription>
+              <CardDescription>Información e identidad visual.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
+               <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6 pb-6 border-b">
+                <div className="relative group">
+                  <div className="h-24 w-24 rounded-lg border-2 border-dashed border-muted bg-muted/20 flex items-center justify-center overflow-hidden">
+                    {orgLogoUrl ? (
+                      <img src={orgLogoUrl} alt="Logo Organización" className="h-full w-full object-contain" />
+                    ) : (
+                      <Building className="h-8 w-8 text-muted-foreground/50" />
+                    )}
+                  </div>
+                  <label htmlFor="org-logo-upload" className="absolute -bottom-2 -right-2 p-2 bg-primary text-white rounded-full cursor-pointer hover:bg-primary/90 transition-colors shadow-md">
+                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UploadCloud className="w-4 h-4" />}
+                  </label>
+                  <input id="org-logo-upload" type="file" accept="image/*" className="hidden" onChange={handleOrgLogoUpload} disabled={uploading} />
+                </div>
+                <div className="flex-1 space-y-1 text-center sm:text-left">
+                  <h3 className="font-medium">Logo de la Organización</h3>
+                  <p className="text-sm text-muted-foreground">Este logo aparecerá en el menú y reportes.</p>
+                </div>
+              </div>
+
                <div className="space-y-2">
                  <Label>Nombre de la Organización</Label>
                  <div className="flex items-center gap-2">

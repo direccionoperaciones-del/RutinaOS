@@ -33,13 +33,13 @@ const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: a
     className={cn(
       "group flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
       active 
-        ? "bg-primary/10 text-primary" 
-        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+        ? "bg-white dark:bg-slate-800 text-primary shadow-sm ring-1 ring-border" 
+        : "text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50 hover:text-foreground"
     )}
     onClick={onClick}
   >
     <div className="flex items-center gap-3">
-      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+      <Icon className={cn("h-5 w-5 transition-colors", active ? "text-primary" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")} />
       <span>{label}</span>
     </div>
     {badgeCount > 0 && (
@@ -192,15 +192,15 @@ const DashboardLayout = () => {
         />
       )}
 
-      {/* Sidebar - Ahora blanco/dark con borde sutil */}
+      {/* Sidebar - Gris suave para contraste */}
       <aside 
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-card border-r border-border shadow-sm transition-transform duration-300 lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-slate-50 dark:bg-slate-900 border-r border-border shadow-sm transition-transform duration-300 lg:translate-x-0",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Logo Area */}
-        <div className="flex h-16 shrink-0 items-center px-6 border-b border-border/50">
+        <div className="flex h-16 shrink-0 items-center px-6 border-b border-border/50 bg-white dark:bg-slate-900">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 overflow-hidden rounded-lg border border-border shadow-sm">
               <img 
@@ -243,7 +243,7 @@ const DashboardLayout = () => {
         </div>
 
         {/* User Profile Footer */}
-        <div className="border-t border-border/50 bg-muted/20 p-4">
+        <div className="border-t border-border/50 bg-white/50 dark:bg-slate-800/50 p-4">
           <div className="flex items-center gap-3 mb-4">
             <Avatar className="h-9 w-9 border border-border">
               <AvatarImage src={userProfile?.avatar_url} />
@@ -343,7 +343,7 @@ const DashboardLayout = () => {
         </header>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-4 md:p-8 bg-muted/10">
+        <main className="flex-1 p-4 md:p-8 bg-muted/10 dark:bg-black/20">
           <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-2 duration-500">
             <Outlet />
           </div>
