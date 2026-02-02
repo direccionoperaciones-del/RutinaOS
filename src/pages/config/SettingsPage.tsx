@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, BellRing, Smartphone, AlertTriangle, Send, RefreshCw } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, BellRing, Smartphone, AlertTriangle, Send, RefreshCw, CheckCircle2 } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 
@@ -36,7 +36,6 @@ export default function SettingsPage() {
     }
   }, [profile]);
 
-  // ... (Mismos handlers de perfil, organización y contraseña que antes - Omitidos para brevedad, se mantienen igual) ...
   const handleUpdateProfile = async () => {
     if (!profile) return;
     if (!formData.nombre || !formData.apellido) {
@@ -107,7 +106,6 @@ export default function SettingsPage() {
       setUploading(false);
     }
   };
-  // ... (Fin handlers anteriores)
 
   const handleSubscribe = async () => {
     const success = await subscribeToPush();
@@ -117,11 +115,22 @@ export default function SettingsPage() {
   };
 
   const handleTestPush = async () => {
-    toast({ title: "Enviando...", description: "Espera unos segundos." });
-    await sendTestPush();
+    const success = await sendTestPush();
+    if (success) {
+      toast({ 
+        title: "Enviado", 
+        description: "La notificación debería llegar en unos segundos.",
+        className: "bg-green-50 border-green-200"
+      });
+    } else {
+      toast({ 
+        variant: "destructive",
+        title: "Error de envío", 
+        description: "Revisa que las llaves VAPID estén configuradas en Supabase." 
+      });
+    }
   };
 
-  // Función de emergencia para limpiar SW
   const handleResetSW = async () => {
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -187,7 +196,7 @@ export default function SettingsPage() {
                       </div>
                     ) : isSubscribed ? (
                       <p className="text-green-700 font-medium flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"/>
+                        <CheckCircle2 className="w-4 h-4 text-green-600"/>
                         Dispositivo conectado y recibiendo alertas.
                       </p>
                     ) : (
@@ -209,15 +218,17 @@ export default function SettingsPage() {
                     
                     {isSubscribed && (
                       <Button variant="outline" onClick={handleTestPush} disabled={pushLoading}>
-                        <Send className="w-4 h-4 mr-2" /> Probar Envío
+                        {pushLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />} 
+                        Probar Envío
                       </Button>
                     )}
                   </div>
                 )}
                 
                 {pushError && (
-                  <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
-                    <strong>Error:</strong> {pushError}
+                  <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span><strong>Error:</strong> {pushError}</span>
                   </div>
                 )}
               </div>

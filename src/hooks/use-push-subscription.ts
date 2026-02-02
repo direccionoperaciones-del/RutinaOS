@@ -45,25 +45,28 @@ export function usePushSubscription() {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setIsSubscribed(true);
-        // Opcional: Actualizar en BD en segundo plano para mantener vivo
+        // Actualizar en BD en background para mantener vivo el token
         updateSubscriptionInDb(subscription);
       }
     } catch (e) {
-      console.error("Error checking subscription", e);
+      console.error("Error verificando suscripción:", e);
     }
   };
 
   const updateSubscriptionInDb = async (subscription: PushSubscription) => {
     if (!user) return;
     const subJSON = subscription.toJSON();
+    
     if (subJSON.keys?.p256dh && subJSON.keys?.auth && subJSON.endpoint) {
-       await supabase.from('push_subscriptions').upsert({
+       const { error } = await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
           endpoint: subJSON.endpoint,
           p256dh: subJSON.keys.p256dh,
           auth: subJSON.keys.auth,
           last_used_at: new Date().toISOString()
        }, { onConflict: 'endpoint' });
+       
+       if (error) console.error("Error guardando suscripción en DB:", error);
     }
   };
 
@@ -79,20 +82,23 @@ export function usePushSubscription() {
     }
 
     try {
+      // 1. Obtener llave pública
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
-      if (keyError || !keyData?.publicKey) throw new Error("Error obteniendo llave pública VAPID.");
+      if (keyError) throw new Error(`Error obteniendo llave VAPID: ${keyError.message}`);
+      if (!keyData?.publicKey) throw new Error("El servidor no devolvió una llave pública.");
 
       const vapidPublicKey = keyData.publicKey.trim().replace(/['"]/g, '');
-      const registration = await navigator.serviceWorker.ready;
-      
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
       
-      // Intentar suscribir
+      const registration = await navigator.serviceWorker.ready;
+      
+      // 2. Intentar suscribir en el navegador
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
       });
 
+      // 3. Guardar en BD
       await updateSubscriptionInDb(subscription);
 
       setIsSubscribed(true);
@@ -114,19 +120,25 @@ export function usePushSubscription() {
     try {
       setLoading(true);
       setError(null);
-      // Usar invoke normal aquí (Usuario llamando a función)
-      const { error } = await supabase.functions.invoke('send-push', {
+      
+      // Llamada directa simple, sin anidar en 'body' extra
+      const { data, error } = await supabase.functions.invoke('send-push', {
         body: {
-          user_id: user.id, // CORREGIDO: user_id en lugar de userId
+          user_id: user.id,
           title: "🔔 Prueba Exitosa",
-          body: "Sistema operativo y conectado.",
+          body: "Tu dispositivo está conectado correctamente al sistema de alertas.",
           url: "/settings"
         }
       });
+
       if (error) throw error;
+      if (data && data.error) throw new Error(data.error);
+      
+      return true;
     } catch (err: any) {
-      console.error("Error sending test push:", err);
-      setError(err.message);
+      console.error("Error enviando push de prueba:", err);
+      setError(err.message || "Error de conexión con el servidor de notificaciones.");
+      return false;
     } finally {
       setLoading(false);
     }
