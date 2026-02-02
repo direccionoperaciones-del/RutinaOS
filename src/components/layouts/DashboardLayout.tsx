@@ -157,7 +157,10 @@ const DashboardLayout = () => {
   };
 
   const appLogo = userProfile?.tenants?.logo_url || DEFAULT_LOGO;
-  const appName = userProfile?.tenants?.logo_url ? userProfile.tenants.nombre : "RunOp";
+  // CAMBIO: Sidebar muestra el nombre de la organización
+  const tenantName = userProfile?.tenants?.nombre || "Mi Organización";
+  // CAMBIO: Header muestra el nombre de la App
+  const appName = "RunOp"; 
 
   if (loading) {
     return (
@@ -202,15 +205,16 @@ const DashboardLayout = () => {
         {/* Logo Area */}
         <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10 bg-black/5">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 overflow-hidden rounded-lg bg-white border border-white/20 shadow-sm p-0.5">
+            <div className="h-8 w-8 overflow-hidden rounded-lg bg-white border border-white/20 shadow-sm p-0.5 shrink-0">
               <img 
                 src={appLogo} 
                 alt="Logo" 
                 className="h-full w-full object-contain" 
               />
             </div>
-            <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]">
-              {appName}
+            {/* CORRECCIÓN: Aquí va el nombre de la Organización */}
+            <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]" title={tenantName}>
+              {tenantName}
             </span>
           </div>
         </div>
@@ -289,7 +293,7 @@ const DashboardLayout = () => {
               <Menu className="h-6 w-6" />
             </button>
             
-            {/* Breadcrumb simulado / Título dinámico podría ir aquí */}
+            {/* CORRECCIÓN: Breadcrumb inicia con RunOp */}
             <div className="hidden md:flex items-center text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{appName}</span>
               <ChevronRight className="h-4 w-4 mx-2" />
