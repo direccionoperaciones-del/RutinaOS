@@ -14,7 +14,7 @@ serve(async (req) => {
     const publicKey = Deno.env.get('VAPID_PUBLIC_KEY')?.trim()
 
     if (!publicKey) {
-      console.error("[get-vapid] VAPID_PUBLIC_KEY está vacía o no existe.");
+      console.error("[get-vapid] VAPID_PUBLIC_KEY está vacía o no existe en Secrets.");
       throw new Error('La configuración del servidor no tiene la llave pública VAPID.')
     }
 
@@ -23,7 +23,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("[get-vapid] Error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),

@@ -19,19 +19,18 @@ serve(async (req) => {
     const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY')?.trim()!
 
     if (!vapidPublic || !vapidPrivate) {
-      throw new Error("Faltan llaves VAPID en variables de entorno.")
+      throw new Error("Faltan llaves VAPID en variables de entorno (Secrets).")
     }
 
+    // Configuración crítica de WebPush con las nuevas llaves
     webpush.setVapidDetails('mailto:admin@movacheck.app', vapidPublic, vapidPrivate)
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
     const { user_id, title, body, url, direct_subscription } = await req.json()
 
-    // ---------------------------------------------------------
-    // MODO DIAGNÓSTICO: Envío directo a objeto Subscription (Sin BD)
-    // ---------------------------------------------------------
+    // 1. MODO DIAGNÓSTICO (Test Directo)
     if (direct_subscription) {
-      console.log("[send-push] Modo Diagnóstico Directo");
+      console.log("[send-push] Modo Diagnóstico: Enviando a suscripción directa...");
       try {
         const payload = JSON.stringify({ title: `[TEST] ${title}`, body, url });
         const result = await webpush.sendNotification(direct_subscription, payload);
@@ -64,16 +63,14 @@ serve(async (req) => {
       }
     }
 
-    // ---------------------------------------------------------
-    // MODO NORMAL: Envío a usuarios (Desde BD)
-    // ---------------------------------------------------------
-    if (!user_id) throw new Error("Falta user_id");
+    // 2. MODO NORMAL (Desde Base de Datos)
+    if (!user_id) throw new Error("Falta user_id para envío normal.");
 
     const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('*').eq('user_id', user_id);
     
     if (!subs?.length) {
       return new Response(
-        JSON.stringify({ success: false, message: 'Sin dispositivos registrados', results: [] }), 
+        JSON.stringify({ success: false, message: 'El usuario no tiene dispositivos registrados', results: [] }), 
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       );
     }
@@ -98,9 +95,10 @@ serve(async (req) => {
             const status = err.statusCode || 500;
             let action = 'none';
 
-            // LIMPIEZA AUTOMÁTICA DE SUSCRIPCIONES MUERTAS
+            // LIMPIEZA AUTOMÁTICA: Si devuelve 410 (Gone) o 404, la suscripción ya no existe en el navegador.
+            // La borramos para mantener la DB limpia.
             if (status === 410 || status === 404) {
-                console.log(`[send-push] Borrando suscripción muerta (${status}): ${sub.id}`);
+                console.log(`[send-push] Limpiando suscripción muerta (${status}): ${sub.id}`);
                 await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
                 action = 'deleted';
             }
@@ -116,7 +114,6 @@ serve(async (req) => {
         }
     }));
 
-    // El envío general se considera exitoso si AL MENOS UNO llegó (status 2xx)
     const successCount = results.filter(r => r.success).length;
     
     return new Response(
