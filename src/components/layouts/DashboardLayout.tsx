@@ -157,7 +157,7 @@ const DashboardLayout = () => {
   };
 
   const appLogo = userProfile?.tenants?.logo_url || DEFAULT_LOGO;
-  const appName = userProfile?.tenants?.logo_url ? userProfile.tenants.nombre : "Movacheck";
+  const appName = userProfile?.tenants?.logo_url ? userProfile.tenants.nombre : "RunOP";
 
   if (loading) {
     return (
@@ -271,7 +271,7 @@ const DashboardLayout = () => {
           </div>
           
           <div className="flex items-center justify-center gap-2 opacity-40 hover:opacity-80 transition-opacity select-none">
-            <span className="text-[10px] font-medium uppercase tracking-widest">Powered by Movacheck</span>
+            <span className="text-[10px] font-medium uppercase tracking-widest">Powered by BackHouse 360</span>
           </div>
         </div>
       </aside>

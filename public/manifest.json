@@ -1,6 +1,6 @@
 {
-  "name": "Movacheck",
-  "short_name": "Movacheck",
+  "name": "RunOP",
+  "short_name": "RunOP",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

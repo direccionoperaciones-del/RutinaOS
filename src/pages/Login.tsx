@@ -147,7 +147,7 @@ const Login = () => {
           <div className="w-16 h-16 mx-auto mb-6 overflow-hidden rounded-xl shadow-sm border bg-white p-2 flex items-center justify-center">
             <img 
               src="https://rnqbvurxhhxjdwarwmch.supabase.co/storage/v1/object/public/LogoMova/movacheck.jpeg" 
-              alt="Movacheck" 
+              alt="RunOP" 
               className="max-w-full max-h-full object-contain"
             />
           </div>
@@ -238,7 +238,7 @@ const Login = () => {
         </CardContent>
         <CardFooter className="justify-center py-6 bg-muted/20 border-t">
           <p className="text-xs text-muted-foreground text-center">
-            © 2026 Movacheck. Todos los derechos reservados.
+            © 2026 RunOP. Todos los derechos reservados.
           </p>
         </CardFooter>
       </Card>

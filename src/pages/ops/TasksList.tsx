@@ -27,10 +27,10 @@ import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 const getPriorityStyles = (priority: string) => {
   switch (priority) {
-    case 'critica': return { badge: 'bg-red-600 text-white border-red-700', border: 'border-l-4 border-l-red-600' };
-    case 'alta': return { badge: 'bg-orange-500 text-white border-orange-600', border: 'border-l-4 border-l-orange-500' };
-    case 'media': return { badge: 'bg-yellow-500 text-white border-yellow-600', border: 'border-l-4 border-l-yellow-500' };
-    default: return { badge: 'bg-emerald-600 text-white border-emerald-700', border: 'border-l-4 border-l-emerald-600' };
+    case 'critica': return { badge: 'bg-red-600 text-white border-red-700' };
+    case 'alta': return { badge: 'bg-orange-500 text-white border-orange-600' };
+    case 'media': return { badge: 'bg-yellow-500 text-white border-yellow-600' };
+    default: return { badge: 'bg-emerald-600 text-white border-emerald-700' };
   }
 };
 
@@ -69,12 +69,10 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
   const isCancelled = task.estado === 'cancelada';
   
   const deadline = calculateTaskDeadline(task);
-  // date-fns format usará los valores locales del objeto Date. 
-  // Como construimos el objeto manualmente con los valores de Colombia, mostrará la hora correcta.
   const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
   return (
-    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : (isRejected ? 'border-l-red-600 border-red-200 bg-red-50/20' : styles.border)}`}>
+    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : (isRejected ? 'border-l-red-600 border-red-200 bg-red-50/20' : 'border-l-secondary')}`}>
       <CardHeader className="p-3 pb-1 space-y-1"> 
         <div className="flex justify-between items-start">
           <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${isCancelled ? 'bg-gray-500 border-gray-600' : styles.badge}`}>
