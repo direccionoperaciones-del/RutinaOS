@@ -3,14 +3,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
 
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
+  try {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  } catch (e) {
+    console.error("Error decodificando VAPID key:", e);
+    throw new Error("La llave pública del servidor tiene un formato inválido.");
   }
-  return outputArray;
 }
 
 export function usePushSubscription() {
@@ -45,7 +50,6 @@ export function usePushSubscription() {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setIsSubscribed(true);
-        // Actualizar en BD en background para mantener vivo el token
         updateSubscriptionInDb(subscription);
       }
     } catch (e) {
@@ -66,12 +70,12 @@ export function usePushSubscription() {
           last_used_at: new Date().toISOString()
        }, { onConflict: 'endpoint' });
        
-       if (error) console.error("Error guardando suscripción en DB:", error);
+       if (error) console.error("Error DB:", error);
     }
   };
 
   const subscribeToPush = async () => {
-    if (!user) return;
+    if (!user) return false;
     setLoading(true);
     setError(null);
 
@@ -84,15 +88,18 @@ export function usePushSubscription() {
     try {
       // 1. Obtener llave pública
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
-      if (keyError) throw new Error(`Error obteniendo llave VAPID: ${keyError.message}`);
-      if (!keyData?.publicKey) throw new Error("El servidor no devolvió una llave pública.");
-
-      const vapidPublicKey = keyData.publicKey.trim().replace(/['"]/g, '');
-      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
       
+      if (keyError) {
+        console.error("VAPID Error:", keyError);
+        throw new Error("No se pudo conectar con el servidor de notificaciones.");
+      }
+      
+      if (!keyData?.publicKey) throw new Error("Configuración de servidor incompleta (Falta VAPID Public Key).");
+
+      const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
       const registration = await navigator.serviceWorker.ready;
       
-      // 2. Intentar suscribir en el navegador
+      // 2. Suscribir en navegador
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
@@ -105,9 +112,9 @@ export function usePushSubscription() {
       return true;
 
     } catch (err: any) {
-      console.error("PUSH SUBSCRIBE FAILED:", err);
-      let msg = err.message || "Error al suscribir";
-      if (msg.includes("user denied")) msg = "Permiso denegado. Habilita notificaciones en el navegador.";
+      console.error("Error suscripción:", err);
+      let msg = err.message;
+      if (msg.includes("user denied")) msg = "Permiso denegado. Habilita notificaciones en tu navegador.";
       setError(msg);
       return false;
     } finally {
@@ -116,28 +123,27 @@ export function usePushSubscription() {
   };
 
   const sendTestPush = async () => {
-    if (!user) return;
+    if (!user) return false;
     try {
       setLoading(true);
       setError(null);
       
-      // Llamada directa simple, sin anidar en 'body' extra
       const { data, error } = await supabase.functions.invoke('send-push', {
         body: {
           user_id: user.id,
           title: "🔔 Prueba Exitosa",
-          body: "Tu dispositivo está conectado correctamente al sistema de alertas.",
+          body: "Tu dispositivo está conectado correctamente.",
           url: "/settings"
         }
       });
 
-      if (error) throw error;
+      if (error) throw new Error(error.message || "Error de conexión al enviar prueba.");
       if (data && data.error) throw new Error(data.error);
       
       return true;
     } catch (err: any) {
-      console.error("Error enviando push de prueba:", err);
-      setError(err.message || "Error de conexión con el servidor de notificaciones.");
+      console.error("Test Push Error:", err);
+      setError(err.message);
       return false;
     } finally {
       setLoading(false);
