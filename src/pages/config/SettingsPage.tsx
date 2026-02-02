@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const { profile, loading: loadingProfile } = useCurrentUser();
+  const { user, profile, loading: loadingProfile } = useCurrentUser();
   const { 
     isSupported, isSubscribed, subscribeToPush, runDiagnostics,
     loading: pushLoading, error: pushError, isIOS, isStandalone 
@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const [uploading, setUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [orgLogoUrl, setOrgLogoUrl] = useState<string | null>(null);
-  const [imgKey, setImgKey] = useState(Date.now());
+  const [imgKey, setImgKey] = useState(Date.now()); // Para forzar recarga de imágenes cacheada
 
   // Estado Diagnóstico
   const [diagOpen, setDiagOpen] = useState(false);
@@ -46,11 +46,145 @@ export default function SettingsPage() {
     }
   }, [profile]);
 
-  const handleUpdateProfile = async () => { /* ... (Sin cambios) ... */ };
-  const handleUpdateOrganization = async () => { /* ... (Sin cambios) ... */ };
-  const handleChangePassword = async () => { /* ... (Sin cambios) ... */ };
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => { /* ... (Sin cambios) ... */ };
-  const handleOrgLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => { /* ... (Sin cambios) ... */ };
+  const handleUpdateProfile = async () => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          nombre: formData.nombre,
+          apellido: formData.apellido
+        })
+        .eq('id', user?.id);
+
+      if (error) throw error;
+      toast({ title: "Perfil actualizado", description: "Tus datos personales han sido guardados." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateOrganization = async () => {
+    if (!profile?.tenant_id) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('tenants')
+        .update({ nombre: orgData.nombre })
+        .eq('id', profile.tenant_id);
+
+      if (error) throw error;
+      toast({ title: "Organización actualizada", description: "El nombre de la empresa ha sido guardado." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (passwordData.password !== passwordData.confirm) {
+      toast({ variant: "destructive", title: "Error", description: "Las contraseñas no coinciden." });
+      return;
+    }
+    if (passwordData.password.length < 6) {
+      toast({ variant: "destructive", title: "Error", description: "La contraseña debe tener al menos 6 caracteres." });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: passwordData.password });
+      if (error) throw error;
+      
+      toast({ title: "Contraseña actualizada", description: "Usa tu nueva contraseña la próxima vez que inicies sesión." });
+      setPasswordData({ password: "", confirm: "" });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+    setUploading(true);
+    
+    try {
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user?.id}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user?.id);
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+      setImgKey(Date.now());
+      toast({ title: "Avatar actualizado", description: "Tu foto de perfil ha sido cambiada." });
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al subir", description: error.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleOrgLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0 || !profile?.tenant_id) return;
+    setUploading(true);
+    
+    try {
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `org_${profile.tenant_id}.${fileExt}`;
+      const filePath = `${fileName}`; // Subimos a raíz del bucket logos o public-assets
+
+      // Usamos un bucket específico para logos si existe, sino avatars o public
+      // Ajusta 'logos' al nombre real de tu bucket en Supabase
+      const bucketName = 'LogoApp'; 
+
+      const { error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('tenants')
+        .update({ logo_url: publicUrl })
+        .eq('id', profile.tenant_id);
+
+      if (updateError) throw updateError;
+
+      setOrgLogoUrl(publicUrl);
+      setImgKey(Date.now());
+      toast({ title: "Logo actualizado", description: "El logo de la organización ha sido cambiado." });
+
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error al subir", description: error.message });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubscribe = async () => {
     const success = await subscribeToPush();
@@ -93,73 +227,254 @@ export default function SettingsPage() {
           <TabsTrigger value="organization">Organización</TabsTrigger>
         </TabsList>
 
+        {/* --- PESTAÑA MI CUENTA --- */}
         <TabsContent value="account" className="space-y-6 mt-6">
           
-          {/* TARJETA NOTIFICACIONES MEJORADA */}
-          <Card className={`border ${isSubscribed ? 'bg-green-50 border-green-200' : 'bg-card border-border'}`}>
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <BellRing className={`w-5 h-5 ${isSubscribed ? 'text-green-600' : 'text-blue-600'}`} /> 
-                    Notificaciones Móviles
+          <div className="grid gap-6 md:grid-cols-2">
+            
+            {/* Tarjeta Perfil */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <User className="w-4 h-4 text-primary" /> Información Personal
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative group">
+                    <Avatar className="h-20 w-20 cursor-pointer">
+                      <AvatarImage src={`${avatarUrl}?t=${imgKey}`} />
+                      <AvatarFallback className="text-lg bg-primary/10 text-primary">
+                        {formData.nombre?.[0]}{formData.apellido?.[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    <label 
+                      htmlFor="avatar-upload" 
+                      className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white"
+                    >
+                      <Camera className="w-6 h-6" />
+                    </label>
+                    <input 
+                      id="avatar-upload" 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={handleAvatarUpload}
+                      disabled={uploading}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Foto de Perfil</p>
+                    <p className="text-xs text-muted-foreground">Haz clic en la imagen para cambiarla.</p>
+                    {uploading && <p className="text-xs text-blue-600 animate-pulse">Subiendo...</p>}
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="nombre">Nombre</Label>
+                  <Input 
+                    id="nombre" 
+                    value={formData.nombre} 
+                    onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="apellido">Apellido</Label>
+                  <Input 
+                    id="apellido" 
+                    value={formData.apellido} 
+                    onChange={(e) => setFormData({...formData, apellido: e.target.value})} 
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Email</Label>
+                  <Input value={profile?.email} disabled className="bg-muted" />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Rol</Label>
+                  <Input value={profile?.role} disabled className="bg-muted capitalize" />
+                </div>
+              </CardContent>
+              <CardFooter className="justify-end border-t pt-4">
+                <Button onClick={handleUpdateProfile} disabled={saving}>
+                  {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Guardar Cambios
+                </Button>
+              </CardFooter>
+            </Card>
+
+            {/* Tarjeta Seguridad & Notificaciones */}
+            <div className="space-y-6">
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-primary" /> Seguridad
                   </CardTitle>
-                  <CardDescription>Alertas en tiempo real.</CardDescription>
-                </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={handleRunDiagnostics} className="h-8 text-xs">
-                        <Stethoscope className="w-3 h-3 mr-1" /> Diagnóstico
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={handleResetSW} className="h-8 text-xs text-muted-foreground hover:text-red-600">
-                        <RefreshCw className="w-3 h-3 mr-1" /> Reset
-                    </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 text-sm text-muted-foreground">
-                  <Smartphone className="w-8 h-8 opacity-50 shrink-0" />
-                  <div>
-                    {!isSupported ? (
-                      <p className="text-red-500 font-medium">Navegador no compatible.</p>
-                    ) : isIOS && !isStandalone ? (
-                      <div className="text-orange-600 bg-orange-50 p-2 rounded border border-orange-200 text-xs">
-                        <p className="font-bold mb-1">Requiere instalación (iOS):</p>
-                        <p>Usa el botón "Compartir" {'>'} "Agregar a Inicio".</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="password">Nueva Contraseña</Label>
+                    <Input 
+                      id="password" 
+                      type="password" 
+                      value={passwordData.password} 
+                      onChange={(e) => setPasswordData({...passwordData, password: e.target.value})}
+                      placeholder="Mínimo 6 caracteres"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="confirm">Confirmar Contraseña</Label>
+                    <Input 
+                      id="confirm" 
+                      type="password" 
+                      value={passwordData.confirm} 
+                      onChange={(e) => setPasswordData({...passwordData, confirm: e.target.value})}
+                    />
+                  </div>
+                </CardContent>
+                <CardFooter className="justify-end border-t pt-4">
+                  <Button variant="outline" onClick={handleChangePassword} disabled={saving || !passwordData.password}>
+                    {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Actualizar Contraseña
+                  </Button>
+                </CardFooter>
+              </Card>
+
+              {/* TARJETA NOTIFICACIONES */}
+              <Card className={`border ${isSubscribed ? 'bg-green-50 border-green-200' : 'bg-card border-border'}`}>
+                <CardHeader className="pb-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <BellRing className={`w-5 h-5 ${isSubscribed ? 'text-green-600' : 'text-blue-600'}`} /> 
+                        Notificaciones Móviles
+                      </CardTitle>
+                      <CardDescription className="text-xs mt-1">Recibe alertas en tiempo real en este dispositivo.</CardDescription>
+                    </div>
+                    <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={handleRunDiagnostics} className="h-7 text-[10px] px-2">
+                            <Stethoscope className="w-3 h-3 mr-1" /> Test
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={handleResetSW} className="h-7 text-[10px] px-2 text-muted-foreground hover:text-red-600">
+                            <RefreshCw className="w-3 h-3" />
+                        </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                      <Smartphone className="w-8 h-8 opacity-50 shrink-0" />
+                      <div>
+                        {!isSupported ? (
+                          <p className="text-red-500 font-medium">Navegador no compatible.</p>
+                        ) : isIOS && !isStandalone ? (
+                          <div className="text-orange-600 bg-orange-50 p-2 rounded border border-orange-200 text-xs">
+                            <p className="font-bold mb-1">Requiere instalación (iOS):</p>
+                            <p>Usa el botón "Compartir" {'>'} "Agregar a Inicio".</p>
+                          </div>
+                        ) : isSubscribed ? (
+                          <p className="text-green-700 font-medium flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-green-600"/>
+                            Dispositivo conectado.
+                          </p>
+                        ) : (
+                          <p>Activa las notificaciones para recibir alertas de tareas y mensajes.</p>
+                        )}
                       </div>
-                    ) : isSubscribed ? (
-                      <p className="text-green-700 font-medium flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-green-600"/>
-                        Activas y listas.
-                      </p>
-                    ) : (
-                      <p>Activa las notificaciones para recibir alertas.</p>
+                    </div>
+
+                    {isSupported && !(isIOS && !isStandalone) && !isSubscribed && (
+                      <Button onClick={handleSubscribe} disabled={pushLoading} className="w-full h-8 text-xs">
+                        {pushLoading && <Loader2 className="w-3 h-3 mr-2 animate-spin" />} Activar Notificaciones
+                      </Button>
+                    )}
+                    
+                    {pushError && (
+                      <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
+                        Error: {pushError}
+                      </div>
                     )}
                   </div>
-                </div>
+                </CardContent>
+              </Card>
 
-                {isSupported && !(isIOS && !isStandalone) && !isSubscribed && (
-                  <Button onClick={handleSubscribe} disabled={pushLoading} className="w-full sm:w-auto">
-                    {pushLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Activar Ahora
-                  </Button>
-                )}
-                
-                {pushError && (
-                  <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-200">
-                    Error: {pushError}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* --- PESTAÑA ORGANIZACIÓN --- */}
+        <TabsContent value="organization" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Building className="w-4 h-4 text-primary" /> Información de la Organización
+              </CardTitle>
+              <CardDescription>
+                Estos datos aparecen en los reportes y en el encabezado de la aplicación.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              
+              {/* Logo Upload */}
+              <div className="flex flex-col items-center gap-4 sm:flex-row p-4 border rounded-lg bg-muted/20">
+                <div className="relative group shrink-0">
+                  <div className="h-24 w-24 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden bg-white">
+                    {orgLogoUrl ? (
+                      <img src={`${orgLogoUrl}?t=${imgKey}`} alt="Logo" className="h-full w-full object-contain p-1" />
+                    ) : (
+                      <Building className="h-8 w-8 text-muted-foreground opacity-20" />
+                    )}
                   </div>
-                )}
+                  <label 
+                    htmlFor="org-logo-upload" 
+                    className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer rounded-lg text-white text-xs font-medium"
+                  >
+                    <Camera className="w-4 h-4 mr-1" /> Cambiar
+                  </label>
+                  <input 
+                    id="org-logo-upload" 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleOrgLogoUpload}
+                    disabled={uploading}
+                  />
+                </div>
+                <div className="space-y-1 text-center sm:text-left flex-1">
+                  <h4 className="font-medium text-sm">Logotipo Corporativo</h4>
+                  <p className="text-xs text-muted-foreground">Se recomienda formato PNG con fondo transparente. Tamaño máx: 2MB.</p>
+                  {uploading && <p className="text-xs text-blue-600 animate-pulse font-medium">Subiendo imagen...</p>}
+                </div>
               </div>
+
+              {/* Organization Name */}
+              <div className="space-y-2">
+                <Label>Nombre de la Empresa</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Building className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input 
+                      value={orgData.nombre} 
+                      onChange={(e) => setOrgData({...orgData, nombre: e.target.value})} 
+                      className="pl-9" 
+                      placeholder="Nombre de tu empresa"
+                    />
+                  </div>
+                  <Button onClick={handleUpdateOrganization} disabled={saving}>
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-yellow-50 text-yellow-800 rounded-md text-xs border border-yellow-200 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  Si eres el <strong>Director</strong>, los cambios realizados aquí afectarán a todos los usuarios de la organización.
+                </p>
+              </div>
+
             </CardContent>
           </Card>
-
-          {/* ... Resto de componentes (Perfil, Contraseña) ... */}
-          {/* Se mantienen igual para ahorrar espacio en la respuesta, pero el componente completo debe incluirlos */}
-          
-        </TabsContent>
-        <TabsContent value="organization">
-            {/* ... Contenido organización ... */}
         </TabsContent>
       </Tabs>
 
