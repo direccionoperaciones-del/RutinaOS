@@ -3,19 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from './use-current-user';
 
 function urlBase64ToUint8Array(base64String: string) {
-  try {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = window.atob(base64);
-    const outputArray = new Uint8Array(rawData.length);
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i);
-    }
-    return outputArray;
-  } catch (e) {
-    console.error("Error decodificando VAPID key:", e);
-    throw new Error("La llave pública del servidor tiene un formato inválido.");
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
   }
+  return outputArray;
 }
 
 export function usePushSubscription() {
@@ -51,26 +46,25 @@ export function usePushSubscription() {
       if (subscription) {
         setIsSubscribed(true);
         updateSubscriptionInDb(subscription);
+      } else {
+        setIsSubscribed(false);
       }
     } catch (e) {
-      console.error("Error verificando suscripción:", e);
+      console.error("Error checkSubscription:", e);
     }
   };
 
   const updateSubscriptionInDb = async (subscription: PushSubscription) => {
     if (!user) return;
     const subJSON = subscription.toJSON();
-    
     if (subJSON.keys?.p256dh && subJSON.keys?.auth && subJSON.endpoint) {
-       const { error } = await supabase.from('push_subscriptions').upsert({
+       await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
           endpoint: subJSON.endpoint,
           p256dh: subJSON.keys.p256dh,
           auth: subJSON.keys.auth,
           last_used_at: new Date().toISOString()
        }, { onConflict: 'endpoint' });
-       
-       if (error) console.error("Error DB:", error);
     }
   };
 
@@ -86,63 +80,22 @@ export function usePushSubscription() {
     }
 
     try {
-      // 1. Obtener llave pública
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
-      
-      if (keyError) {
-        console.error("VAPID Error:", keyError);
-        throw new Error("No se pudo conectar con el servidor de notificaciones.");
-      }
-      
-      if (!keyData?.publicKey) throw new Error("Configuración de servidor incompleta (Falta VAPID Public Key).");
+      if (keyError || !keyData?.publicKey) throw new Error("Error obteniendo VAPID Public Key.");
 
       const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
       const registration = await navigator.serviceWorker.ready;
       
-      // 2. Suscribir en navegador
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
       });
 
-      // 3. Guardar en BD
       await updateSubscriptionInDb(subscription);
-
       setIsSubscribed(true);
       return true;
-
     } catch (err: any) {
-      console.error("Error suscripción:", err);
-      let msg = err.message;
-      if (msg.includes("user denied")) msg = "Permiso denegado. Habilita notificaciones en tu navegador.";
-      setError(msg);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendTestPush = async () => {
-    if (!user) return false;
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const { data, error } = await supabase.functions.invoke('send-push', {
-        body: {
-          user_id: user.id,
-          title: "🔔 Prueba Exitosa",
-          body: "Tu dispositivo está conectado correctamente.",
-          url: "/settings"
-        }
-      });
-
-      if (error) throw new Error(error.message || "Error de conexión al enviar prueba.");
-      if (data && data.error) throw new Error(data.error);
-      
-      return true;
-    } catch (err: any) {
-      console.error("Test Push Error:", err);
+      console.error("Error subscribing:", err);
       setError(err.message);
       return false;
     } finally {
@@ -150,5 +103,75 @@ export function usePushSubscription() {
     }
   };
 
-  return { isSupported, isSubscribed, loading, error, subscribeToPush, sendTestPush, isIOS, isStandalone };
+  // --- DIAGNÓSTICO PROFUNDO ---
+  const runDiagnostics = async () => {
+    const logs: string[] = [];
+    const log = (msg: string) => { console.log(`[Diag] ${msg}`); logs.push(msg); };
+    
+    log("Iniciando diagnóstico...");
+    
+    try {
+        // 1. Verificar Soporte
+        if (!('serviceWorker' in navigator)) throw new Error("Service Worker no soportado");
+        if (!('PushManager' in window)) throw new Error("PushManager no soportado");
+        log("✅ Navegador soporta Push");
+
+        // 2. Verificar SW Activo
+        const reg = await navigator.serviceWorker.ready;
+        log(`✅ Service Worker activo (Scope: ${reg.scope})`);
+
+        // 3. Obtener Suscripción del Navegador
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) throw new Error("❌ El navegador NO tiene una suscripción activa. Dale click a 'Activar'.");
+        
+        log("✅ Suscripción encontrada en navegador");
+        const subJSON = sub.toJSON();
+        
+        // 4. Verificar DB
+        const { data: dbSubs } = await supabase.from('push_subscriptions').select('*').eq('endpoint', sub.endpoint);
+        if (dbSubs && dbSubs.length > 0) {
+            log("✅ Suscripción sincronizada en Base de Datos");
+        } else {
+            log("⚠️ La suscripción no está en la BD. Intentando resincronizar...");
+            await updateSubscriptionInDb(sub);
+        }
+
+        // 5. PRUEBA DE FUEGO: Envío directo usando el JSON del navegador
+        log("🚀 Enviando prueba directa a Edge Function...");
+        
+        const { data: testResult, error: testError } = await supabase.functions.invoke('send-push', {
+            body: {
+                title: "Diagnóstico",
+                body: "Si lees esto, el sistema funciona.",
+                direct_subscription: subJSON // Enviamos el objeto crudo
+            }
+        });
+
+        if (testError) {
+            log(`❌ Error de red al contactar Edge Function: ${testError.message}`);
+        } else if (testResult.success) {
+            log(`✅ ÉXITO TOTAL: Servidor respondió Status ${testResult.statusCode}`);
+            log("👉 Si no ves la notificación, revisa si tienes 'No Molestar' activo o permisos de SO bloqueados.");
+        } else {
+            log(`❌ FALLO DE ENVÍO: Servidor respondió Status ${testResult.statusCode}`);
+            log(`Error detalle: ${testResult.error}`);
+            
+            if (testResult.statusCode === 401 || testResult.statusCode === 403) {
+                log("💡 DIAGNÓSTICO: Las llaves VAPID cambiaron. Debes resetear.");
+            } else if (testResult.statusCode === 410) {
+                log("💡 DIAGNÓSTICO: La suscripción caducó. Debes resetear.");
+            }
+        }
+
+    } catch (e: any) {
+        log(`❌ ERROR FATAL: ${e.message}`);
+    }
+
+    return logs;
+  };
+
+  return { 
+    isSupported, isSubscribed, loading, error, 
+    subscribeToPush, runDiagnostics, isIOS, isStandalone 
+  };
 }

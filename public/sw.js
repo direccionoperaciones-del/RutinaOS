@@ -1,71 +1,68 @@
 self.addEventListener('push', function(event) {
-  let data = {};
-  
+  console.log('[SW] Push recibido', event);
+
+  let data = { title: 'RunOp', body: 'Nueva notificación', url: '/' };
+
   try {
     if (event.data) {
-      data = event.data.json();
+      const textData = event.data.text();
+      console.log('[SW] Data raw:', textData);
+      try {
+        data = JSON.parse(textData);
+      } catch (e) {
+        console.warn('[SW] No es JSON válido, usando texto plano');
+        data.body = textData;
+      }
     }
   } catch (e) {
-    console.error('Error parsing push data', e);
-    // Fallback básico si el JSON falla
-    data = { 
-      title: 'RunOp', 
-      body: event.data ? event.data.text() : 'Nueva notificación recibida' 
-    };
+    console.error('[SW] Error parseando datos:', e);
   }
 
   const title = data.title || 'RunOp';
   
-  // URL del icono corregida al proyecto actual (lrnzxrrjcwkmwwldfdaq)
-  // Usamos el mismo logo que en el manifest para consistencia
+  // Icono seguro (bucket público verificado)
   const iconUrl = 'https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg';
 
   const options = {
-    body: data.body || 'Nueva actividad registrada.',
+    body: data.body,
     icon: iconUrl,
-    badge: iconUrl, // En Android el badge debe ser monocromático idealmente, pero la URL válida evita el crash
-    data: {
-      url: data.url || '/'
-    },
+    badge: iconUrl,
+    data: { url: data.url },
     vibrate: [100, 50, 100],
-    tag: 'runop-notification', // Agrupa notificaciones similares
-    renotify: true, // Vuelve a vibrar si hay una nueva
-    requireInteraction: false,
-    actions: [
-      { action: 'open', title: 'Ver' }
-    ]
+    tag: 'runop-notification',
+    renotify: true,
+    requireInteraction: true // Fuerza a que el usuario la cierre (ayuda en debug)
   };
+
+  console.log('[SW] Mostrando notificación:', title, options);
 
   event.waitUntil(
     self.registration.showNotification(title, options)
-      .catch(err => console.error('Error mostrando notificación:', err))
+      .then(() => console.log('[SW] Notificación mostrada exitosamente'))
+      .catch(err => {
+        console.error('[SW] FALLO CRÍTICO mostrando notificación:', err);
+        // Intento desesperado sin icono por si es error de red de imagen
+        return self.registration.showNotification(title, { body: data.body });
+      })
   );
 });
 
 self.addEventListener('notificationclick', function(event) {
+  console.log('[SW] Click en notificación', event);
   event.notification.close();
-  
-  // Abrir la URL correspondiente
   const urlToOpen = new URL(event.notification.data?.url || '/', self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // 1. Si la app ya está abierta, enfocarla y navegar
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
         if (client.url && 'focus' in client) {
           return client.focus().then(c => c.navigate(urlToOpen));
         }
       }
-      // 2. Si no, abrir nueva ventana
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }
     })
   );
-});
-
-// Evento activate para limpiar cachés antiguos si fuera necesario
-self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
 });
