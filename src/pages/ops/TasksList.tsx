@@ -43,11 +43,9 @@ const getFrequencyIcon = (freq: string) => {
 };
 
 const getStatusBadge = (task: any) => {
-  // Comparación robusta usando hora de Colombia
   const now = getColombiaDate(); 
   const deadline = calculateTaskDeadline(task);
   
-  // Como ambas fechas son "Timezone Agnostic" (representan hora muro), la comparación directa funciona
   const isLate = task.estado === 'pendiente' && now.getTime() > deadline.getTime();
   
   if (task.audit_status === 'rechazado') return <Badge className="bg-red-600 text-white border-red-700 animate-pulse">RECHAZADA</Badge>;
@@ -150,7 +148,7 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
                 ? 'bg-red-600 hover:bg-red-700' // Rojo para corregir
                 : isDone 
                   ? 'bg-slate-600 hover:bg-slate-700' // Gris para ver detalle
-                  : 'bg-[#091056] hover:bg-[#091056]/90' // NAVY BLUE BRAND para ejecutar
+                  : 'bg-[#091056] hover:bg-[#091056]/90' // NAVY BLUE CORPORATIVO (CAMBIADO)
             }`}
             size="sm"
             onClick={() => onAction(task)}
