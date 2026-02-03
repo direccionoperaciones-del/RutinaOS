@@ -37,8 +37,9 @@ interface PDVFormProps {
 export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormProps) {
   const { toast } = useToast();
   const [users, setUsers] = useState<any[]>([]);
-  const [cities, setCities] = useState<any[]>([]); // Estado para ciudades
+  const [cities, setCities] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("general"); // Controlar pestaña activa
 
   const form = useForm<PDVFormValues>({
     resolver: zodResolver(pdvSchema),
@@ -78,6 +79,9 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
         if (citiesData) setCities(citiesData);
       };
       loadData();
+      
+      // Resetear tab al abrir
+      setActiveTab("general");
     }
   }, [open]);
 
@@ -234,6 +238,28 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
     }
   };
 
+  // Manejar errores de validación
+  const onError = (errors: any) => {
+    console.log("Errores de validación:", errors);
+    
+    // Identificar en qué tab está el error para cambiar a él
+    const errorKeys = Object.keys(errors);
+    
+    if (errorKeys.some(k => ['nombre', 'codigo_interno', 'ciudad', 'direccion', 'telefono'].includes(k))) {
+      setActiveTab('general');
+    } else if (errorKeys.some(k => ['latitud', 'longitud', 'radio_gps'].includes(k))) {
+      setActiveTab('geo');
+    } else if (errorKeys.some(k => ['responsable_id'].includes(k))) {
+      setActiveTab('responsable');
+    }
+
+    toast({ 
+      variant: "destructive", 
+      title: "Faltan datos", 
+      description: "Por favor revisa los campos marcados en rojo." 
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
@@ -242,8 +268,8 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
         </DialogHeader>
         
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <Tabs defaultValue="general" className="w-full">
+          <form onSubmit={form.handleSubmit(onSubmit, onError)} className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="general"><Building className="w-4 h-4 mr-2"/> General</TabsTrigger>
                 <TabsTrigger value="geo"><MapPin className="w-4 h-4 mr-2"/> Ubicación</TabsTrigger>
@@ -251,7 +277,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
               </TabsList>
 
               <div className="py-4">
-                <TabsContent value="general" className="space-y-4">
+                <TabsContent value="general" className="space-y-4 mt-0">
                   <div className="grid grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
@@ -344,7 +370,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                   />
                 </TabsContent>
 
-                <TabsContent value="geo" className="space-y-4">
+                <TabsContent value="geo" className="space-y-4 mt-0">
                   <div className="bg-muted p-4 rounded-md text-sm text-muted-foreground mb-4">
                     Las coordenadas son obligatorias si asignas rutinas con validación GPS.
                   </div>
@@ -389,7 +415,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
                   />
                 </TabsContent>
 
-                <TabsContent value="responsable" className="space-y-4">
+                <TabsContent value="responsable" className="space-y-4 mt-0">
                   <FormField
                     control={form.control}
                     name="responsable_id"
