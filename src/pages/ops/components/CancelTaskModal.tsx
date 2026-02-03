@@ -22,30 +22,58 @@ export function CancelTaskModal({ task, open, onOpenChange, onSuccess }: CancelT
   const [loading, setLoading] = useState(false);
 
   const handleCancel = async () => {
+    console.log("🔵 CLICK GUARDAR - Iniciando proceso de cancelación");
+    
+    // Validar estado del formulario y datos de la tarea
+    console.log("📋 Datos Formulario:", { 
+      reason, 
+      scope, 
+      taskId: task?.id, 
+      assignmentId: task?.assignment_id 
+    });
+
     if (!reason.trim()) {
+      console.warn("⚠️ Validación fallida: Motivo vacío");
       toast({ variant: "destructive", title: "Motivo requerido", description: "Debes explicar por qué se cancela la tarea." });
       return;
     }
 
     setLoading(true);
     try {
+      const payload = {
+        taskId: task.id,
+        reason: reason,
+        scope: scope
+      };
+
+      console.log("🚀 Enviando petición al backend (cancel-task):", payload);
+
       const { data, error } = await supabase.functions.invoke('cancel-task', {
-        body: {
-          taskId: task.id,
-          reason: reason,
-          scope: scope
-        }
+        body: payload
       });
+
+      console.log("📥 Respuesta Backend:", { data, error });
 
       if (error) throw error;
       if (data && data.error) throw new Error(data.error);
 
-      toast({ title: "Tarea Cancelada", description: data.message });
+      // Feedback específico si se intentó desactivar la asignación
+      if (scope === 'future' && data.debugInfo?.assignmentUpdate === 'skipped_no_id') {
+        console.warn("⚠️ No se pudo desactivar la asignación porque la tarea no tiene assignment_id vinculado.");
+        toast({ 
+          title: "Tarea Cancelada (Parcial)", 
+          description: "La tarea de hoy se canceló, pero no se encontró la asignación recurrente para desactivar." 
+        });
+      } else {
+        toast({ title: "Tarea Cancelada", description: data.message });
+      }
+
       onSuccess();
       onOpenChange(false);
       setReason(""); // Reset
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error("❌ Error CRÍTICO en handleCancel:", error);
+      toast({ variant: "destructive", title: "Error", description: error.message || "Error desconocido al cancelar." });
     } finally {
       setLoading(false);
     }

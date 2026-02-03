@@ -72,17 +72,29 @@ serve(async (req) => {
 
     // 5. Handle Scope "TODAY_AND_FUTURE" (Disable Assignment)
     let extraMessage = ""
-    if (scope === 'future' && task.assignment_id) {
-      const { error: assignError } = await supabase
-        .from('routine_assignments')
-        .update({ 
-          estado: 'inactiva',
-          notas: `Desactivada automáticamente al cancelar tarea del día. Motivo: ${reason}`
-        })
-        .eq('id', task.assignment_id)
-      
-      if (!assignError) {
-        extraMessage = " y se ha desactivado la asignación recurrente."
+    let debugAssignmentInfo = "none";
+
+    if (scope === 'future') {
+      if (task.assignment_id) {
+        const { error: assignError, count } = await supabase
+          .from('routine_assignments')
+          .update({ 
+            estado: 'inactiva',
+            notas: `Desactivada por cancelación de tarea (${taskId}). Motivo: ${reason}`
+          })
+          .eq('id', task.assignment_id)
+          .select(); // Select to ensure we get confirmation
+        
+        if (assignError) {
+          console.error("Error updating assignment:", assignError);
+          debugAssignmentInfo = `error: ${assignError.message}`;
+        } else {
+          extraMessage = " y se ha desactivado la asignación recurrente.";
+          debugAssignmentInfo = "success_deactivated";
+        }
+      } else {
+        debugAssignmentInfo = "skipped_no_id";
+        console.log(`Task ${taskId} has no assignment_id, skipping future cancellation.`);
       }
     }
 
@@ -93,11 +105,19 @@ serve(async (req) => {
       action: 'cancel_task',
       table_name: 'task_instances',
       record_id: taskId,
-      new_values: { reason, scope, state: 'cancelada' }
+      new_values: { reason, scope, state: 'cancelada', assignment_update: debugAssignmentInfo }
     })
 
     return new Response(
-      JSON.stringify({ success: true, message: `Tarea cancelada correctamente${extraMessage}` }),
+      JSON.stringify({ 
+        success: true, 
+        message: `Tarea cancelada correctamente${extraMessage}`,
+        debugInfo: {
+          scope,
+          hasAssignmentId: !!task.assignment_id,
+          assignmentUpdate: debugAssignmentInfo
+        }
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
