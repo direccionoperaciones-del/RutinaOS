@@ -5,9 +5,12 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 export function useMyTasks(dateFrom: string, dateTo: string) {
   const { user, profile } = useCurrentUser();
 
+  // Validar que las fechas existan antes de habilitar la query
+  const isEnabled = !!user && !!profile && !!dateFrom && !!dateTo;
+
   return useQuery({
     queryKey: ['my-tasks', user?.id, dateFrom, dateTo],
-    enabled: !!user && !!profile,
+    enabled: isEnabled,
     placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!user) throw new Error("No autenticado");
@@ -29,13 +32,14 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         `);
 
       // --- LÓGICA DE VISIBILIDAD CORREGIDA ---
-      // 1. Traer tareas del rango de fechas seleccionado (para ver historial/completadas)
-      // 2. O traer tareas que sigan PENDIENTES (para que las mensuales no desaparezcan después del día 1)
+      // 1. Traer tareas del rango de fechas seleccionado (Histórico)
+      // 2. O traer tareas PENDIENTES o EN PROCESO (Vigentes de días anteriores)
       const rangeCondition = `and(fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo})`;
       const pendingCondition = `estado.eq.pendiente`;
       const processCondition = `estado.eq.en_proceso`;
       
       // Aplicamos filtro OR: (En Rango) O (Pendiente) O (En Proceso)
+      // Esto asegura que tareas mensuales creadas el día 1 sigan visibles el día 20 si no se han cerrado.
       query = query.or(`${rangeCondition},${pendingCondition},${processCondition}`);
       
       // --- RESTRICCIÓN DE SEGURIDAD (Tenant & Role) ---
@@ -49,12 +53,10 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         const myPdvIds = assignments?.map(a => a.pdv_id) || [];
         
         if (myPdvIds.length > 0) {
-          // Ver tareas de mis PDVs O tareas que yo haya completado (por si me cambiaron de PDV)
-          // Usamos filter en JS para esto porque mezclar ORs de RLS y lógica de negocio en Supabase puede ser complejo
-          // Pero aquí aplicamos filtro directo de columna para eficiencia
+          // Ver tareas de mis PDVs asignados
           query = query.in('pdv_id', myPdvIds);
         } else {
-          // Si no tiene PDV, solo ve lo que haya completado él
+          // Si no tiene PDV, solo ve lo que haya completado él (histórico personal)
           query = query.eq('completado_por', user.id);
         }
       }
@@ -69,13 +71,7 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         throw error;
       }
 
-      // Filtrado final de seguridad en cliente para asegurar que el Admin no vea cosas raras si el OR trajo de más
-      let finalData = data || [];
-      
-      // Eliminar duplicados si el OR trajo la misma tarea por fecha y estado (Supabase lo maneja, pero por seguridad)
-      // Y excluir canceladas a menos que se quiera ver explícitamente (se maneja en la UI)
-      
-      return finalData;
+      return data || [];
     }
   });
 }
