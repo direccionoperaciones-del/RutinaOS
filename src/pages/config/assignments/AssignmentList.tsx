@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Search, Plus, Download, Upload, Loader2, Trash2 } from "lucide-react";
+import { Search, Plus, Download, Upload, Loader2, Trash2, Power } from "lucide-react";
 import { AssignmentForm } from "./AssignmentForm";
 import { useToast } from "@/hooks/use-toast";
 
@@ -43,6 +43,29 @@ export default function AssignmentList() {
   useEffect(() => {
     fetchAssignments();
   }, []);
+
+  const handleToggleStatus = async (assignment: any) => {
+    const newStatus = assignment.estado === 'activa' ? 'inactiva' : 'activa';
+    
+    // Actualización optimista en UI
+    setAssignments(prev => prev.map(a => a.id === assignment.id ? { ...a, estado: newStatus } : a));
+
+    const { error } = await supabase
+      .from('routine_assignments')
+      .update({ estado: newStatus })
+      .eq('id', assignment.id);
+
+    if (error) {
+      toast({ variant: "destructive", title: "Error", description: "No se pudo cambiar el estado." });
+      // Revertir si falla
+      fetchAssignments();
+    } else {
+      toast({ 
+        title: "Estado actualizado", 
+        description: `La asignación ahora está ${newStatus}.` 
+      });
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Estás seguro de eliminar esta asignación?")) return;
@@ -329,9 +352,20 @@ export default function AssignmentList() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleDelete(assign.id)}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        <div className="flex justify-end gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            onClick={() => handleToggleStatus(assign)}
+                            className={assign.estado === 'activa' ? "text-green-600 hover:text-green-700 hover:bg-green-50" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"}
+                            title={assign.estado === 'activa' ? "Desactivar" : "Activar"}
+                          >
+                            <Power className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-red-50" onClick={() => handleDelete(assign.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
