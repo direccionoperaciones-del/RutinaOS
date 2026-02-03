@@ -274,8 +274,17 @@ const DashboardLayout = () => {
             </Button>
           </div>
           
-          <div className="flex items-center justify-center gap-2 opacity-30 text-white hover:opacity-80 transition-opacity select-none">
-            <span className="text-[10px] font-medium uppercase tracking-widest">Powered by BackHouse 360</span>
+          {/* Powered by - Diseño Solicitado */}
+          <div className="flex items-center justify-center gap-2 pt-4 border-t border-white/10 select-none">
+            <span className="text-[10px] text-white/60 font-medium">Powered by</span>
+            <div className="flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity">
+              <img 
+                src="https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/BackHouseMini.jpg" 
+                alt="BackHouse 360" 
+                className="h-4 w-auto rounded-sm shadow-sm"
+              />
+              <span className="text-[10px] font-bold text-white tracking-wide">BackHouse 360</span>
+            </div>
           </div>
         </div>
       </aside>
