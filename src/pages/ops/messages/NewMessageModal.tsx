@@ -135,7 +135,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         finalRecipientId = values.recipient_id as string;
       }
 
-      // 1. Enviar Mensaje (RPC)
+      // 1. Enviar Mensaje y Crear Tareas (Todo en una sola llamada RPC)
+      // La función SQL 'send_broadcast_message' se encarga de crear las instancias de tareas
+      // si recibe un p_rutina_id válido.
       const { data: messageId, error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -144,94 +146,17 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
         p_recipient_id: finalRecipientId,
-        p_rutina_id: null, // Desactivar creación automática SQL
+        
+        // Habilitamos la creación automática enviando la rutina seleccionada
+        p_rutina_id: values.tipo === 'tarea_flash' ? (values.rutina_id || null) : null,
+        
         p_fecha_programada: values.scheduled_date || null,
         p_hora_programada: values.scheduled_time || null
       });
 
       if (error) throw error;
 
-      // 2. CREACIÓN MANUAL DE TAREAS (Frontend Logic para Tareas Flash)
-      if (values.tipo === 'tarea_flash' && values.rutina_id) {
-        
-        // A. Resolver Usuarios
-        let targetUserIds: string[] = [];
-        
-        if (values.recipient_type === 'user') {
-          targetUserIds = [values.recipient_id as string];
-        } else if (values.recipient_type === 'role') {
-          const { data } = await supabase.from('profiles').select('id').eq('role', values.recipient_id).eq('activo', true);
-          targetUserIds = (data || []).map(u => u.id);
-        } else if (values.recipient_type === 'pdv') {
-          const pdvIds = Array.isArray(values.recipient_id) ? values.recipient_id : [values.recipient_id];
-          const { data } = await supabase.from('pdv_assignments')
-            .select('user_id')
-            .in('pdv_id', pdvIds)
-            .eq('vigente', true);
-          targetUserIds = (data || []).map(u => u.user_id);
-        } else if (values.recipient_type === 'all') {
-          const { data } = await supabase.from('profiles').select('id').eq('activo', true);
-          targetUserIds = (data || []).map(u => u.id);
-        }
-
-        // Eliminar duplicados
-        targetUserIds = [...new Set(targetUserIds)];
-
-        if (targetUserIds.length > 0) {
-          // B. Mapear PDVs
-          const { data: assignments } = await supabase
-            .from('pdv_assignments')
-            .select('user_id, pdv_id')
-            .in('user_id', targetUserIds)
-            .eq('vigente', true);
-          
-          const mapUserPdv = new Map();
-          assignments?.forEach(a => mapUserPdv.set(a.user_id, a.pdv_id));
-
-          // C. Fallback: Obtener un PDV por defecto si el usuario no tiene (Para que la tarea se cree sí o sí)
-          const { data: fallbackPdv } = await supabase
-            .from('pdv')
-            .select('id')
-            .eq('tenant_id', profile.tenant_id)
-            .eq('activo', true)
-            .limit(1)
-            .maybeSingle();
-          
-          const defaultPdvId = fallbackPdv?.id;
-
-          // D. Construir Tareas
-          const tasksToInsert = targetUserIds.map(uid => {
-            const pdvId = mapUserPdv.get(uid) || defaultPdvId;
-            
-            if (!pdvId) return null; // Si no hay ni PDV asignado ni default, no se puede crear
-
-            const fecha = values.scheduled_date || new Date().toISOString().split('T')[0];
-
-            return {
-              tenant_id: profile.tenant_id,
-              rutina_id: values.rutina_id,
-              pdv_id: pdvId,
-              responsable_id: uid,
-              fecha_programada: fecha,
-              hora_inicio_snapshot: '00:00:00',
-              hora_limite_snapshot: '23:59:59',
-              estado: 'pendiente',
-              prioridad_snapshot: 'critica', // Flash siempre es crítica
-              created_at: new Date().toISOString()
-            };
-          }).filter(t => t !== null);
-
-          if (tasksToInsert.length > 0) {
-            const { error: taskError } = await supabase.from('task_instances').insert(tasksToInsert);
-            if (taskError) {
-              console.error("Error creating flash tasks:", taskError);
-              toast({ variant: "destructive", title: "Advertencia", description: "Mensaje enviado, pero hubo error creando algunas tareas." });
-            }
-          }
-        }
-      }
-
-      // 3. Notificaciones Push
+      // 2. Notificaciones Push
       if (!values.scheduled_date && messageId) {
         supabase.functions.invoke('notify-message', { body: { message_id: messageId } })
           .catch(e => console.error("Push Error", e));
