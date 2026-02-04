@@ -65,17 +65,29 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
   const isRejected = task.audit_status === 'rechazado';
   const isDone = (task.estado.startsWith('completada') || task.estado === 'incumplida') && !isRejected;
   const isCancelled = task.estado === 'cancelada';
+  const isFlashTask = task.prioridad_snapshot === 'critica';
   
   const deadline = calculateTaskDeadline(task);
   const deadlineStr = format(deadline, "d MMM HH:mm", { locale: es });
 
   return (
-    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : (isRejected ? 'border-l-red-600 border-red-200 bg-red-50/20' : 'border-l-secondary')}`}>
+    <Card className={`flex flex-col h-full hover:shadow-lg transition-all duration-200 border-l-4 ${
+      isCancelled ? 'opacity-70 border-l-gray-400 bg-gray-50' : 
+      (isRejected ? 'border-l-red-600 border-red-200 bg-red-50/20' : 
+        (isFlashTask ? 'border-l-purple-600 shadow-md' : 'border-l-secondary')
+      )}`
+    }>
       <CardHeader className="p-3 pb-1 space-y-1"> 
         <div className="flex justify-between items-start">
-          <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${isCancelled ? 'bg-gray-500 border-gray-600' : styles.badge}`}>
-            {task.prioridad_snapshot}
-          </Badge>
+          {isFlashTask ? (
+            <Badge className="bg-purple-600 text-white border-purple-700 px-2 py-0.5 text-[10px] font-bold animate-pulse shadow-sm">
+              ⚡ TAREA FLASH
+            </Badge>
+          ) : (
+            <Badge className={`uppercase text-[9px] font-bold px-1.5 py-0 rounded-sm ${isCancelled ? 'bg-gray-500 border-gray-600' : styles.badge}`}>
+              {task.prioridad_snapshot}
+            </Badge>
+          )}
           
           {task.audit_status === 'aprobado' && (
             <Badge className="bg-green-500 text-white border-green-600 gap-1 px-1.5 text-[10px]">
@@ -87,7 +99,7 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
               <ShieldAlert className="w-3 h-3" /> Corregir
             </Badge>
           )}
-          {(!task.audit_status || task.audit_status === 'pendiente') && !isCancelled && (
+          {(!task.audit_status || task.audit_status === 'pendiente') && !isCancelled && !isFlashTask && (
              <div className="flex items-center gap-1 text-[9px] text-muted-foreground uppercase font-medium bg-muted px-1.5 py-0 rounded-full">
                {getFrequencyIcon(r.frecuencia)}
                {r.frecuencia}
@@ -148,7 +160,7 @@ const TaskCard = ({ task, onAction, onCancel, canCancel }: { task: any, onAction
                 ? 'bg-red-600 hover:bg-red-700' // Rojo para corregir
                 : isDone 
                   ? 'bg-slate-600 hover:bg-slate-700' // Gris para ver detalle
-                  : 'bg-[#091056] hover:bg-[#091056]/90' // NAVY BLUE CORPORATIVO (CAMBIADO)
+                  : (isFlashTask ? 'bg-purple-700 hover:bg-purple-800' : 'bg-[#091056] hover:bg-[#091056]/90') // Morado para Flash, Navy para normal
             }`}
             size="sm"
             onClick={() => onAction(task)}
