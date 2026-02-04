@@ -8,41 +8,62 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  const timestamp = new Date().toISOString();
+  
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    // Usamos Service Key para poder leer suscripciones de todos
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
-
+    // 1. Obtener Payload
     const { message_id } = await req.json()
+    console.log("[notify-message] START", { messageId: message_id, ts: timestamp })
+
     if (!message_id) throw new Error("Message ID missing");
 
-    // 1. Datos del mensaje
-    const { data: msg } = await supabaseAdmin.from('messages').select('tipo, asunto, cuerpo').eq('id', message_id).single();
-    if (!msg) throw new Error("Message not found");
+    // 2. Setup Cliente Admin (Para leer mensajes y recipients)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 2. Destinatarios
-    const { data: recipients } = await supabaseAdmin.from('message_receipts').select('user_id').eq('message_id', message_id);
-    if (!recipients?.length) return new Response(JSON.stringify({ message: "No recipients" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // 3. Obtener Datos del Mensaje
+    const { data: msg, error: msgError } = await supabaseAdmin
+      .from('messages')
+      .select('tipo, asunto, cuerpo')
+      .eq('id', message_id)
+      .single();
 
-    // 3. Preparar contenido
+    if (msgError || !msg) {
+      console.error("[notify-message] Error fetching message:", msgError);
+      throw new Error("Message not found");
+    }
+
+    // 4. Obtener Destinatarios
+    const { data: recipients, error: rxError } = await supabaseAdmin
+      .from('message_receipts')
+      .select('user_id')
+      .eq('message_id', message_id);
+
+    if (rxError) throw rxError;
+
+    console.log("[notify-message] recipients", { 
+      count: recipients?.length || 0, 
+      sample: recipients?.slice(0, 2) 
+    });
+
+    if (!recipients || recipients.length === 0) {
+      return new Response(JSON.stringify({ success: true, message: "No recipients" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // 5. Preparar Contenido
     let prefix = "Nuevo Mensaje";
     if (msg.tipo === 'comunicado') prefix = "📢 Comunicado";
     if (msg.tipo === 'tarea_flash') prefix = "🚨 Tarea Flash";
 
     const title = `${prefix}: ${msg.asunto}`;
-    const body = msg.cuerpo.length > 100 ? msg.cuerpo.substring(0, 100) + '...' : msg.cuerpo;
+    const body = msg.cuerpo.length > 120 ? msg.cuerpo.substring(0, 120) + '...' : msg.cuerpo;
 
-    // 4. Enviar directamente (SIN FETCH)
-    console.log(`[Notify] Enviando push para mensaje ${message_id} a ${recipients.length} usuarios.`);
-    
-    // Ejecutamos en paralelo
+    // 6. Enviar en Paralelo (Usando shared logic, NO HTTP)
     const promises = recipients.map(r => 
-      sendPushToUser(supabaseAdmin, r.user_id, {
+      sendPushToUser(r.user_id, {
         title,
         body,
         url: '/messages'
@@ -51,10 +72,12 @@ serve(async (req) => {
 
     await Promise.allSettled(promises);
 
+    console.log("[notify-message] END - Batch processing complete");
+
     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
-    console.error("Error in notify-message:", error);
+    console.error("[notify-message] ERROR:", error.message);
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })

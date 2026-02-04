@@ -1,83 +1,98 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
-// Inicializar configuración VAPID (se puede llamar múltiples veces sin problema)
-const initVapid = () => {
-  const vapidPublic = Deno.env.get('VAPID_PUBLIC_KEY');
-  const vapidPrivate = Deno.env.get('VAPID_PRIVATE_KEY');
-
-  if (!vapidPublic || !vapidPrivate) {
-    console.error("FALTAN LLAVES VAPID EN SECRETS");
-    throw new Error("Configuración VAPID incompleta");
-  }
-
-  try {
-    webpush.setVapidDetails(
-      'mailto:admin@movacheck.app',
-      vapidPublic,
-      vapidPrivate
-    );
-  } catch (err) {
-    console.error("Error configurando VAPID:", err);
-    throw new Error("Llaves VAPID inválidas");
-  }
-};
-
 interface PushPayload {
   title: string;
   body: string;
   url?: string;
 }
 
-// Función principal para enviar a un usuario
-export const sendPushToUser = async (
-  supabaseAdmin: any, 
-  userId: string, 
-  payload: PushPayload
-) => {
-  // Asegurar VAPID
-  initVapid();
+export const sendPushToUser = async (userId: string, payload: PushPayload) => {
+  const timestamp = new Date().toISOString();
+  
+  // 1. Validar Secrets (Paso 3 del plan)
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY');
+  const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY');
+  const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@movacheck.app';
 
-  // 1. Obtener suscripciones
-  const { data: subs, error } = await supabaseAdmin
+  console.log(`[push] env check`, { 
+    ts: timestamp,
+    hasUrl: !!SUPABASE_URL, 
+    hasSrv: !!SUPABASE_SERVICE_ROLE_KEY, 
+    hasVapidPub: !!VAPID_PUBLIC_KEY, 
+    hasVapidPriv: !!VAPID_PRIVATE_KEY 
+  });
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.error("[push] CRITICAL: Missing environment variables.");
+    return { success: false, error: "Configuration Error" };
+  }
+
+  // 2. Configurar WebPush
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  } catch (err: any) {
+    console.error("[push] VAPID Setup Error:", err.message);
+    return { success: false, error: "VAPID Error" };
+  }
+
+  // 3. Crear Cliente Admin (Paso 6: Forzar Service Role)
+  // Creamos el cliente aquí para asegurar que usamos la Service Key, ignorando quién llamó a la función
+  const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // 4. Buscar Suscripciones (Paso 5)
+  console.log(`[push] lookup subscriptions`, { userId });
+  
+  const { data: subs, error: dbError } = await supabaseAdmin
     .from('push_subscriptions')
     .select('*')
     .eq('user_id', userId);
 
-  if (error) {
-    console.error(`[Push] Error fetching subs for user ${userId}:`, error);
-    return { success: false, error: error.message };
+  if (dbError) {
+    console.error("[push] DB Error fetching subscriptions:", dbError.message);
+    return { success: false, error: dbError.message };
   }
+
+  console.log(`[push] subscriptions found`, { userId, count: subs?.length || 0 });
 
   if (!subs || subs.length === 0) {
-    console.log(`[Push] Usuario ${userId} no tiene dispositivos registrados.`);
-    return { success: true, sent: 0, total: 0 };
+    return { success: true, sent: 0, message: "No active subscriptions for user" };
   }
 
+  // 5. Enviar (Paso 7: Manejo de errores)
   const payloadString = JSON.stringify(payload);
-  let successCount = 0;
+  let sentCount = 0;
+  let failCount = 0;
 
-  // 2. Enviar a cada dispositivo
   await Promise.all(subs.map(async (sub: any) => {
     try {
       await webpush.sendNotification({
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth }
       }, payloadString);
-      successCount++;
-    } catch (err: any) {
-      console.error(`[Push] Error enviando a sub ${sub.id}:`, err.statusCode, err.message);
       
-      // Borrar suscripción inválida (410 Gone / 404 Not Found)
-      if (err.statusCode === 410 || err.statusCode === 404) {
+      sentCount++;
+    } catch (err: any) {
+      failCount++;
+      const statusCode = err.statusCode;
+      
+      console.error("[push] send failed", { 
+        subId: sub.id, 
+        endpoint: sub.endpoint.slice(0, 30) + '...', 
+        status: statusCode, 
+        msg: err.message 
+      });
+
+      // Limpieza automática de suscripciones muertas
+      if (statusCode === 410 || statusCode === 404) {
+        console.log(`[push] Deleting dead subscription: ${sub.id}`);
         await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);
       }
     }
   }));
 
-  console.log(`[Push] Enviado a ${userId}: ${successCount}/${subs.length} éxitos.`);
-  return { success: true, sent: successCount, total: subs.length };
+  console.log(`[push] finished for user ${userId}`, { sent: sentCount, failed: failCount });
+  return { success: true, sent: sentCount, failed: failCount };
 };
-
-// Exportar webpush configurado por si se necesita uso directo (ej. test)
-export { webpush, initVapid };

@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
-import { sendPushToUser, initVapid, webpush } from "../_shared/pushNotifier.ts"
+import { sendPushToUser } from "../_shared/pushNotifier.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,34 +7,19 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+    // 1. Obtener Datos
+    const { user_id, title, body, url } = await req.json()
+    console.log("[send-push] Manual Trigger", { user_id });
 
-    const { user_id, title, body, url, direct_subscription } = await req.json()
-
-    // --- MODO TEST (Desde botón de configuración) ---
-    if (direct_subscription) {
-      try {
-        initVapid(); // Asegurar configuración
-        const payload = JSON.stringify({ title, body, url });
-        await webpush.sendNotification(direct_subscription, payload);
-        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      } catch (err: any) {
-        console.error("Error en test directo:", err);
-        return new Response(JSON.stringify({ success: false, error: err.message, statusCode: err.statusCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-    }
-
-    // --- MODO NORMAL (Usando lógica compartida) ---
     if (!user_id) throw new Error("User ID requerido.");
 
-    const result = await sendPushToUser(supabaseAdmin, user_id, { title, body, url });
+    // 2. Usar lógica compartida
+    // Nota: Pasamos 'null' como cliente porque la función shared lo crea internamente
+    // Pero espera el argumento. Lo refactoricé para que cree su propio cliente.
+    const result = await sendPushToUser(user_id, { title, body, url });
 
     return new Response(
       JSON.stringify(result), 
@@ -43,7 +27,7 @@ serve(async (req) => {
     );
 
   } catch (error: any) {
-    console.error("Critical Error send-push:", error);
+    console.error("[send-push] Error:", error.message);
     return new Response(
       JSON.stringify({ success: false, error: error.message }), 
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

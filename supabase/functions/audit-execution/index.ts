@@ -10,20 +10,23 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
+  const timestamp = new Date().toISOString();
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Auth check (verificamos quien llama)
+    // 1. Auth Check
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Auth required');
     const { data: { user: auditor }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !auditor) throw new Error('Unauthorized');
 
     const { taskId, status, note } = await req.json();
+    console.log("[audit-execution] START", { taskId, status, auditorId: auditor.id, ts: timestamp });
 
-    // Update
+    // 2. Update DB
     const { error: updError } = await supabaseAdmin
       .from('task_instances')
       .update({
@@ -36,42 +39,55 @@ serve(async (req) => {
 
     if (updError) throw updError;
 
-    // Notify Executor
+    // 3. Notificar al Ejecutor
     const { data: task } = await supabaseAdmin
       .from('task_instances')
       .select('completado_por, routine_templates(nombre), pdv(nombre), tenant_id')
       .eq('id', taskId)
       .single();
 
-    if (task && task.completado_por && task.completado_por !== auditor.id) {
-      const isApproved = status === 'approved';
-      const title = isApproved ? '✅ Tarea Aprobada' : '🚨 Tarea Rechazada';
-      const body = isApproved 
-        ? `Aprobada: ${task.routine_templates?.nombre}`
-        : `Rechazada: ${task.routine_templates?.nombre}. Nota: ${note}`;
+    if (task && task.completado_por) {
+      // Evitar auto-notificación si uno se audita a sí mismo
+      if (task.completado_por !== auditor.id) {
+        
+        console.log("[audit-execution] notifying user", { 
+          executorId: task.completado_por, 
+          taskName: task.routine_templates?.nombre 
+        });
 
-      // Insert Notification (DB)
-      await supabaseAdmin.from('notifications').insert({
-        tenant_id: task.tenant_id,
-        user_id: task.completado_por,
-        type: isApproved ? 'routine_approved' : 'routine_rejected',
-        title,
-        entity_id: taskId
-      });
+        const isApproved = status === 'approved';
+        const title = isApproved ? '✅ Tarea Aprobada' : '🚨 Tarea Rechazada';
+        const body = isApproved 
+          ? `Aprobada: ${task.routine_templates?.nombre}`
+          : `Rechazada: ${task.routine_templates?.nombre}. Nota: ${note || 'Sin nota'}`;
 
-      // Send Push (Directly - NO FETCH)
-      console.log(`[Audit] Enviando push a ejecutor ${task.completado_por}`);
-      await sendPushToUser(supabaseAdmin, task.completado_por, {
-        title,
-        body,
-        url: '/tasks'
-      });
+        // A. Insertar Notificación en DB (Historial)
+        await supabaseAdmin.from('notifications').insert({
+          tenant_id: task.tenant_id,
+          user_id: task.completado_por,
+          type: isApproved ? 'routine_approved' : 'routine_rejected',
+          title,
+          entity_id: taskId
+        });
+
+        // B. Enviar Push (Directo)
+        await sendPushToUser(task.completado_por, {
+          title,
+          body,
+          url: '/tasks'
+        });
+
+      } else {
+        console.log("[audit-execution] Skip notification: Auditor is the executor.");
+      }
+    } else {
+      console.warn("[audit-execution] Task not found or no executor to notify.");
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
-    console.error("Error in audit-execution:", error);
+    console.error("[audit-execution] ERROR:", error.message);
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 })
