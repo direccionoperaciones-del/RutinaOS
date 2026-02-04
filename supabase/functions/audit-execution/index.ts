@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { sendPushToUser } from "../_shared/pushNotifier.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,18 +13,18 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Auth check
+    // Auth check (verificamos quien llama)
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) throw new Error('Auth required');
-    const { data: { user: auditor }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    const { data: { user: auditor }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
     if (authError || !auditor) throw new Error('Unauthorized');
 
     const { taskId, status, note } = await req.json();
 
     // Update
-    const { error: updError } = await supabase
+    const { error: updError } = await supabaseAdmin
       .from('task_instances')
       .update({
         audit_status: status === 'approved' ? 'aprobado' : 'rechazado',
@@ -36,7 +37,7 @@ serve(async (req) => {
     if (updError) throw updError;
 
     // Notify Executor
-    const { data: task } = await supabase
+    const { data: task } = await supabaseAdmin
       .from('task_instances')
       .select('completado_por, routine_templates(nombre), pdv(nombre), tenant_id')
       .eq('id', taskId)
@@ -49,8 +50,8 @@ serve(async (req) => {
         ? `Aprobada: ${task.routine_templates?.nombre}`
         : `Rechazada: ${task.routine_templates?.nombre}. Nota: ${note}`;
 
-      // Insert Notification
-      await supabase.from('notifications').insert({
+      // Insert Notification (DB)
+      await supabaseAdmin.from('notifications').insert({
         tenant_id: task.tenant_id,
         user_id: task.completado_por,
         type: isApproved ? 'routine_approved' : 'routine_rejected',
@@ -58,22 +59,19 @@ serve(async (req) => {
         entity_id: taskId
       });
 
-      // Send Push
-      await fetch(`${supabaseUrl}/functions/v1/send-push`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseServiceKey}` },
-        body: JSON.stringify({
-          user_id: task.completado_por,
-          title,
-          body,
-          url: '/tasks' // Redirige a mis tareas
-        })
-      }).catch(console.error);
+      // Send Push (Directly - NO FETCH)
+      console.log(`[Audit] Enviando push a ejecutor ${task.completado_por}`);
+      await sendPushToUser(supabaseAdmin, task.completado_por, {
+        title,
+        body,
+        url: '/tasks'
+      });
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
+    console.error("Error in audit-execution:", error);
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 })
