@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import webpush from "npm:web-push@3.6.7";
 
 interface PushPayload {
@@ -10,7 +10,7 @@ interface PushPayload {
 export const sendPushToUser = async (userId: string, payload: PushPayload) => {
   const timestamp = new Date().toISOString();
   
-  // 1. Validar Secrets (Paso 3 del plan)
+  // 1. Validar Secrets
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY');
@@ -38,11 +38,10 @@ export const sendPushToUser = async (userId: string, payload: PushPayload) => {
     return { success: false, error: "VAPID Error" };
   }
 
-  // 3. Crear Cliente Admin (Paso 6: Forzar Service Role)
-  // Creamos el cliente aquí para asegurar que usamos la Service Key, ignorando quién llamó a la función
+  // 3. Crear Cliente Admin
   const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // 4. Buscar Suscripciones (Paso 5)
+  // 4. Buscar Suscripciones
   console.log(`[push] lookup subscriptions`, { userId });
   
   const { data: subs, error: dbError } = await supabaseAdmin
@@ -61,7 +60,7 @@ export const sendPushToUser = async (userId: string, payload: PushPayload) => {
     return { success: true, sent: 0, message: "No active subscriptions for user" };
   }
 
-  // 5. Enviar (Paso 7: Manejo de errores)
+  // 5. Enviar
   const payloadString = JSON.stringify(payload);
   let sentCount = 0;
   let failCount = 0;
@@ -85,7 +84,6 @@ export const sendPushToUser = async (userId: string, payload: PushPayload) => {
         msg: err.message 
       });
 
-      // Limpieza automática de suscripciones muertas
       if (statusCode === 410 || statusCode === 404) {
         console.log(`[push] Deleting dead subscription: ${sub.id}`);
         await supabaseAdmin.from('push_subscriptions').delete().eq('id', sub.id);

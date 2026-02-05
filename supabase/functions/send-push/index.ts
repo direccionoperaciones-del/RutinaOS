@@ -7,7 +7,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // 1. Manejo de CORS Preflight (OPTIONS)
+  // 1. Manejo de CORS Preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -15,27 +15,17 @@ serve(async (req) => {
   try {
     console.log("[send-push] START");
     
-    // 2. Validación de Entorno (Logs de diagnóstico)
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY');
-    const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY');
-
-    console.log("[send-push] env check", { 
-      hasUrl: !!SUPABASE_URL, 
-      hasSrv: !!SUPABASE_SERVICE_ROLE_KEY, 
-      hasVapidPub: !!VAPID_PUBLIC_KEY, 
-      hasVapidPriv: !!VAPID_PRIVATE_KEY 
-    });
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
-       throw new Error("Faltan variables de entorno (Secrets) en Supabase.");
+    // 2. Validación Básica de Entorno (Fail fast)
+    if (!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+       throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
     }
 
     // 3. Parse Body
     let body;
     try {
-        body = await req.json();
+        const text = await req.text();
+        if (!text) throw new Error("Empty body");
+        body = JSON.parse(text);
     } catch (e) {
         throw new Error("Body inválido o vacío (JSON esperado).");
     }
@@ -56,12 +46,11 @@ serve(async (req) => {
   } catch (error: any) {
     console.error("[send-push] Error Fatal:", error.message);
     
-    // Siempre devolver JSON con CORS, incluso en error 500
     return new Response(
       JSON.stringify({ 
         success: false, 
         error: error.message,
-        details: "Revisa los logs de la Edge Function para más información."
+        details: "Check function logs"
       }), 
       { 
         status: 500, 
