@@ -1,5 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import webpush from "npm:web-push@3.6.7";
+import { createClient } from "@supabase/supabase-js";
+import webpush from "web-push";
 
 interface PushPayload {
   title: string;
@@ -24,6 +24,7 @@ export const sendPushToUser = async (userId: string, payload: PushPayload) => {
 
   // 2. Configurar WebPush
   try {
+    // @ts-ignore: web-push types might conflict slightly with Deno
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
   } catch (err: any) {
     console.error("[push] VAPID Setup Error:", err.message);
@@ -60,6 +61,7 @@ export const sendPushToUser = async (userId: string, payload: PushPayload) => {
 
   await Promise.all(subs.map(async (sub: any) => {
     try {
+      // @ts-ignore
       await webpush.sendNotification({
         endpoint: sub.endpoint,
         keys: { p256dh: sub.p256dh, auth: sub.auth }
