@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import webpush from "npm:web-push@3.6.7";
+import webpush from "https://esm.sh/web-push@3.6.7";
 
 interface PushPayload {
   title: string;
@@ -70,7 +70,8 @@ export const sendPushToUser = async (userId: string, payload: PushPayload) => {
       sentCount++;
     } catch (err: any) {
       failCount++;
-      const statusCode = err.statusCode;
+      // En esm.sh el error puede venir distinto, intentamos acceder a statusCode o status
+      const statusCode = err.statusCode || err.status;
       
       console.error("[push] send failed", { 
         subId: sub.id, 
