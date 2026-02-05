@@ -127,7 +127,7 @@ export function usePushSubscription() {
         const sub = await reg.pushManager.getSubscription();
         if (!sub) throw new Error("❌ Sin suscripción en navegador.");
         
-        log("✅ Suscripción detectada.");
+        log("✅ Suscripción detectada en navegador.");
         
         // --- PRUEBA CON FETCH NATIVO PARA DEBUG ---
         log("🚀 Enviando prueba HTTP directa...");
@@ -137,7 +137,6 @@ export function usePushSubscription() {
         
         if (!token) throw new Error("No hay sesión de usuario activa");
 
-        // URL Hardcoded del proyecto para asegurar ruta
         const PROJECT_URL = "https://lrnzxrrjcwkmwwldfdaq.supabase.co";
         const functionUrl = `${PROJECT_URL}/functions/v1/send-push`;
 
@@ -148,53 +147,49 @@ export function usePushSubscription() {
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-                user_id: user?.id, // Enviamos explícitamente el ID
+                user_id: user?.id,
                 title: "Diagnóstico",
-                body: "Prueba de envío directo con validación de estado.",
+                body: "Prueba de envío directo con métricas reales.",
                 url: "/settings"
             })
         });
 
         const status = response.status;
-        const statusText = response.statusText;
-        let responseBody = "";
+        let jsonResult: any = {};
         
         try {
-            responseBody = await response.text();
+            jsonResult = await response.json();
         } catch (e) {
-            responseBody = "(No text body)";
+            log(`⚠️ Respuesta no es JSON válido`);
         }
 
-        log(`📡 Estado HTTP: ${status} ${statusText}`);
+        log(`📡 Estado HTTP: ${status}`);
 
-        if (!response.ok) {
-            log(`❌ ERROR EDGE FUNCTION:`);
-            log(`Status: ${status}`);
-            log(`Body: ${responseBody.substring(0, 200)}...`);
+        if (status === 200 && jsonResult.ok) {
+            log(`✅ BACKEND RESPONDIÓ OK.`);
             
-            if (status === 401) log("💡 Pista: Error de autenticación (Token/JWT).");
-            if (status === 500) log("💡 Pista: Error interno (Secrets o Código).");
-            if (status === 404) log("💡 Pista: Función no encontrada (Deploy).");
-            
-            return logs;
-        }
+            // ANALISIS DE MÉTRICAS
+            const found = jsonResult.found ?? 0;
+            const sent = jsonResult.sent ?? 0;
+            const failed = jsonResult.failed ?? 0;
 
-        // Si es 200 OK
-        let jsonResult;
-        try {
-            jsonResult = JSON.parse(responseBody);
-        } catch (e) {
-            log(`⚠️ Respuesta no es JSON válido: ${responseBody}`);
-        }
+            log(`📊 Found (DB): ${found}`);
+            log(`📨 Sent (WebPush): ${sent}`);
+            log(`❌ Failed: ${failed}`);
 
-        if (jsonResult) {
-            if (jsonResult.success) {
-                log(`✅ ENVÍO EXITOSO.`);
-                log(`Enviados: ${jsonResult.sent}, Fallidos: ${jsonResult.failed}`);
+            if (found === 0) {
+                log("⚠️ ALERTA: El usuario no tiene suscripciones en DB (Push_subscriptions vacía o user_id incorrecto).");
+            } else if (sent === 0) {
+                log("⚠️ ALERTA: Hay suscripciones pero el envío falló (Revisar VAPID/Expired).");
             } else {
-                log(`⚠️ Función respondió 200 pero reportó error lógico:`);
-                log(JSON.stringify(jsonResult));
+                log("🎉 ÉXITO: El servidor confirmó envío. Si no llega, revisa configuración del OS/No Molestar.");
             }
+
+        } else {
+            log(`❌ ERROR EN BACKEND:`);
+            log(`Error: ${jsonResult.error || 'Desconocido'}`);
+            if (status === 401) log("💡 Pista: Auth Token.");
+            if (status === 500) log("💡 Pista: Secrets VAPID/DB.");
         }
 
     } catch (e: any) {
