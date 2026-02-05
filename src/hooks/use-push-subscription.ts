@@ -120,56 +120,85 @@ export function usePushSubscription() {
     
     try {
         if (!('serviceWorker' in navigator)) throw new Error("SW no soportado");
-        if (!('PushManager' in window)) throw new Error("PushManager no soportado");
         
         const reg = await navigator.serviceWorker.ready;
-        log(`✅ SW Activo. Scope: ${reg.scope}`);
+        log(`✅ SW Activo.`);
 
         const sub = await reg.pushManager.getSubscription();
-        if (!sub) throw new Error("❌ Sin suscripción en navegador. Activa notificaciones primero.");
+        if (!sub) throw new Error("❌ Sin suscripción en navegador.");
         
-        log("✅ Suscripción detectada en navegador.");
+        log("✅ Suscripción detectada.");
         
-        // PRUEBA DE ENVÍO REAL
-        log("🚀 Enviando prueba directa a Edge Function...");
+        // --- PRUEBA CON FETCH NATIVO PARA DEBUG ---
+        log("🚀 Enviando prueba HTTP directa...");
         
-        const { data: result, error: netError } = await supabase.functions.invoke('send-push', {
-            body: {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        
+        if (!token) throw new Error("No hay sesión de usuario activa");
+
+        // URL Hardcoded del proyecto para asegurar ruta
+        const PROJECT_URL = "https://lrnzxrrjcwkmwwldfdaq.supabase.co";
+        const functionUrl = `${PROJECT_URL}/functions/v1/send-push`;
+
+        const response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                user_id: user?.id, // Enviamos explícitamente el ID
                 title: "Diagnóstico",
                 body: "Prueba de envío directo con validación de estado.",
-                direct_subscription: sub.toJSON()
-            }
+                url: "/settings"
+            })
         });
 
-        if (netError) {
-            log(`❌ Error de Red: ${netError.message}`);
+        const status = response.status;
+        const statusText = response.statusText;
+        let responseBody = "";
+        
+        try {
+            responseBody = await response.text();
+        } catch (e) {
+            responseBody = "(No text body)";
+        }
+
+        log(`📡 Estado HTTP: ${status} ${statusText}`);
+
+        if (!response.ok) {
+            log(`❌ ERROR EDGE FUNCTION:`);
+            log(`Status: ${status}`);
+            log(`Body: ${responseBody.substring(0, 200)}...`);
+            
+            if (status === 401) log("💡 Pista: Error de autenticación (Token/JWT).");
+            if (status === 500) log("💡 Pista: Error interno (Secrets o Código).");
+            if (status === 404) log("💡 Pista: Función no encontrada (Deploy).");
+            
             return logs;
         }
 
-        // ANÁLISIS DE RESULTADOS
-        if (result.results && result.results.length > 0) {
-            const res = result.results[0];
-            log(`📡 Respuesta Proveedor: Status ${res.status}`);
-            
-            if (res.success && (res.status === 201 || res.status === 200)) {
-                log("✅ ÉXITO: El proveedor aceptó la notificación.");
-                log("ℹ️ Si no la ves, revisa 'No Molestar' o permisos del SO.");
+        // Si es 200 OK
+        let jsonResult;
+        try {
+            jsonResult = JSON.parse(responseBody);
+        } catch (e) {
+            log(`⚠️ Respuesta no es JSON válido: ${responseBody}`);
+        }
+
+        if (jsonResult) {
+            if (jsonResult.success) {
+                log(`✅ ENVÍO EXITOSO.`);
+                log(`Enviados: ${jsonResult.sent}, Fallidos: ${jsonResult.failed}`);
             } else {
-                log(`❌ FALLO REAL: El proveedor rechazó el envío.`);
-                log(`🔍 Error: ${res.error || 'Desconocido'}`);
-                
-                if (res.status === 410 || res.status === 404) {
-                    log("🗑️ Diagnóstico: Suscripción caducada (Gone). Se requiere resuscribir.");
-                } else if (res.status === 401) {
-                    log("🔑 Diagnóstico: Llaves VAPID inválidas en backend.");
-                }
+                log(`⚠️ Función respondió 200 pero reportó error lógico:`);
+                log(JSON.stringify(jsonResult));
             }
-        } else {
-            log("⚠️ Respuesta inesperada del backend (sin resultados).");
         }
 
     } catch (e: any) {
-        log(`❌ ERROR CRÍTICO: ${e.message}`);
+        log(`❌ EXCEPCIÓN CLIENTE: ${e.message}`);
     }
 
     return logs;
