@@ -11,8 +11,8 @@ import PDVList from "./pages/config/pdv/PDVList";
 import InventoryPage from "./pages/config/inventory/InventoryPage";
 import RoutineList from "./pages/config/routines/RoutineList";
 import AssignmentList from "./pages/config/assignments/AssignmentList";
-import UsersList from "./pages/config/users/UsersList"; // Nueva página de usuarios
-import AbsencesPage from "./pages/config/absences/AbsencesPage"; // Nueva página de novedades
+import UsersList from "./pages/config/users/UsersList"; 
+import AbsencesPage from "./pages/config/absences/AbsencesPage"; 
 import CalendarPage from "./pages/config/calendar/CalendarPage";
 import GeneralConfigPage from "./pages/config/general/GeneralConfigPage";
 import CommandCenter from "./pages/ops/CommandCenter";
@@ -23,6 +23,7 @@ import MessageList from "./pages/ops/messages/MessageList";
 import GalleryPage from "./pages/control/gallery/GalleryPage";
 import ReportsPage from "./pages/control/reports/ReportsPage";
 import SettingsPage from "./pages/config/SettingsPage";
+import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard"; // Nueva Página
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,9 @@ const App = () => (
           <Route path="/" element={<DashboardLayout />}>
             <Route index element={<Index />} />
             
+            {/* SUPERADMIN */}
+            <Route path="superadmin" element={<SuperAdminDashboard />} />
+
             {/* Ops Routes */}
             <Route path="tasks" element={<TasksList />} />
             <Route path="messages" element={<MessageList />} />
@@ -63,7 +67,7 @@ const App = () => (
             
             <Route path="settings" element={<SettingsPage />} />
             
-            {/* Ruta legacy para no romper links antiguos por si acaso */}
+            {/* Ruta legacy */}
             <Route path="personnel" element={<UsersList />} />
             
           </Route>

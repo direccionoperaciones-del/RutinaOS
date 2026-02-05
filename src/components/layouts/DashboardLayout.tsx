@@ -6,7 +6,7 @@ import {
   FileCheck, Image, FileText, Settings, LogOut, Menu,
   Store, Calendar, Link, ClipboardList, Package,
   History, Settings2, Bell, Users, CalendarOff, RefreshCw,
-  ChevronRight
+  ChevronRight, ShieldAlert
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { TenantSwitcher } from "../common/TenantSwitcher";
 
 // Sidebar Group Component - Ajustado para fondo oscuro/color
 const SidebarGroup = ({ title, children }: any) => (
@@ -88,6 +89,15 @@ const NAV_CONFIG = [
   }
 ];
 
+const SUPERADMIN_NAV = [
+  {
+    group: "Super Admin",
+    items: [
+      { icon: ShieldAlert, label: "Panel Global", path: "/superadmin", roles: ['superadmin'] }
+    ]
+  }
+];
+
 const DEFAULT_LOGO = "https://lrnzxrrjcwkmwwldfdaq.supabase.co/storage/v1/object/public/LogoApp/LogoRunop1.jpg";
 
 const DashboardLayout = () => {
@@ -137,6 +147,7 @@ const DashboardLayout = () => {
   }, [navigate]);
 
   const handleLogout = async () => {
+    localStorage.removeItem('superadmin_impersonated_tenant_id'); // Limpiar impersonación
     await supabase.auth.signOut();
     toast({
       title: "Sesión cerrada",
@@ -152,14 +163,13 @@ const DashboardLayout = () => {
 
   const hasPermission = (roles: string[]) => {
     if (!userProfile) return false;
+    if (userProfile.role === 'superadmin') return true; // Superadmin ve todo
     if (roles.includes('all')) return true;
     return roles.includes(userProfile.role);
   };
 
   const appLogo = userProfile?.tenants?.logo_url || DEFAULT_LOGO;
-  // CAMBIO: Sidebar muestra el nombre de la organización
   const tenantName = userProfile?.tenants?.nombre || "Mi Organización";
-  // CAMBIO: Header muestra el nombre de la App
   const appName = "RunOp"; 
 
   if (loading) {
@@ -184,10 +194,14 @@ const DashboardLayout = () => {
     );
   }
 
+  // Combinar navegación si es superadmin
+  const NAVIGATION = userProfile?.role === 'superadmin' 
+    ? [...SUPERADMIN_NAV, ...NAV_CONFIG]
+    : NAV_CONFIG;
+
   return (
     <div className="flex min-h-screen bg-background">
       
-      {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity"
@@ -195,14 +209,12 @@ const DashboardLayout = () => {
         />
       )}
 
-      {/* Sidebar - Naranja Corporativo con Gradiente Sutil */}
       <aside 
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-gradient-to-b from-primary to-orange-600 shadow-xl transition-transform duration-300 lg:translate-x-0 border-r-0",
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Logo Area */}
         <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10 bg-black/5">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 overflow-hidden rounded-lg bg-white border border-white/20 shadow-sm p-0.5 shrink-0">
@@ -212,16 +224,14 @@ const DashboardLayout = () => {
                 className="h-full w-full object-contain" 
               />
             </div>
-            {/* CORRECCIÓN: Aquí va el nombre de la Organización */}
             <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]" title={tenantName}>
               {tenantName}
             </span>
           </div>
         </div>
 
-        {/* Navigation */}
         <div className="flex-1 overflow-y-auto py-6 sidebar-scroll">
-          {NAV_CONFIG.map((group, idx) => {
+          {NAVIGATION.map((group, idx) => {
             const allowedItems = group.items.filter(item => hasPermission(item.roles));
             if (allowedItems.length === 0) return null;
 
@@ -246,7 +256,6 @@ const DashboardLayout = () => {
           })}
         </div>
 
-        {/* User Profile Footer */}
         <div className="border-t border-white/10 bg-black/10 p-4">
           <div className="flex items-center gap-3 mb-4">
             <Avatar className="h-9 w-9 border-2 border-white/20">
@@ -274,7 +283,6 @@ const DashboardLayout = () => {
             </Button>
           </div>
           
-          {/* Powered by - Diseño Solicitado */}
           <div className="flex items-center justify-center gap-2 pt-4 border-t border-white/10 select-none">
             <span className="text-[10px] text-white/60 font-medium">Powered by</span>
             <div className="flex items-center gap-1.5 opacity-90 hover:opacity-100 transition-opacity">
@@ -289,10 +297,8 @@ const DashboardLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="flex flex-1 flex-col lg:pl-[260px] transition-all duration-300 min-h-screen">
         
-        {/* Header - Minimalista */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-6 shadow-sm">
           <div className="flex items-center gap-4">
             <button 
@@ -302,14 +308,12 @@ const DashboardLayout = () => {
               <Menu className="h-6 w-6" />
             </button>
             
-            {/* CORRECCIÓN: Breadcrumb inicia con RunOp */}
             <div className="hidden md:flex items-center text-sm text-muted-foreground">
               <span className="font-medium text-foreground">{appName}</span>
               <ChevronRight className="h-4 w-4 mx-2" />
               <span className="capitalize">{location.pathname.split('/')[1] || 'Dashboard'}</span>
             </div>
 
-            {/* Mobile Brand */}
             <div className="lg:hidden flex items-center gap-2">
                 <span className="font-bold text-lg tracking-tight truncate max-w-[120px] text-primary">{appName}</span>
             </div>
@@ -317,6 +321,9 @@ const DashboardLayout = () => {
 
           <div className="flex items-center gap-2 sm:gap-3">
             
+            {/* COMPONENTE SUPERADMIN */}
+            <TenantSwitcher />
+
             <Button 
               variant="ghost" 
               size="icon" 
@@ -355,7 +362,6 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        {/* Main Content Area */}
         <main className="flex-1 p-4 md:p-8 bg-muted/10 dark:bg-black/20">
           <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-2 duration-500">
             <Outlet />
