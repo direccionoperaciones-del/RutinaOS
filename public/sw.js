@@ -1,7 +1,7 @@
 self.addEventListener('push', function(event) {
-  console.log('[SW] 🔔 Push Recibido. Raw Data:', event.data ? event.data.text() : 'null');
+  console.log('[SW] 🔔 Push Recibido');
 
-  // Payload por defecto (Fallback robusto)
+  // Payload por defecto
   let data = { 
     title: 'RunOp', 
     body: 'Tienes una nueva notificación.', 
@@ -12,11 +12,10 @@ self.addEventListener('push', function(event) {
   if (event.data) {
     try {
       const json = event.data.json();
-      // Mezclar con defaults para asegurar que title y body nunca sean undefined
       data = { ...data, ...json };
     } catch (e) {
-      console.log('[SW] Push es texto plano o JSON inválido');
-      data.body = event.data.text() || data.body;
+      console.log('[SW] Push es texto plano');
+      data.body = event.data.text();
     }
   }
 
@@ -31,13 +30,10 @@ self.addEventListener('push', function(event) {
 
   event.waitUntil(
     self.registration.showNotification(data.title, options)
-      .then(() => console.log('[SW] Notificación mostrada:', data.title))
-      .catch(err => console.error('[SW] Error mostrando notificación:', err))
   );
 });
 
 self.addEventListener('notificationclick', function(event) {
-  console.log('[SW] Notificación clickeada');
   event.notification.close();
   
   // URL destino

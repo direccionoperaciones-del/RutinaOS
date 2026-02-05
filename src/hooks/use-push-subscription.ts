@@ -127,7 +127,7 @@ export function usePushSubscription() {
         const sub = await reg.pushManager.getSubscription();
         if (!sub) throw new Error("❌ Sin suscripción en navegador.");
         
-        log("✅ Suscripción detectada en navegador.");
+        log("✅ Suscripción detectada.");
         
         // --- PRUEBA CON FETCH NATIVO PARA DEBUG ---
         log("🚀 Enviando prueba HTTP directa...");
@@ -137,6 +137,7 @@ export function usePushSubscription() {
         
         if (!token) throw new Error("No hay sesión de usuario activa");
 
+        // URL Hardcoded del proyecto para asegurar ruta
         const PROJECT_URL = "https://lrnzxrrjcwkmwwldfdaq.supabase.co";
         const functionUrl = `${PROJECT_URL}/functions/v1/send-push`;
 
@@ -147,49 +148,53 @@ export function usePushSubscription() {
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-                user_id: user?.id,
+                user_id: user?.id, // Enviamos explícitamente el ID
                 title: "Diagnóstico",
-                body: "Prueba de envío directo con métricas reales.",
+                body: "Prueba de envío directo con validación de estado.",
                 url: "/settings"
             })
         });
 
         const status = response.status;
-        let jsonResult: any = {};
+        const statusText = response.statusText;
+        let responseBody = "";
         
         try {
-            jsonResult = await response.json();
+            responseBody = await response.text();
         } catch (e) {
-            log(`⚠️ Respuesta no es JSON válido`);
+            responseBody = "(No text body)";
         }
 
-        log(`📡 Estado HTTP: ${status}`);
+        log(`📡 Estado HTTP: ${status} ${statusText}`);
 
-        if (status === 200 && jsonResult.ok) {
-            log(`✅ BACKEND RESPONDIÓ OK.`);
+        if (!response.ok) {
+            log(`❌ ERROR EDGE FUNCTION:`);
+            log(`Status: ${status}`);
+            log(`Body: ${responseBody.substring(0, 200)}...`);
             
-            // ANALISIS DE MÉTRICAS
-            const found = jsonResult.found ?? 0;
-            const sent = jsonResult.sent ?? 0;
-            const failed = jsonResult.failed ?? 0;
+            if (status === 401) log("💡 Pista: Error de autenticación (Token/JWT).");
+            if (status === 500) log("💡 Pista: Error interno (Secrets o Código).");
+            if (status === 404) log("💡 Pista: Función no encontrada (Deploy).");
+            
+            return logs;
+        }
 
-            log(`📊 Found (DB): ${found}`);
-            log(`📨 Sent (WebPush): ${sent}`);
-            log(`❌ Failed: ${failed}`);
+        // Si es 200 OK
+        let jsonResult;
+        try {
+            jsonResult = JSON.parse(responseBody);
+        } catch (e) {
+            log(`⚠️ Respuesta no es JSON válido: ${responseBody}`);
+        }
 
-            if (found === 0) {
-                log("⚠️ ALERTA: El usuario no tiene suscripciones en DB (Push_subscriptions vacía o user_id incorrecto).");
-            } else if (sent === 0) {
-                log("⚠️ ALERTA: Hay suscripciones pero el envío falló (Revisar VAPID/Expired).");
+        if (jsonResult) {
+            if (jsonResult.success) {
+                log(`✅ ENVÍO EXITOSO.`);
+                log(`Enviados: ${jsonResult.sent}, Fallidos: ${jsonResult.failed}`);
             } else {
-                log("🎉 ÉXITO: El servidor confirmó envío. Si no llega, revisa configuración del OS/No Molestar.");
+                log(`⚠️ Función respondió 200 pero reportó error lógico:`);
+                log(JSON.stringify(jsonResult));
             }
-
-        } else {
-            log(`❌ ERROR EN BACKEND:`);
-            log(`Error: ${jsonResult.error || 'Desconocido'}`);
-            if (status === 401) log("💡 Pista: Auth Token.");
-            if (status === 500) log("💡 Pista: Secrets VAPID/DB.");
         }
 
     } catch (e: any) {
