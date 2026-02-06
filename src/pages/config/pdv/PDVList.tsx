@@ -8,10 +8,11 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Search, Plus, MapPin, Loader2, Edit, Power, PowerOff, Download, Upload, MoreHorizontal } from "lucide-react";
 import { PDVForm } from "./PDVForm";
 import { useToast } from "@/hooks/use-toast";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function PDVList() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser();
   const [pdvs, setPdvs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -23,27 +24,25 @@ export default function PDVList() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchPDVs = async () => {
+    if (!tenantId) return;
     setLoading(true);
+    
+    // Fallback simple si el join falla (Join puede fallar si profiles tiene RLS estricto pero pdv no)
     const { data, error } = await supabase
       .from('pdv')
       .select(`*, pdv_assignments(profiles(nombre, apellido))`)
+      .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
       .order('codigo_interno', { ascending: true });
       
-    // Fallback simple si el join falla
-    const { data: simpleData, error: simpleError } = await supabase
-      .from('pdv')
-      .select('*')
-      .order('codigo_interno', { ascending: true });
-    
-    if (simpleError) {
+    if (error) {
       toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los PDVs" });
     } else {
-      setPdvs(simpleData || []);
+      setPdvs(data || []);
     }
     setLoading(false);
   };
 
-  useEffect(() => { fetchPDVs(); }, []);
+  useEffect(() => { fetchPDVs(); }, [tenantId]);
 
   const handleEdit = (pdv: any) => {
     setSelectedPDV(pdv);
@@ -71,7 +70,7 @@ export default function PDVList() {
     setIsDownloading(true);
     try {
       toast({ title: "Generando plantilla...", description: "Consultando usuarios activos..." });
-      const { data: users } = await supabase.from('profiles').select('nombre, apellido, role').eq('activo', true).order('nombre');
+      const { data: users } = await supabase.from('profiles').select('nombre, apellido, role').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
       const headers = ["codigo_interno", "nombre", "ciudad", "direccion", "telefono", "latitud", "longitud", "radio_gps", "responsable", "", "USUARIO_REFERENCIA (COPIAR)", "ROL_REFERENCIA"];
       const rows = [];
       const firstUser = users && users.length > 0 ? `${users[0].nombre} ${users[0].apellido}` : "Juan Perez";
@@ -125,9 +124,11 @@ export default function PDVList() {
     const separator = lines[0].includes(';') ? ';' : ',';
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("No autenticado");
-    const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-    if (!profile?.tenant_id) throw new Error("Sin organización asignada");
-    const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true);
+    
+    // Usamos el tenantId del hook en lugar de consultar profiles
+    if (!tenantId) throw new Error("Sin organización asignada");
+    
+    const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('tenant_id', tenantId).eq('activo', true);
     const userMap = new Map(); 
     users?.forEach(u => {
       const key = `${u.nombre}${u.apellido}`.toLowerCase().replace(/\s+/g, '');
@@ -156,7 +157,7 @@ export default function PDVList() {
         const lngVal = lng ? parseFloat(lng.replace(',', '.')) : null;
         const radioVal = radio ? parseInt(radio) : 100;
         const { data: newPdv, error: pdvError } = await supabase.from('pdv').insert({
-          tenant_id: profile.tenant_id,
+          tenant_id: tenantId,
           codigo_interno: codigo,
           nombre: nombre,
           ciudad: ciudad,
@@ -173,7 +174,7 @@ export default function PDVList() {
           const userId = userMap.get(searchKey) || userMap.get(responsableName.toLowerCase().trim());
           if (userId) {
             await supabase.from('pdv_assignments').insert({
-              tenant_id: profile.tenant_id,
+              tenant_id: tenantId,
               pdv_id: newPdv.id,
               user_id: userId,
               vigente: true,

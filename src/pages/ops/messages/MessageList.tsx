@@ -9,7 +9,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label"; // Agregado Label
+import { Label } from "@/components/ui/label"; 
 import { 
   Bell, Check, Clock, Mail, MessageSquare, Megaphone, 
   AlertCircle, Send, CheckCheck, Eye, ShieldAlert, ShieldCheck,
@@ -25,7 +25,7 @@ import { DateRangePicker } from "@/components/common/DateRangePicker";
 
 export default function MessageList() {
   const { toast } = useToast();
-  const { user, profile } = useCurrentUser();
+  const { user, profile, tenantId } = useCurrentUser();
   const queryClient = useQueryClient();
   
   const [inboxMessages, setInboxMessages] = useState<any[]>([]);
@@ -33,7 +33,6 @@ export default function MessageList() {
   const [loading, setLoading] = useState(true);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   
-  // Estado para controlar qué acordeón está abierto
   const [openedItem, setOpenedItem] = useState<string | undefined>(undefined);
   
   const [readDetailsOpen, setReadDetailsOpen] = useState(false);
@@ -48,11 +47,12 @@ export default function MessageList() {
 
   // Función de carga de datos
   const fetchMessages = async (isBackground = false) => {
-    if (!user) return;
+    if (!user || !tenantId) return;
     if (!isBackground) setLoading(true);
     
     try {
-      // 1. RECIBIDOS (Mensajes Reales)
+      // 1. RECIBIDOS (Mensajes Reales) - Estos siempre son del usuario, no necesitan tenant_id explícito
+      // porque message_receipts está ligado al user_id. El superadmin tiene su propio inbox.
       const { data: receipts, error: rxError } = await supabase
         .from('message_receipts')
         .select(`
@@ -79,17 +79,16 @@ export default function MessageList() {
         timestamp: new Date(r.messages.created_at).getTime()
       })) || [];
 
-      // 2. NOTIFICACIONES (Solo alertas de sistema, EXCLUYENDO avisos de nuevos mensajes)
+      // 2. NOTIFICACIONES (Idem, ligadas a user_id)
       const { data: notifications, error: notifError } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
-        .neq('type', 'message') // <--- CORRECCIÓN CLAVE: Ocultar duplicados de mensajes
+        .neq('type', 'message') 
         .order('created_at', { ascending: false });
 
       if (notifError) console.error("Error notifications:", notifError);
 
-      // Enriquecer notificaciones con datos de tareas si aplica
       const taskIds = notifications
         ?.filter(n => n.type === 'routine_rejected' || n.type === 'routine_approved')
         .map(n => n.entity_id) || [];
@@ -140,18 +139,17 @@ export default function MessageList() {
         };
       }) || [];
       
-      // 3. UNIFICAR Y ORDENAR
       const combinedInbox = [...formattedMessages, ...formattedNotifications];
       combinedInbox.sort((a, b) => b.timestamp - a.timestamp);
       
       setInboxMessages(combinedInbox);
 
-      // 4. ENVIADOS (Solo para roles administrativos)
-      if (['director', 'lider', 'auditor'].includes(profile?.role || '')) {
+      // 4. ENVIADOS - AQUÍ SÍ APLICAMOS EL FILTRO DE TENANT
+      if (['director', 'lider', 'auditor', 'superadmin'].includes(profile?.role || '')) {
         const { data: sent } = await supabase
           .from('messages')
           .select(`*, message_receipts (id, leido_at)`)
-          .eq('created_by', user.id)
+          .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO para ver solo mensajes de esta empresa
           .order('created_at', { ascending: false });
           
         setSentMessages(sent || []);
@@ -165,7 +163,7 @@ export default function MessageList() {
 
   useEffect(() => {
     fetchMessages(false);
-  }, [user, profile]);
+  }, [user, profile, tenantId]);
 
   useEffect(() => {
     if (!user) return;
@@ -229,7 +227,7 @@ export default function MessageList() {
     }
   };
 
-  const canCreate = ['director', 'lider'].includes(profile?.role || '');
+  const canCreate = ['director', 'lider', 'superadmin'].includes(profile?.role || '');
 
   // --- LÓGICA DE FILTRADO ---
   const filteredInbox = inboxMessages.filter(msg => {

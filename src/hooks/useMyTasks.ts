@@ -3,17 +3,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export function useMyTasks(dateFrom: string, dateTo: string) {
-  const { user, profile } = useCurrentUser();
+  const { user, profile, tenantId } = useCurrentUser();
 
   // Validar que las fechas existan antes de habilitar la query
-  const isEnabled = !!user && !!profile && !!dateFrom && !!dateTo;
+  const isEnabled = !!user && !!profile && !!dateFrom && !!dateTo && !!tenantId;
 
   return useQuery({
-    queryKey: ['my-tasks', user?.id, dateFrom, dateTo],
+    queryKey: ['my-tasks', user?.id, tenantId, dateFrom, dateTo], // Añadido tenantId a la key para refrescar al cambiar
     enabled: isEnabled,
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      if (!user) throw new Error("No autenticado");
+      if (!user || !tenantId) throw new Error("No autenticado o sin tenant");
 
       let query = supabase
         .from('task_instances')
@@ -29,7 +29,8 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           ),
           pdv (id, nombre, ciudad, radio_gps, latitud, longitud),
           profiles:completado_por (id, nombre, apellido)
-        `);
+        `)
+        .eq('tenant_id', tenantId); // <--- FILTRO EXPLÍCITO
 
       // --- LÓGICA DE VISIBILIDAD CORREGIDA ---
       // 1. Traer tareas del rango de fechas seleccionado (Histórico)
@@ -39,7 +40,6 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
       const processCondition = `estado.eq.en_proceso`;
       
       // Aplicamos filtro OR: (En Rango) O (Pendiente) O (En Proceso)
-      // Esto asegura que tareas mensuales creadas el día 1 sigan visibles el día 20 si no se han cerrado.
       query = query.or(`${rangeCondition},${pendingCondition},${processCondition}`);
       
       // --- RESTRICCIÓN DE SEGURIDAD (Tenant & Role) ---

@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box, ChevronRight } from "lucide-react";
 import { RoutineForm } from "./RoutineForm";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function RoutineList() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser();
   const [routines, setRoutines] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -18,10 +20,12 @@ export default function RoutineList() {
   const [selectedRoutine, setSelectedRoutine] = useState<any>(null);
 
   const fetchRoutines = async () => {
+    if (!tenantId) return;
     setLoading(true);
     const { data, error } = await supabase
       .from('routine_templates')
       .select('*')
+      .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
       .order('nombre', { ascending: true });
     
     if (error) {
@@ -34,7 +38,7 @@ export default function RoutineList() {
 
   useEffect(() => {
     fetchRoutines();
-  }, []);
+  }, [tenantId]);
 
   const handleEdit = (routine: any) => {
     setSelectedRoutine(routine);

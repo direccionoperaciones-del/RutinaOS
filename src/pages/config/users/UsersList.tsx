@@ -10,9 +10,11 @@ import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus } from "luc
 import { useToast } from "@/hooks/use-toast";
 import { EditUserModal } from "../personnel/EditUserModal";
 import { CreateUserModal } from "./CreateUserModal";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function UsersList() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Añadido hook
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -22,10 +24,13 @@ export default function UsersList() {
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const fetchUsers = async () => {
+    if (!tenantId) return; // Seguridad
     setLoading(true);
+    
     const { data: usersData, error: userError } = await supabase
       .from('profiles')
       .select('*')
+      .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
       .order('nombre');
 
     if (userError) {
@@ -42,7 +47,7 @@ export default function UsersList() {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [tenantId]); // Recargar si cambia tenant
 
   const handleEditUser = (user: any) => {
     setSelectedUser(user);

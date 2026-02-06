@@ -14,7 +14,7 @@ const COLORS = {
 };
 
 export const useDashboardData = () => {
-  const { profile, user } = useCurrentUser();
+  const { profile, user, tenantId } = useCurrentUser();
 
   // Filters
   const [dateFrom, setDateFrom] = useState("");
@@ -47,12 +47,14 @@ export const useDashboardData = () => {
   // Load Filter Options
   useEffect(() => {
     const loadOptions = async () => {
-      const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
-      const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+      if (!tenantId) return;
+
+      const { data: pdvData } = await supabase.from('pdv').select('id, nombre').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
+      const { data: routData } = await supabase.from('routine_templates').select('id, nombre').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
       
       let userData: any[] = [];
       if (profile?.role !== 'administrador') {
-        const { data } = await supabase.from('profiles').select('id, nombre, apellido').eq('activo', true).order('nombre');
+        const { data } = await supabase.from('profiles').select('id, nombre, apellido').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
         userData = data || [];
       }
 
@@ -62,15 +64,12 @@ export const useDashboardData = () => {
         users: userData?.map(u => ({ label: `${u.nombre} ${u.apellido}`, value: u.id })) || []
       });
     };
-    if (profile) loadOptions();
-  }, [profile]);
+    if (profile && tenantId) loadOptions();
+  }, [profile, tenantId]);
 
   // Fetch Data
   const fetchData = async () => {
-    if (!profile || !user || !dateFrom || !dateTo) return;
-    
-    // NOTA: No seteamos loading(true) aquí para evitar el parpadeo de esqueletos
-    // Solo será true en la carga inicial (default state)
+    if (!profile || !user || !dateFrom || !dateTo || !tenantId) return;
     
     try {
       let query = supabase
@@ -81,6 +80,7 @@ export const useDashboardData = () => {
           pdv (nombre),
           profiles:completado_por (nombre, apellido)
         `)
+        .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
 
@@ -203,7 +203,7 @@ export const useDashboardData = () => {
     setRecentActivity([...tasks].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6));
   };
 
-  useEffect(() => { fetchData(); }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, profile]);
+  useEffect(() => { fetchData(); }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, selectedUsers, profile, tenantId]); // Añadido tenantId
 
   const clearFilters = () => {
     const today = getLocalDate();
