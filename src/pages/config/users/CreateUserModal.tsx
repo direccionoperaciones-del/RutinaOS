@@ -10,6 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, Lock, UserPlus, ArrowRight } from "lucide-react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const createUserSchema = z.object({
   nombre: z.string().min(2, "Mínimo 2 caracteres"),
@@ -29,6 +30,7 @@ interface CreateUserModalProps {
 
 export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserModalProps) {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser();
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<CreateUserFormValues>({
@@ -43,10 +45,18 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
   });
 
   const onSubmit = async (values: CreateUserFormValues) => {
+    if (!tenantId) {
+      toast({ variant: "destructive", title: "Error", description: "No se ha identificado la organización." });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('create-user', {
-        body: values
+        body: {
+          ...values,
+          tenant_id: tenantId // Enviamos el tenant explícitamente (vital para superadmin)
+        }
       });
 
       if (error) {

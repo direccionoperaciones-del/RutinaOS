@@ -34,7 +34,7 @@ serve(async (req) => {
     
     const token = authHeader.replace('Bearer ', '')
     
-    // Validamos el usuario usando el cliente admin (esto verifica que el token sea válido y real)
+    // Validamos el usuario
     const { data: { user: requestUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
     
     if (userError || !requestUser) {
@@ -44,7 +44,7 @@ serve(async (req) => {
         )
     }
 
-    // 4. Verificar Permisos (Debe ser Director)
+    // 4. Verificar Permisos (Director o Superadmin)
     const { data: requesterProfile, error: profileError } = await supabaseAdmin
         .from('profiles')
         .select('role, tenant_id')
@@ -58,9 +58,12 @@ serve(async (req) => {
         )
     }
 
-    if (requesterProfile.role !== 'director') {
+    const isDirector = requesterProfile.role === 'director';
+    const isSuperAdmin = requesterProfile.role === 'superadmin';
+
+    if (!isDirector && !isSuperAdmin) {
         return new Response(
-            JSON.stringify({ error: 'Permiso denegado. Solo los directores pueden crear usuarios.' }), 
+            JSON.stringify({ error: 'Permiso denegado. Solo directores y superadmins pueden crear usuarios.' }), 
             { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
@@ -71,29 +74,44 @@ serve(async (req) => {
         body = await req.json();
     } catch (e) {
         return new Response(
-            JSON.stringify({ error: 'Cuerpo de la petición inválido (JSON malformado).' }), 
+            JSON.stringify({ error: 'Cuerpo de la petición inválido.' }), 
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
 
-    const { email, password, nombre, apellido, role } = body
+    const { email, password, nombre, apellido, role, tenant_id } = body
 
     if (!email || !password || !nombre || !apellido || !role) {
         return new Response(
-            JSON.stringify({ error: 'Faltan campos obligatorios (email, password, nombre, apellido, role).' }), 
+            JSON.stringify({ error: 'Faltan campos obligatorios.' }), 
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
     }
+
+    // Lógica para determinar el Tenant ID del nuevo usuario
+    let finalTenantId = requesterProfile.tenant_id;
+
+    if (isSuperAdmin) {
+        // Si es superadmin, DEBE venir el tenant_id en el body (del selector God Mode)
+        if (!tenant_id) {
+             return new Response(
+                JSON.stringify({ error: 'Superadmin: Se requiere tenant_id destino.' }), 
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+        }
+        finalTenantId = tenant_id;
+    } 
+    // Si es Director, ignoramos body.tenant_id por seguridad y usamos el suyo propio.
 
     // 6. Crear Usuario (Admin API)
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: email,
         password: password,
-        email_confirm: true, // Auto-confirmar
+        email_confirm: true,
         user_metadata: {
             nombre: nombre,
             apellido: apellido,
-            tenant_id: requesterProfile.tenant_id,
+            tenant_id: finalTenantId,
             role: role 
         }
     })
@@ -108,18 +126,17 @@ serve(async (req) => {
 
     if (!newUser.user) {
          return new Response(
-            JSON.stringify({ error: 'No se pudo crear el usuario (Respuesta vacía).' }),
+            JSON.stringify({ error: 'No se pudo crear el usuario.' }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
     }
 
-    // 7. Asegurar Perfil (Backup manual)
-    // Aunque haya trigger, forzamos la creación/actualización para asegurar consistencia inmediata
+    // 7. Asegurar Perfil
     const { error: profileUpdateError } = await supabaseAdmin
         .from('profiles')
         .upsert({ 
             id: newUser.user.id,
-            tenant_id: requesterProfile.tenant_id,
+            tenant_id: finalTenantId,
             email: email,
             nombre: nombre,
             apellido: apellido,
@@ -129,7 +146,6 @@ serve(async (req) => {
     
     if (profileUpdateError) {
         console.error("Error updating profile manually:", profileUpdateError)
-        // No retornamos error aquí para no bloquear el flujo si el usuario ya se creó en Auth
     }
 
     // 8. Éxito
@@ -141,7 +157,7 @@ serve(async (req) => {
   } catch (error: any) {
     console.error("Critical error in create-user:", error)
     return new Response(
-      JSON.stringify({ error: error.message || 'Error interno del servidor no controlado.' }),
+      JSON.stringify({ error: error.message || 'Error interno del servidor.' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
