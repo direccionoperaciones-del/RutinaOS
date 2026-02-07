@@ -12,6 +12,7 @@ import { RoutineGeneralTab } from "./components/RoutineGeneralTab";
 import { RoutineScheduleTab } from "./components/RoutineScheduleTab";
 import { RoutineRequirementsTab } from "./components/RoutineRequirementsTab";
 import { routineSchema, RoutineFormValues } from "./routine-schema";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 interface RoutineFormProps {
   open: boolean;
@@ -22,8 +23,8 @@ interface RoutineFormProps {
 
 export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: RoutineFormProps) {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Hook para God Mode
   const [isLoading, setIsLoading] = useState(false);
-  // Estado para controlar el tab activo y mover al usuario al tab con errores
   const [activeTab, setActiveTab] = useState("general");
 
   const form = useForm<RoutineFormValues>({
@@ -117,8 +118,8 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
       
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-      if (!profile?.tenant_id) throw new Error("Sin tenant asignado");
+      // CORRECCIÓN: Usar tenantId del hook useCurrentUser
+      if (!tenantId) throw new Error("Sin tenant asignado");
 
       // Validaciones lógicas extra
       if (values.frecuencia === 'semanal' && values.dias_ejecucion.length === 0) {
@@ -134,7 +135,7 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
       }
 
       const payload = {
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId, // <--- Correcto para God Mode
         ...values,
         created_by: user.id
       };
@@ -157,11 +158,9 @@ export function RoutineForm({ open, onOpenChange, routineToEdit, onSuccess }: Ro
     }
   };
 
-  // Manejador de errores visuales
   const onError = (errors: any) => {
     console.log("Errores de validación:", errors);
     
-    // Identificar en qué tab está el error para cambiar a él
     let targetTab = activeTab;
     const errorKeys = Object.keys(errors);
     

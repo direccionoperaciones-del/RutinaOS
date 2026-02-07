@@ -11,6 +11,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { MapPin, User, Building, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const pdvSchema = z.object({
   nombre: z.string().min(1, "El nombre es obligatorio"),
@@ -36,10 +37,11 @@ interface PDVFormProps {
 
 export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormProps) {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Hook para obtener el tenant activo
   const [users, setUsers] = useState<any[]>([]);
   const [cities, setCities] = useState<any[]>([]); 
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("general"); // Controlar pestaña activa
+  const [activeTab, setActiveTab] = useState("general");
 
   const form = useForm<PDVFormValues>({
     resolver: zodResolver(pdvSchema),
@@ -59,20 +61,22 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
 
   // Cargar usuarios y ciudades
   useEffect(() => {
-    if (open) {
+    if (open && tenantId) {
       const loadData = async () => {
-        // Cargar usuarios
+        // Cargar usuarios del tenant actual
         const { data: usersData } = await supabase
           .from('profiles')
           .select('id, nombre, apellido, role')
+          .eq('tenant_id', tenantId)
           .eq('activo', true)
           .order('nombre');
         if (usersData) setUsers(usersData);
 
-        // Cargar ciudades
+        // Cargar ciudades del tenant actual
         const { data: citiesData } = await supabase
           .from('cities')
           .select('nombre')
+          .eq('tenant_id', tenantId)
           .eq('activo', true)
           .order('nombre');
         
@@ -80,10 +84,9 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       };
       loadData();
       
-      // Resetear tab al abrir
       setActiveTab("general");
     }
-  }, [open]);
+  }, [open, tenantId]);
 
   // Cargar datos al editar
   useEffect(() => {
@@ -152,18 +155,14 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('tenant_id')
-        .eq('id', user.id)
-        .maybeSingle();
-      
-      if (!profile?.tenant_id) {
+      // CORRECCIÓN: Usamos tenantId del hook, NO del perfil del usuario
+      // Esto permite que el Superadmin cree registros en la empresa seleccionada
+      if (!tenantId) {
         throw new Error("Sin organización asignada.");
       }
 
       const pdvData = {
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId, // <--- Correcto para God Mode
         nombre: values.nombre,
         codigo_interno: values.codigo_interno,
         ciudad: values.ciudad,
@@ -216,7 +215,7 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
 
         if (newResponsableId && newResponsableId !== "sin_asignar") {
           const { error: assignError } = await supabase.from('pdv_assignments').insert({
-            tenant_id: profile.tenant_id,
+            tenant_id: tenantId, // <--- También aquí
             pdv_id: pdvId,
             user_id: newResponsableId,
             vigente: true,
@@ -238,13 +237,10 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
     }
   };
 
-  // Manejar errores de validación
   const onError = (errors: any) => {
     console.log("Errores de validación:", errors);
     
-    // Identificar en qué tab está el error para cambiar a él
     const errorKeys = Object.keys(errors);
-    
     if (errorKeys.some(k => ['nombre', 'codigo_interno', 'ciudad', 'direccion', 'telefono'].includes(k))) {
       setActiveTab('general');
     } else if (errorKeys.some(k => ['latitud', 'longitud', 'radio_gps'].includes(k))) {

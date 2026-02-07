@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const absenceSchema = z.object({
   user_id: z.string().min(1, "Usuario requerido"),
@@ -42,6 +43,7 @@ interface AbsenceModalProps {
 
 export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId, absenceToEdit }: AbsenceModalProps) {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Usamos el tenantId del contexto (God Mode)
   const [isLoading, setIsLoading] = useState(false);
   const [absenceTypes, setAbsenceTypes] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -90,28 +92,40 @@ export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId,
         });
       }
     }
-  }, [open, preselectedUserId, absenceToEdit]);
+  }, [open, preselectedUserId, absenceToEdit, tenantId]);
 
   const loadData = async () => {
+    if (!tenantId) return;
+
+    // Cargar usuarios SOLO del tenant actual
     const { data: userData } = await supabase
       .from('profiles')
       .select('id, nombre, apellido, role')
-      .eq('activo', true);
+      .eq('tenant_id', tenantId) // Filtro crucial
+      .eq('activo', true)
+      .order('nombre');
+      
     if (userData) setUsers(userData);
 
+    // Cargar tipos SOLO del tenant actual
     const { data: typesData } = await supabase
       .from('absence_types')
       .select('*')
-      .eq('activo', true);
+      .eq('tenant_id', tenantId) // Filtro crucial
+      .eq('activo', true)
+      .order('nombre');
     
-    if (!typesData || typesData.length === 0) {
-       // Fallback creation logic handled elsewhere or manually
-    } else {
+    if (typesData) {
       setAbsenceTypes(typesData);
     }
   };
 
   const onSubmit = async (values: AbsenceFormValues) => {
+    if (!tenantId) {
+      toast({ variant: "destructive", title: "Error", description: "No se ha identificado la organización." });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -135,13 +149,12 @@ export function AbsenceModal({ open, onOpenChange, onSuccess, preselectedUserId,
         
         if (error) throw error;
       } else {
-        // Insert
-        const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user?.id).single();
+        // Insert - Usamos el tenantId del contexto, NO del perfil del usuario logueado
         const { error } = await supabase
           .from('user_absences')
           .insert({
             ...payload,
-            tenant_id: profile?.tenant_id,
+            tenant_id: tenantId, // Correcto para God Mode
             created_by: user?.id
           });
         
