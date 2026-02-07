@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Building, User, Lock, Loader2, Save, Camera, UploadCloud, BellRing, Smartphone, AlertTriangle, Send, RefreshCw, CheckCircle2, Stethoscope, ShieldAlert } from "lucide-react";
+import { Building, User, Lock, Loader2, Save, Camera, BellRing, Smartphone, AlertTriangle, Stethoscope, ShieldAlert, CheckCircle2, RefreshCw } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function SettingsPage() {
   const { toast } = useToast();
-  const { user, profile, loading: loadingProfile } = useCurrentUser();
+  const { user, profile, tenantId, isSuperAdmin, loading: loadingProfile } = useCurrentUser();
   const { 
     isSupported, isSubscribed, subscribeToPush, runDiagnostics,
     loading: pushLoading, error: pushError, isIOS, isStandalone 
@@ -36,17 +36,34 @@ export default function SettingsPage() {
   const [runningDiag, setRunningDiag] = useState(false);
 
   const isDirector = profile?.role === 'director';
+  // Habilitar edición para Director O Superadmin
+  const canEditOrg = isDirector || isSuperAdmin;
 
+  // Cargar datos del perfil
   useEffect(() => {
     if (profile) {
       setFormData({ nombre: profile.nombre || "", apellido: profile.apellido || "" });
       setAvatarUrl(profile.avatar_url);
-      if (profile.tenants) {
-        setOrgData({ nombre: profile.tenants.nombre });
-        setOrgLogoUrl(profile.tenants.logo_url);
-      }
     }
   }, [profile]);
+
+  // Cargar datos de la organización (Basado en tenantId actual para soportar God Mode)
+  useEffect(() => {
+    const loadTenantData = async () => {
+      if (!tenantId) return;
+      const { data } = await supabase
+        .from('tenants')
+        .select('nombre, logo_url')
+        .eq('id', tenantId)
+        .single();
+        
+      if (data) {
+        setOrgData({ nombre: data.nombre });
+        setOrgLogoUrl(data.logo_url);
+      }
+    };
+    loadTenantData();
+  }, [tenantId]);
 
   const handleUpdateProfile = async () => {
     setSaving(true);
@@ -69,13 +86,13 @@ export default function SettingsPage() {
   };
 
   const handleUpdateOrganization = async () => {
-    if (!profile?.tenant_id || !isDirector) return;
+    if (!tenantId || !canEditOrg) return;
     setSaving(true);
     try {
       const { error } = await supabase
         .from('tenants')
         .update({ nombre: orgData.nombre })
-        .eq('id', profile.tenant_id);
+        .eq('id', tenantId);
 
       if (error) throw error;
       toast({ title: "Organización actualizada", description: "El nombre de la empresa ha sido guardado." });
@@ -147,13 +164,14 @@ export default function SettingsPage() {
   };
 
   const handleOrgLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files || event.target.files.length === 0 || !profile?.tenant_id || !isDirector) return;
+    if (!event.target.files || event.target.files.length === 0 || !tenantId || !canEditOrg) return;
     setUploading(true);
     
     try {
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      const fileName = `org_${profile.tenant_id}.${fileExt}`;
+      // Usamos el tenantId actual (que puede ser el suplantado)
+      const fileName = `org_${tenantId}.${fileExt}`;
       const filePath = `${fileName}`; 
 
       // Usamos un bucket específico para logos si existe
@@ -172,7 +190,7 @@ export default function SettingsPage() {
       const { error: updateError } = await supabase
         .from('tenants')
         .update({ logo_url: publicUrl })
-        .eq('id', profile.tenant_id);
+        .eq('id', tenantId);
 
       if (updateError) throw updateError;
 
@@ -416,7 +434,7 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               
-              {!isDirector && (
+              {!canEditOrg && (
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-md flex items-center gap-2 text-sm text-blue-800">
                   <ShieldAlert className="w-4 h-4" />
                   <span>Solo el <strong>Director</strong> puede modificar estos datos.</span>
@@ -424,7 +442,7 @@ export default function SettingsPage() {
               )}
 
               {/* Logo Upload */}
-              <div className={`flex flex-col items-center gap-4 sm:flex-row p-4 border rounded-lg bg-muted/20 ${!isDirector ? 'opacity-70 pointer-events-none' : ''}`}>
+              <div className={`flex flex-col items-center gap-4 sm:flex-row p-4 border rounded-lg bg-muted/20 ${!canEditOrg ? 'opacity-70 pointer-events-none' : ''}`}>
                 <div className="relative group shrink-0">
                   <div className="h-24 w-24 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden bg-white">
                     {orgLogoUrl ? (
@@ -434,7 +452,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                   
-                  {isDirector && (
+                  {canEditOrg && (
                     <label 
                       htmlFor="org-logo-upload" 
                       className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer rounded-lg text-white text-xs font-medium"
@@ -449,7 +467,7 @@ export default function SettingsPage() {
                     accept="image/*" 
                     className="hidden" 
                     onChange={handleOrgLogoUpload}
-                    disabled={uploading || !isDirector}
+                    disabled={uploading || !canEditOrg}
                   />
                 </div>
                 <div className="space-y-1 text-center sm:text-left flex-1">
@@ -470,10 +488,10 @@ export default function SettingsPage() {
                       onChange={(e) => setOrgData({...orgData, nombre: e.target.value})} 
                       className="pl-9" 
                       placeholder="Nombre de tu empresa"
-                      disabled={!isDirector}
+                      disabled={!canEditOrg}
                     />
                   </div>
-                  {isDirector && (
+                  {canEditOrg && (
                     <Button onClick={handleUpdateOrganization} disabled={saving}>
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     </Button>
@@ -481,11 +499,20 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {isDirector && (
+              {!isSuperAdmin && isDirector && (
                 <div className="p-4 bg-yellow-50 text-yellow-800 rounded-md text-xs border border-yellow-200 flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <p>
                     Si eres el <strong>Director</strong>, los cambios realizados aquí afectarán a todos los usuarios de la organización.
+                  </p>
+                </div>
+              )}
+
+              {isSuperAdmin && (
+                <div className="p-4 bg-red-50 text-red-800 rounded-md text-xs border border-red-200 flex items-start gap-2">
+                  <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p>
+                    <strong>GOD MODE ACTIVO:</strong> Estás editando la organización seleccionada en el menú superior ({orgData.nombre}).
                   </p>
                 </div>
               )}
