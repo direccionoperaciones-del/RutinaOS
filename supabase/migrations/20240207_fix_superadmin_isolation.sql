@@ -1,4 +1,3 @@
--- Actualizar función de envío de mensajes para permitir Override de Tenant (Para Superadmin)
 CREATE OR REPLACE FUNCTION public.send_broadcast_message(
   p_asunto text, 
   p_cuerpo text, 
@@ -10,7 +9,7 @@ CREATE OR REPLACE FUNCTION public.send_broadcast_message(
   p_rutina_id uuid DEFAULT NULL::uuid, 
   p_fecha_programada date DEFAULT NULL::date, 
   p_hora_programada time without time zone DEFAULT NULL::time without time zone,
-  p_override_tenant_id uuid DEFAULT NULL::uuid -- NUEVO PARÁMETRO
+  p_override_tenant_id uuid DEFAULT NULL::uuid
 )
  RETURNS uuid
  LANGUAGE plpgsql
@@ -79,7 +78,7 @@ BEGIN
     WHERE tenant_id = v_tenant_id AND activo = true;
   END IF;
 
-  -- 4. Crear Notificaciones
+  -- 4. Crear Notificaciones (Recibos y Push)
   IF v_target_users IS NOT NULL THEN
     INSERT INTO public.message_receipts (message_id, user_id)
     SELECT v_message_id, u_id FROM UNNEST(v_target_users) AS u_id;
