@@ -12,6 +12,7 @@ import { DateRangePicker } from "@/components/common/DateRangePicker";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getLocalDate } from "@/lib/utils";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 // --- COMPONENTE DE TARJETA OPTIMIZADO (Lazy Load) ---
 const EvidenceCard = ({ evidence, onClick }: { evidence: any, onClick: (ev: any) => void }) => {
@@ -78,6 +79,7 @@ const EvidenceCard = ({ evidence, onClick }: { evidence: any, onClick: (ev: any)
 
 export default function GalleryPage() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Tenant Context
   const [evidences, setEvidences] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<any>(null);
@@ -95,17 +97,19 @@ export default function GalleryPage() {
 
   // Cargar opciones de filtros
   useEffect(() => {
+    if (!tenantId) return;
     const loadOptions = async () => {
-      const { data: pdvs } = await supabase.from('pdv').select('id, nombre').eq('activo', true).order('nombre');
+      const { data: pdvs } = await supabase.from('pdv').select('id, nombre').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
       if (pdvs) setPdvOptions(pdvs.map(p => ({ label: p.nombre, value: p.id })));
 
-      const { data: routines } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+      const { data: routines } = await supabase.from('routine_templates').select('id, nombre').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
       if (routines) setRoutineOptions(routines.map(r => ({ label: r.nombre, value: r.id })));
     };
     loadOptions();
-  }, []);
+  }, [tenantId]);
 
   const fetchEvidences = async () => {
+    if (!tenantId) return;
     setLoading(true);
     try {
       let query = supabase
@@ -116,12 +120,14 @@ export default function GalleryPage() {
             id,
             pdv_id,
             rutina_id,
+            tenant_id,
             pdv (nombre),
             routine_templates (nombre),
             profiles:completado_por (nombre, apellido)
           )
         `)
         .eq('tipo', 'foto')
+        .eq('task_instances.tenant_id', tenantId) // <--- FILTRO
         .order('created_at', { ascending: false });
 
       // Aplicar Filtros
@@ -143,7 +149,7 @@ export default function GalleryPage() {
 
   useEffect(() => {
     fetchEvidences();
-  }, [dateFrom, dateTo, selectedPdvs, selectedRoutines]);
+  }, [dateFrom, dateTo, selectedPdvs, selectedRoutines, tenantId]);
 
   const clearFilters = () => {
     setDateFrom(today);

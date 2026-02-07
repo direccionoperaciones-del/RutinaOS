@@ -11,24 +11,27 @@ import { Search, History, Eye, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function SystemAuditLog() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Tenant Context
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLog, setSelectedLog] = useState<any>(null);
 
   const fetchLogs = async () => {
+    if (!tenantId) return;
     setLoading(true);
-    // Nota: En una app real con millones de registros, esto debería tener paginación server-side.
-    // Para V1 traemos los últimos 100 eventos.
+    
     const { data, error } = await supabase
       .from('system_audit_log')
       .select(`
         *,
         profiles:user_id (nombre, apellido, email)
       `)
+      .eq('tenant_id', tenantId) // <--- FILTRO
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -42,7 +45,7 @@ export default function SystemAuditLog() {
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [tenantId]);
 
   const filteredLogs = logs.filter(log => 
     log.table_name.toLowerCase().includes(searchTerm.toLowerCase()) ||

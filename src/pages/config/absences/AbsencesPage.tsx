@@ -10,9 +10,11 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { AbsenceModal } from "../personnel/AbsenceModal";
 import { parseLocalDate } from "@/lib/utils";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function AbsencesPage() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Tenant Context
   const [absences, setAbsences] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -20,6 +22,7 @@ export default function AbsencesPage() {
   const [selectedAbsence, setSelectedAbsence] = useState<any>(null);
 
   const fetchAbsences = async () => {
+    if (!tenantId) return;
     setLoading(true);
     const { data: absData, error: absError } = await supabase
       .from('user_absences')
@@ -29,6 +32,7 @@ export default function AbsencesPage() {
         profiles:user_id (nombre, apellido, email),
         receptor:receptor_id (nombre, apellido)
       `)
+      .eq('tenant_id', tenantId) // <--- FILTRO
       .order('created_at', { ascending: false });
     
     if (absError) {
@@ -42,7 +46,7 @@ export default function AbsencesPage() {
 
   useEffect(() => {
     fetchAbsences();
-  }, []);
+  }, [tenantId]);
 
   const handleAddAbsence = () => {
     setSelectedAbsence(null);

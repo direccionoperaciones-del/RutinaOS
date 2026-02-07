@@ -31,11 +31,13 @@ serve(async (req) => {
       if (user) triggeredBy = `manual_${user.email}`;
     }
 
-    // 2. Parse Body (Fecha Objetivo)
+    // 2. Parse Body (Fecha y Tenant Objetivo)
     let body: any = {};
     try { const text = await req.text(); if (text) body = JSON.parse(text); } catch (e) {}
     
     let targetDate = body.date;
+    const targetTenantId = body.tenant_id; // NUEVO CAMPO OPCIONAL
+
     if (!targetDate) {
       // Fecha Colombia por defecto
       const now = new Date();
@@ -55,9 +57,17 @@ serve(async (req) => {
     const logs: string[] = [];
     logs.push(`🚀 INICIO GENERACIÓN: ${targetDate} (Día Sem: ${dayOfWeek}, Día Mes: ${dayOfMonth})`);
 
-    // 3. Obtener Tenants Activos
-    const { data: tenants } = await supabaseAdmin.from('tenants').select('id, nombre').eq('activo', true);
-    if (!tenants?.length) throw new Error("No hay organizaciones activas.");
+    // 3. Obtener Tenants Activos (Filtrando si viene targetTenantId)
+    let tenantQuery = supabaseAdmin.from('tenants').select('id, nombre').eq('activo', true);
+    
+    if (targetTenantId) {
+      tenantQuery = tenantQuery.eq('id', targetTenantId);
+      logs.push(`🎯 FILTRO APLICADO: Organización ID ${targetTenantId}`);
+    }
+
+    const { data: tenants } = await tenantQuery;
+    
+    if (!tenants?.length) throw new Error("No hay organizaciones activas o no se encontró la solicitada.");
 
     let totalTasks = 0;
 
@@ -85,17 +95,15 @@ serve(async (req) => {
       }
 
       // 5. Obtener Responsables Vigentes (Validando Fechas)
-      // Traemos todas las vigentes y filtramos fecha en memoria para mayor precisión
       const { data: pdvAssigns } = await supabaseAdmin
         .from('pdv_assignments')
         .select('pdv_id, user_id, fecha_desde, fecha_hasta')
         .eq('tenant_id', tenant.id)
         .eq('vigente', true)
-        .lte('fecha_desde', targetDate); // Debe haber empezado antes o hoy
+        .lte('fecha_desde', targetDate); 
 
       const respMap = new Map();
       pdvAssigns?.forEach(a => {
-        // Validar fecha hasta (si existe)
         if (a.fecha_hasta && a.fecha_hasta < targetDate) return; 
         respMap.set(a.pdv_id, a.user_id);
       });
@@ -124,14 +132,12 @@ serve(async (req) => {
         let shouldRun = false;
         
         if (r.frecuencia === 'diaria') {
-          // Si dias_ejecucion está vacío, se asume todos los días. Si no, debe incluir hoy.
           if (!r.dias_ejecucion || r.dias_ejecucion.length === 0 || r.dias_ejecucion.includes(dayOfWeek)) {
             shouldRun = true;
           }
         } else if (r.frecuencia === 'semanal') {
           if (r.dias_ejecucion?.includes(dayOfWeek)) shouldRun = true;
         } else if (r.frecuencia === 'mensual') {
-          // Solo se genera el día 1. La vigencia se maneja en el frontend.
           if (dayOfMonth === 1) shouldRun = true;
         } else if (r.frecuencia === 'quincenal') {
           const c1 = r.corte_1_inicio || 1;

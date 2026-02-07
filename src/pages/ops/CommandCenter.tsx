@@ -11,9 +11,11 @@ import { es } from "date-fns/locale";
 import { CalendarIcon, Play, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ServerCog, Clock, Moon, Bug, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, getLocalDate } from "@/lib/utils";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function CommandCenter() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Hook para obtener tenant activo (God Mode)
   
   // State para Fecha de Generación
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -45,12 +47,14 @@ export default function CommandCenter() {
   };
 
   const fetchMetrics = async () => {
+    if (!tenantId) return;
     setLoadingMetrics(true);
     try {
       const todayStr = getLocalDate();
       const { data, error } = await supabase
         .from('task_instances')
         .select('estado, audit_status, prioridad_snapshot')
+        .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
         .eq('fecha_programada', todayStr);
 
       if (error) throw error;
@@ -83,6 +87,9 @@ export default function CommandCenter() {
     setLoadingRun(true);
     try {
       const today = getLocalDate();
+      // No filtramos por tenant_id aquí porque el log es global del sistema cron
+      // Pero si quisieras logs por tenant, tendrías que modificar la tabla de logs.
+      // Por ahora, mostraremos la última ejecución general del sistema.
       const { data, error } = await supabase
         .from('task_generation_runs')
         .select('*')
@@ -101,19 +108,22 @@ export default function CommandCenter() {
 
   useEffect(() => {
     fetchAllData();
-  }, []);
+  }, [tenantId]); // Recargar al cambiar de tenant
 
   const runTaskEngine = async () => {
-    if (!date) return;
+    if (!date || !tenantId) return;
     setIsLoadingGen(true);
     setExecutionLogs([]);
 
     try {
       const simpleDate = format(date, "yyyy-MM-dd");
-      console.log(`[Manual Trigger] Ejecutando motor para: ${simpleDate}`);
+      console.log(`[Manual Trigger] Ejecutando motor para: ${simpleDate} en Tenant: ${tenantId}`);
 
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
-        body: { date: simpleDate }
+        body: { 
+          date: simpleDate,
+          tenant_id: tenantId // <--- ENVIAMOS TENANT ID ESPECÍFICO
+        }
       });
 
       if (error) throw new Error(error.message || "Error de conexión.");
@@ -145,14 +155,17 @@ export default function CommandCenter() {
   };
 
   const runDayClose = async () => {
-    if (!closeDate) return;
+    if (!closeDate || !tenantId) return;
     const simpleDate = format(closeDate, "yyyy-MM-dd");
     if (!confirm(`¿Cerrar operación del día ${simpleDate}?`)) return;
     
     setIsLoadingClose(true);
     try {
       const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
-        body: { date: simpleDate }
+        body: { 
+          date: simpleDate,
+          tenant_id: tenantId // <--- ENVIAMOS TENANT ID ESPECÍFICO
+        }
       });
 
       if (error) throw new Error(error.message);

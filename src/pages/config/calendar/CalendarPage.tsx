@@ -11,19 +11,17 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { getColombiaDate } from "@/lib/utils";
 
 export default function CalendarPage() {
-  const { tenantId, profile } = useCurrentUser();
+  const { tenantId, profile } = useCurrentUser(); // Tenant Context
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // Estados para los marcadores visuales del calendario
   const [statusDates, setStatusDates] = useState<{
     completed: Date[];
     failed: Date[];
     pending: Date[];
   }>({ completed: [], failed: [], pending: [] });
 
-  // Cargar estados de fechas para colorear el calendario (puntos de colores)
   useEffect(() => {
     if (!tenantId) return;
     
@@ -31,7 +29,7 @@ export default function CalendarPage() {
       let query = supabase
         .from('task_instances')
         .select('fecha_programada, estado, hora_limite_snapshot')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId) // <--- FILTRO
         .limit(1000);
 
       const { data } = await query;
@@ -39,7 +37,6 @@ export default function CalendarPage() {
       if (data) {
         const tempStatus: Record<string, { hasFailure: boolean, hasPending: boolean, count: number }> = {};
         
-        // CRÍTICO: Usar hora de Colombia para validaciones de vencimiento
         const now = getColombiaDate();
 
         data.forEach(t => {
@@ -48,7 +45,6 @@ export default function CalendarPage() {
           
           tempStatus[d].count++;
 
-          // Lógica de Vencimiento
           const deadline = new Date(`${t.fecha_programada}T${t.hora_limite_snapshot || '23:59:00'}`);
           const isOverdue = t.estado === 'pendiente' && now > deadline;
 
@@ -81,7 +77,6 @@ export default function CalendarPage() {
     fetchCalendarStatus();
   }, [tenantId, profile]);
 
-  // Cargar detalle del día seleccionado
   useEffect(() => {
     if (!tenantId || !date) return;
 
@@ -100,7 +95,7 @@ export default function CalendarPage() {
           pdv (nombre, ciudad),
           profiles:completado_por (nombre, apellido)
         `)
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', tenantId) // <--- FILTRO
         .eq('fecha_programada', dateStr)
         .order('hora_limite_snapshot');
 
@@ -118,7 +113,6 @@ export default function CalendarPage() {
     pending: statusDates.pending
   };
   
-  // Colores ajustados para modo oscuro
   const modifiersClassNames = {
     failed: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-200 font-bold hover:bg-red-200 dark:hover:bg-red-900/70 rounded-md",
     completed: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-200 font-bold hover:bg-green-200 dark:hover:bg-green-900/70 rounded-md",
@@ -151,7 +145,6 @@ export default function CalendarPage() {
             </CardContent>
           </Card>
 
-          {/* Leyenda */}
           <Card>
             <CardContent className="p-4 pt-6">
               <div className="space-y-3 text-sm">
@@ -198,14 +191,11 @@ export default function CalendarPage() {
               <ScrollArea className="h-full p-6">
                 <div className="space-y-4">
                   {tasks.map((task) => {
-                    // --- LÓGICA DE SEMÁFORO ---
-                    // CRÍTICO: Usar hora de Colombia
                     const now = getColombiaDate();
                     const deadline = new Date(`${task.fecha_programada}T${task.hora_limite_snapshot || '23:59:00'}`);
                     
                     const isSuccess = task.estado === 'completada_a_tiempo' || task.estado === 'completada';
                     
-                    // Es vencida si explícitamente está marcada así, o si sigue pendiente y ya pasó la hora
                     const isOverdue = 
                       task.estado === 'incumplida' || 
                       task.estado === 'completada_vencida' || 
@@ -213,7 +203,6 @@ export default function CalendarPage() {
 
                     const isPendingOnTime = task.estado === 'pendiente' && now <= deadline;
 
-                    // Estilos dinámicos adaptados para dark mode
                     let containerClass = "";
                     let icon = null;
                     let titleClass = "";
@@ -256,7 +245,6 @@ export default function CalendarPage() {
                                 {task.hora_limite_snapshot?.slice(0,5)}
                               </span>
                               
-                              {/* Texto de Estado explícito */}
                               {isOverdue && task.estado === 'pendiente' && (
                                 <span className="text-[10px] text-red-600 dark:text-red-400 font-bold uppercase mt-0.5">Vencida</span>
                               )}

@@ -6,9 +6,11 @@ import { Download, FileSpreadsheet, Loader2, CalendarRange, CheckCircle2 } from 
 import { useToast } from "@/hooks/use-toast";
 import { getLocalDate } from "@/lib/utils";
 import { DateRangePicker } from "@/components/common/DateRangePicker";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function ReportsPage() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Tenant Context
   const [loading, setLoading] = useState(false);
   const todayStr = getLocalDate();
   const [dateFrom, setDateFrom] = useState(todayStr);
@@ -51,6 +53,7 @@ export default function ReportsPage() {
   };
 
   const generateTaskReport = async () => {
+    if (!tenantId) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -63,6 +66,7 @@ export default function ReportsPage() {
           pdv (nombre, ciudad, codigo_interno),
           profiles:completado_por (nombre, apellido, email)
         `)
+        .eq('tenant_id', tenantId) // <--- FILTRO
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);
 
@@ -92,6 +96,7 @@ export default function ReportsPage() {
   };
 
   const generateAuditReport = async () => {
+    if (!tenantId) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -105,6 +110,7 @@ export default function ReportsPage() {
           pdv (nombre),
           auditor:audit_by (nombre, apellido) 
         `)
+        .eq('tenant_id', tenantId) // <--- FILTRO
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo)
         .not('audit_status', 'is', null);
@@ -133,11 +139,13 @@ export default function ReportsPage() {
   };
 
   const generateInventoryReport = async () => {
+    if (!tenantId) return;
     setLoading(true);
     try {
       const { data: tasks, error: taskError } = await supabase
         .from('task_instances')
         .select('id, routine_templates!inner(requiere_inventario)')
+        .eq('tenant_id', tenantId) // <--- FILTRO
         .eq('routine_templates.requiere_inventario', true) 
         .gte('fecha_programada', dateFrom)
         .lte('fecha_programada', dateTo);

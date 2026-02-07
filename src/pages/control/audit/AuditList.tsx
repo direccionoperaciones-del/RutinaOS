@@ -14,9 +14,11 @@ import { useToast } from "@/hooks/use-toast";
 import { AuditReviewModal } from "./AuditReviewModal";
 import { calculateTaskDeadline } from "@/pages/ops/logic/task-deadline";
 import { DateRangePicker } from "@/components/common/DateRangePicker";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function AuditList() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Tenant Context
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -45,8 +47,8 @@ export default function AuditList() {
   ];
 
   const fetchTasks = async () => {
-    // No seteamos setLoading(true) para evitar el parpadeo en filtros.
-    // Solo será true en la primera carga.
+    if (!tenantId) return;
+    
     try {
       let query = supabase
         .from('task_instances')
@@ -61,6 +63,7 @@ export default function AuditList() {
           pdv (id, nombre, ciudad),
           profiles:completado_por (id, nombre, apellido)
         `)
+        .eq('tenant_id', tenantId) // <--- FILTRO
         .in('estado', ['completada', 'completada_a_tiempo', 'completada_vencida']) 
         .order('completado_at', { ascending: false });
 
@@ -78,7 +81,7 @@ export default function AuditList() {
     }
   };
 
-  useEffect(() => { fetchTasks(); }, [dateFrom, dateTo]);
+  useEffect(() => { fetchTasks(); }, [dateFrom, dateTo, tenantId]);
 
   const pdvOptions = useMemo(() => {
     const map = new Map();

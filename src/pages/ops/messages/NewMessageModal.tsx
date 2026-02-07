@@ -57,7 +57,7 @@ interface NewMessageModalProps {
 
 export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageModalProps) {
   const { toast } = useToast();
-  const { profile } = useCurrentUser();
+  const { profile, tenantId } = useCurrentUser(); // Usamos tenantId del contexto (God Mode)
   const [isLoading, setIsLoading] = useState(false);
   
   const [roles] = useState([
@@ -90,23 +90,39 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   const messageType = form.watch("tipo");
 
   useEffect(() => {
-    if (open) {
+    if (open && tenantId) { // Filtrar opciones por tenantId
       const fetchData = async () => {
-        const { data: pdvData } = await supabase.from('pdv').select('id, nombre, ciudad').eq('activo', true);
+        const { data: pdvData } = await supabase
+          .from('pdv')
+          .select('id, nombre, ciudad')
+          .eq('tenant_id', tenantId) // Filtro estricto
+          .eq('activo', true);
+          
         if (pdvData) {
           setPdvOptions(pdvData.map(p => ({ label: `${p.nombre} (${p.ciudad})`, value: p.id })));
         }
 
-        const { data: userData } = await supabase.from('profiles').select('id, nombre, apellido, role').eq('activo', true);
+        const { data: userData } = await supabase
+          .from('profiles')
+          .select('id, nombre, apellido, role')
+          .eq('tenant_id', tenantId) // Filtro estricto
+          .eq('activo', true);
+          
         if (userData) setUsers(userData);
 
-        const { data: routineData } = await supabase.from('routine_templates').select('id, nombre').eq('activo', true).order('nombre');
+        const { data: routineData } = await supabase
+          .from('routine_templates')
+          .select('id, nombre')
+          .eq('tenant_id', tenantId) // Filtro estricto
+          .eq('activo', true)
+          .order('nombre');
+          
         if (routineData) setRoutines(routineData);
       };
       fetchData();
       form.reset();
     }
-  }, [open]);
+  }, [open, tenantId]);
 
   useEffect(() => {
     if (messageType === 'tarea_flash' && !form.getValues('asunto')) {
@@ -123,7 +139,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
   const onSubmit = async (values: MessageFormValues) => {
     setIsLoading(true);
     try {
-      if (!profile?.tenant_id) throw new Error("Error de sesión: Sin Tenant ID.");
+      if (!tenantId) throw new Error("Error de sesión: Sin Tenant ID.");
 
       let finalRecipientId: string | null = null;
 
@@ -135,9 +151,7 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         finalRecipientId = values.recipient_id as string;
       }
 
-      // 1. Enviar Mensaje y Crear Tareas (Todo en una sola llamada RPC)
-      // La función SQL 'send_broadcast_message' se encarga de crear las instancias de tareas
-      // si recibe un p_rutina_id válido.
+      // 1. Enviar Mensaje usando el RPC actualizado con override
       const { data: messageId, error } = await supabase.rpc('send_broadcast_message', {
         p_asunto: values.asunto,
         p_cuerpo: values.cuerpo,
@@ -146,12 +160,10 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
         p_requiere_confirmacion: values.requiere_confirmacion,
         p_recipient_type: values.recipient_type,
         p_recipient_id: finalRecipientId,
-        
-        // Habilitamos la creación automática enviando la rutina seleccionada
         p_rutina_id: values.tipo === 'tarea_flash' ? (values.rutina_id || null) : null,
-        
         p_fecha_programada: values.scheduled_date || null,
-        p_hora_programada: values.scheduled_time || null
+        p_hora_programada: values.scheduled_time || null,
+        p_override_tenant_id: tenantId // <--- CLAVE: Enviamos el tenant actual
       });
 
       if (error) throw error;
@@ -162,8 +174,8 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
           .catch(e => console.error("Push Error", e));
       }
 
-      let desc = "Mensaje enviado correctamente.";
-      if (values.tipo === 'tarea_flash') desc = "Tarea Flash asignada y notificada a los usuarios.";
+      let desc = "Mensaje enviado correctamente a la organización seleccionada.";
+      if (values.tipo === 'tarea_flash') desc = "Tarea Flash asignada.";
 
       toast({ title: "Enviado", description: desc });
       onSuccess();
