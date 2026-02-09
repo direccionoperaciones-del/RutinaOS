@@ -15,12 +15,9 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function CommandCenter() {
   const { toast } = useToast();
-  const { tenantId } = useCurrentUser(); // Hook para obtener tenant activo (God Mode)
+  const { tenantId } = useCurrentUser();
   
-  // State para Fecha de Generación
   const [date, setDate] = useState<Date | undefined>(new Date());
-  
-  // State para Fecha de Cierre
   const [closeDate, setCloseDate] = useState<Date | undefined>(new Date());
   
   const [isLoadingGen, setIsLoadingGen] = useState(false);
@@ -29,7 +26,6 @@ export default function CommandCenter() {
   const [lastRun, setLastRun] = useState<any>(null);
   const [loadingRun, setLoadingRun] = useState(false);
 
-  // LOGS MODAL
   const [logsOpen, setLogsOpen] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
 
@@ -54,7 +50,7 @@ export default function CommandCenter() {
       const { data, error } = await supabase
         .from('task_instances')
         .select('estado, audit_status, prioridad_snapshot')
-        .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
+        .eq('tenant_id', tenantId)
         .eq('fecha_programada', todayStr);
 
       if (error) throw error;
@@ -87,9 +83,6 @@ export default function CommandCenter() {
     setLoadingRun(true);
     try {
       const today = getLocalDate();
-      // No filtramos por tenant_id aquí porque el log es global del sistema cron
-      // Pero si quisieras logs por tenant, tendrías que modificar la tabla de logs.
-      // Por ahora, mostraremos la última ejecución general del sistema.
       const { data, error } = await supabase
         .from('task_generation_runs')
         .select('*')
@@ -108,7 +101,7 @@ export default function CommandCenter() {
 
   useEffect(() => {
     fetchAllData();
-  }, [tenantId]); // Recargar al cambiar de tenant
+  }, [tenantId]);
 
   const runTaskEngine = async () => {
     if (!date || !tenantId) return;
@@ -117,19 +110,16 @@ export default function CommandCenter() {
 
     try {
       const simpleDate = format(date, "yyyy-MM-dd");
-      console.log(`[Manual Trigger] Ejecutando motor para: ${simpleDate} en Tenant: ${tenantId}`);
-
       const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
         body: { 
           date: simpleDate,
-          tenant_id: tenantId // <--- ENVIAMOS TENANT ID ESPECÍFICO
+          tenant_id: tenantId 
         }
       });
 
       if (error) throw new Error(error.message || "Error de conexión.");
       if (data && data.error) throw new Error(data.error);
 
-      // Mostrar logs si hay
       if (data.logs && Array.isArray(data.logs)) {
         setExecutionLogs(data.logs);
         setLogsOpen(true);
@@ -143,12 +133,7 @@ export default function CommandCenter() {
       fetchAllData();
 
     } catch (error: any) {
-      console.error("[Manual Trigger Error]", error);
-      toast({ 
-        variant: "destructive", 
-        title: "Fallo en Ejecución", 
-        description: error.message,
-      });
+      toast({ variant: "destructive", title: "Fallo en Ejecución", description: error.message });
     } finally {
       setIsLoadingGen(false);
     }
@@ -164,17 +149,13 @@ export default function CommandCenter() {
       const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
         body: { 
           date: simpleDate,
-          tenant_id: tenantId // <--- ENVIAMOS TENANT ID ESPECÍFICO
+          tenant_id: tenantId 
         }
       });
 
       if (error) throw new Error(error.message);
       
-      toast({ 
-        title: "Cierre Completado", 
-        description: data.message || "Tareas vencidas marcadas." 
-      });
-      
+      toast({ title: "Cierre Completado", description: data.message || "Tareas vencidas marcadas." });
       fetchAllData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error al cerrar", description: error.message });
@@ -186,26 +167,25 @@ export default function CommandCenter() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h2 className="text-3xl font-bold tracking-tight">Centro de Mando</h2>
-            <p className="text-muted-foreground">Supervisión operativa y estado del sistema.</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Centro de Mando</h2>
+            <p className="text-muted-foreground text-sm sm:text-base">Supervisión operativa y estado del sistema.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchAllData} disabled={loadingMetrics}>
+          <Button variant="outline" size="sm" onClick={fetchAllData} disabled={loadingMetrics} className="w-full sm:w-auto">
             <RefreshCw className={`w-4 h-4 mr-2 ${loadingMetrics ? 'animate-spin' : ''}`} />
             Actualizar Datos
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         
         {/* MONITOR DE AUTOMATIZACIÓN */}
         <Card className="border-blue-200 bg-blue-50/20 dark:bg-blue-900/10 h-full">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
-              <ServerCog className="w-5 h-5" />
-              Monitor Automático
+            <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400 text-lg">
+              <ServerCog className="w-5 h-5" /> Monitor Automático
             </CardTitle>
             <CardDescription>Generación diaria (05:00 AM)</CardDescription>
           </CardHeader>
@@ -214,7 +194,7 @@ export default function CommandCenter() {
               <div className="py-4 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500"/></div>
             ) : lastRun ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <span className="text-sm font-medium">Estado:</span>
                   <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${
                     lastRun.status === 'success' ? 'bg-green-100 text-green-700 border-green-200' :
@@ -262,25 +242,19 @@ export default function CommandCenter() {
         {/* ACCIONES MANUALES */}
         <Card className="h-full">
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2">
-              <Play className="w-5 h-5" />
-              Acciones Manuales
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Play className="w-5 h-5" /> Acciones Manuales
             </CardTitle>
             <CardDescription>Control de emergencia y cierres.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             
-            {/* Generar Tareas */}
             <div className="space-y-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">1. Generación de Tareas</span>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      size="sm"
-                      className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                    >
+                    <Button variant={"outline"} size="sm" className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {date ? format(date, "P", { locale: es }) : <span>Fecha</span>}
                     </Button>
@@ -290,29 +264,20 @@ export default function CommandCenter() {
                   </PopoverContent>
                 </Popover>
                 
-                <Button onClick={runTaskEngine} disabled={isLoadingGen || !date} size="sm" className="w-[120px]">
-                  {isLoadingGen ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-                    <>
-                      <Bug className="w-3 h-3 mr-2 opacity-70" /> Generar
-                    </>
-                  )}
+                <Button onClick={runTaskEngine} disabled={isLoadingGen || !date} size="sm" className="w-full sm:w-auto">
+                  {isLoadingGen ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Bug className="w-3 h-3 mr-2 opacity-70" /> Generar</>}
                 </Button>
               </div>
             </div>
 
             <div className="border-t"></div>
 
-            {/* Cierre de Día */}
             <div className="space-y-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">2. Cierre de Operación</span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      size="sm"
-                      className={cn("flex-1 justify-start text-left font-normal", !closeDate && "text-muted-foreground")}
-                    >
+                    <Button variant={"outline"} size="sm" className={cn("w-full justify-start text-left font-normal", !closeDate && "text-muted-foreground")}>
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {closeDate ? format(closeDate, "P", { locale: es }) : <span>Fecha Cierre</span>}
                     </Button>
@@ -322,16 +287,13 @@ export default function CommandCenter() {
                   </PopoverContent>
                 </Popover>
 
-                <Button onClick={runDayClose} disabled={isLoadingClose || !closeDate} size="sm" variant="secondary" className="w-[100px] border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700">
+                <Button onClick={runDayClose} disabled={isLoadingClose || !closeDate} size="sm" variant="secondary" className="w-full sm:w-auto border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700">
                   {isLoadingClose ? <Loader2 className="w-4 h-4 animate-spin" /> : <Moon className="w-4 h-4 mr-2" />}
                   Cerrar
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Marca como <strong>incumplidas</strong> las tareas pendientes hasta la fecha seleccionada (inclusive).
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Marca como <strong>incumplidas</strong> las pendientes.</p>
             </div>
-
           </CardContent>
         </Card>
 
@@ -339,7 +301,7 @@ export default function CommandCenter() {
         <div className="flex flex-col gap-4">
           <Card className={`h-full ${metrics.incidencias > 0 ? "border-red-200 bg-red-50/30" : ""}`}>
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
                 <AlertTriangle className={`w-5 h-5 ${metrics.incidencias > 0 ? "text-red-500" : "text-orange-500"}`} />
                 Incidencias
               </CardTitle>
@@ -348,15 +310,13 @@ export default function CommandCenter() {
               <div className={`text-4xl font-bold ${metrics.incidencias > 0 ? "text-red-600" : ""}`}>
                 {metrics.incidencias}
               </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Tareas críticas o vencidas hoy.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">Tareas críticas o vencidas hoy.</p>
             </CardContent>
           </Card>
 
           <Card className="h-full">
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-lg">
                 <CheckCircle2 className="w-5 h-5 text-green-500" />
                 Avance Diario
               </CardTitle>
@@ -374,35 +334,24 @@ export default function CommandCenter() {
         </div>
       </div>
 
-      {/* MODAL DE LOGS */}
+      {/* LOGS MODAL */}
       <Dialog open={logsOpen} onOpenChange={setLogsOpen}>
         <DialogContent className="sm:max-w-[600px] h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5"/> Reporte de Ejecución</DialogTitle>
-            <DialogDescription>
-              Detalle del procesamiento del motor de tareas.
-            </DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5"/> Reporte</DialogTitle>
+            <DialogDescription>Detalle del procesamiento.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="flex-1 border rounded-md p-4 bg-slate-950 text-slate-100 font-mono text-xs">
-            {executionLogs.length === 0 ? (
-              <p className="text-slate-500">Sin detalles disponibles.</p>
-            ) : (
+            {executionLogs.length === 0 ? <p className="text-slate-500">Sin datos.</p> : (
               <div className="space-y-1">
                 {executionLogs.map((log, i) => (
-                  <div key={i} className={`
-                    ${log.includes('✅') ? 'text-green-400' : ''}
-                    ${log.includes('⚠️') ? 'text-yellow-400' : ''}
-                    ${log.includes('❌') ? 'text-red-400' : ''}
-                    ${log.includes('⏭️') ? 'text-slate-500' : ''}
-                  `}>
-                    {log}
-                  </div>
+                  <div key={i} className={`break-words ${log.includes('✅')?'text-green-400':log.includes('⚠️')?'text-yellow-400':log.includes('❌')?'text-red-400':log.includes('⏭️')?'text-slate-500':''}`}>{log}</div>
                 ))}
               </div>
             )}
           </ScrollArea>
           <DialogFooter>
-            <Button onClick={() => setLogsOpen(false)}>Cerrar Reporte</Button>
+            <Button onClick={() => setLogsOpen(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

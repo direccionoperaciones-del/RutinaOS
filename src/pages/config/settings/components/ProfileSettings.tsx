@@ -83,7 +83,7 @@ export function ProfileSettings() {
   };
 
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <User className="w-4 h-4 text-primary" /> Información Personal
@@ -91,8 +91,8 @@ export function ProfileSettings() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-4">
-          <div className="relative group">
-            <Avatar className="h-20 w-20 cursor-pointer">
+          <div className="relative group shrink-0">
+            <Avatar className="h-16 w-16 sm:h-20 sm:w-20 cursor-pointer">
               <AvatarImage src={`${avatarUrl}?t=${imgKey}`} />
               <AvatarFallback className="text-lg bg-primary/10 text-primary">
                 {formData.nombre?.[0]}{formData.apellido?.[0]}
@@ -126,6 +126,7 @@ export function ProfileSettings() {
             id="nombre" 
             value={formData.nombre} 
             onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
+            className="w-full"
           />
         </div>
         <div className="grid gap-2">
@@ -134,20 +135,21 @@ export function ProfileSettings() {
             id="apellido" 
             value={formData.apellido} 
             onChange={(e) => setFormData({...formData, apellido: e.target.value})} 
+            className="w-full"
           />
         </div>
         <div className="grid gap-2">
           <Label>Email</Label>
-          <Input value={profile?.email} disabled className="bg-muted" />
+          <Input value={profile?.email} disabled className="bg-muted w-full" />
         </div>
         <div className="grid gap-2">
           <Label>Rol</Label>
-          <Input value={profile?.role} disabled className="bg-muted capitalize" />
+          <Input value={profile?.role} disabled className="bg-muted capitalize w-full" />
         </div>
       </CardContent>
       <CardFooter className="justify-end border-t pt-4">
-        <Button onClick={handleUpdateProfile} disabled={saving}>
-          {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Guardar Cambios
+        <Button onClick={handleUpdateProfile} disabled={saving} className="w-full sm:w-auto">
+          {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Guardar
         </Button>
       </CardFooter>
     </Card>

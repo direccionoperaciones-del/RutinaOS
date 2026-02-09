@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { TenantSwitcher } from "../common/TenantSwitcher";
 
-// Sidebar Group Component - Ajustado para fondo oscuro/color
+// Sidebar Group Component
 const SidebarGroup = ({ title, children }: any) => (
   <div className="mb-6 px-4">
     <h3 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-white/50">
@@ -28,7 +28,7 @@ const SidebarGroup = ({ title, children }: any) => (
   </div>
 );
 
-// Sidebar Item Component - Ajustado para contraste sobre naranja
+// Sidebar Item Component
 const SidebarItem = ({ icon: Icon, label, path, active, onClick, badgeCount }: any) => (
   <button
     className={cn(
@@ -147,7 +147,7 @@ const DashboardLayout = () => {
   }, [navigate]);
 
   const handleLogout = async () => {
-    localStorage.removeItem('superadmin_impersonated_tenant_id'); // Limpiar impersonación
+    localStorage.removeItem('superadmin_impersonated_tenant_id');
     await supabase.auth.signOut();
     toast({
       title: "Sesión cerrada",
@@ -163,7 +163,7 @@ const DashboardLayout = () => {
 
   const hasPermission = (roles: string[]) => {
     if (!userProfile) return false;
-    if (userProfile.role === 'superadmin') return true; // Superadmin ve todo
+    if (userProfile.role === 'superadmin') return true;
     if (roles.includes('all')) return true;
     return roles.includes(userProfile.role);
   };
@@ -194,13 +194,12 @@ const DashboardLayout = () => {
     );
   }
 
-  // Combinar navegación si es superadmin
   const NAVIGATION = userProfile?.role === 'superadmin' 
     ? [...SUPERADMIN_NAV, ...NAV_CONFIG]
     : NAV_CONFIG;
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen bg-background overflow-hidden"> {/* overflow-hidden para evitar scroll global */}
       
       {isMobileMenuOpen && (
         <div 
@@ -218,11 +217,7 @@ const DashboardLayout = () => {
         <div className="flex h-16 shrink-0 items-center px-6 border-b border-white/10 bg-black/5">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 overflow-hidden rounded-lg bg-white border border-white/20 shadow-sm p-0.5 shrink-0">
-              <img 
-                src={appLogo} 
-                alt="Logo" 
-                className="h-full w-full object-contain" 
-              />
+              <img src={appLogo} alt="Logo" className="h-full w-full object-contain" />
             </div>
             <span className="text-lg font-bold tracking-tight text-white truncate max-w-[150px]" title={tenantName}>
               {tenantName}
@@ -297,12 +292,12 @@ const DashboardLayout = () => {
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col lg:pl-[260px] transition-all duration-300 min-h-screen">
+      <div className="flex flex-1 flex-col lg:pl-[260px] transition-all duration-300 min-h-screen w-full">
         
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-6 shadow-sm">
-          <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-3 sm:px-6 shadow-sm gap-2">
+          <div className="flex items-center gap-2">
             <button 
-              className="lg:hidden p-2 -ml-2 hover:bg-muted rounded-full text-foreground transition-colors" 
+              className="lg:hidden p-2 -ml-2 hover:bg-muted rounded-full text-foreground transition-colors shrink-0" 
               onClick={() => setIsMobileMenuOpen(true)}
             >
               <Menu className="h-6 w-6" />
@@ -314,20 +309,22 @@ const DashboardLayout = () => {
               <span className="capitalize">{location.pathname.split('/')[1] || 'Dashboard'}</span>
             </div>
 
-            <div className="lg:hidden flex items-center gap-2">
-                <span className="font-bold text-lg tracking-tight truncate max-w-[120px] text-primary">{appName}</span>
+            <div className="lg:hidden flex items-center">
+                <span className="font-bold text-lg tracking-tight truncate text-primary">{appName}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1 sm:gap-2 min-w-0">
             
-            {/* COMPONENTE SUPERADMIN */}
-            <TenantSwitcher />
+            {/* TenantSwitcher Responsive */}
+            <div className="shrink-1 min-w-0">
+              <TenantSwitcher />
+            </div>
 
             <Button 
               variant="ghost" 
               size="icon" 
-              className="text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+              className="text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors shrink-0"
               onClick={handleRefreshApp}
               title="Actualizar datos"
               disabled={refreshing}
@@ -335,12 +332,14 @@ const DashboardLayout = () => {
               <RefreshCw className={cn("h-5 w-5", refreshing && "animate-spin")} />
             </Button>
 
-            <ThemeToggle />
+            <div className="hidden sm:block">
+              <ThemeToggle />
+            </div>
             
             <Button 
               variant="ghost" 
               size="icon" 
-              className="relative text-muted-foreground hover:text-primary hover:bg-primary/5" 
+              className="relative text-muted-foreground hover:text-primary hover:bg-primary/5 shrink-0" 
               onClick={() => navigate('/messages')}
             >
               <Bell className="h-5 w-5" />
@@ -349,9 +348,7 @@ const DashboardLayout = () => {
               )}
             </Button>
 
-            <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
-
-            <div className="flex items-center gap-3 cursor-pointer pl-1" onClick={() => navigate('/settings')}>
+            <div className="flex items-center gap-3 cursor-pointer pl-1 shrink-0" onClick={() => navigate('/settings')}>
               <Avatar className="h-8 w-8 border border-border ring-2 ring-transparent hover:ring-primary/20 transition-all">
                 <AvatarImage src={userProfile?.avatar_url} />
                 <AvatarFallback className="bg-primary text-primary-foreground font-bold text-xs">
@@ -362,8 +359,8 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8 bg-muted/10 dark:bg-black/20">
-          <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <main className="flex-1 p-3 md:p-8 bg-muted/10 dark:bg-black/20 overflow-x-hidden">
+          <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-2 duration-500 w-full">
             <Outlet />
           </div>
         </main>
