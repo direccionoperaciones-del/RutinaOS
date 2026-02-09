@@ -374,7 +374,8 @@ export default function TasksList() {
   const [selectedRoutines, setSelectedRoutines] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
-  const { data: tasks = [], isLoading, error, refetch } = useMyTasks(dateFrom, dateTo);
+  // UPDATED: Destructure isFetching to show loading state during refresh
+  const { data: tasks = [], isLoading, isFetching, error, refetch } = useMyTasks(dateFrom, dateTo);
 
   const handleStartTask = (task: any) => { setSelectedTask(task); setIsExecutionOpen(true); };
   const handleCancelTask = (task: any) => { setTaskToCancel(task); setIsCancelOpen(true); };
@@ -500,7 +501,8 @@ export default function TasksList() {
                         <X className="w-3 h-3 mr-1" /> Limpiar
                     </Button>
                 )}
-                <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar"><RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /></Button>
+                {/* Updated Button: Uses isFetching to spin the icon */}
+                <Button variant="ghost" size="icon" onClick={() => refetch()} title="Recargar"><RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} /></Button>
             </div>
           </div>
         </CardHeader>
@@ -549,7 +551,7 @@ export default function TasksList() {
         rejected={stats.rejected}
       />
 
-      {showCongratulation && !isLoading && (
+      {showCongratulation && !isFetching && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden mb-6">
           <div className="absolute top-0 right-0 opacity-10"><PartyPopper className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-green-600" /></div>
           <div className="flex flex-col items-center gap-2 relative z-10">

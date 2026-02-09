@@ -9,7 +9,7 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
   const isEnabled = !!user && !!profile && !!dateFrom && !!dateTo && !!tenantId;
 
   return useQuery({
-    queryKey: ['my-tasks', user?.id, tenantId, dateFrom, dateTo], // Añadido tenantId a la key para refrescar al cambiar
+    queryKey: ['my-tasks', user?.id, tenantId, dateFrom, dateTo],
     enabled: isEnabled,
     placeholderData: keepPreviousData,
     queryFn: async () => {
@@ -30,17 +30,23 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           pdv (id, nombre, ciudad, radio_gps, latitud, longitud),
           profiles:completado_por (id, nombre, apellido)
         `)
-        .eq('tenant_id', tenantId); // <--- FILTRO EXPLÍCITO
+        .eq('tenant_id', tenantId);
 
-      // --- LÓGICA DE VISIBILIDAD CORREGIDA ---
-      // 1. Traer tareas del rango de fechas seleccionado (Histórico)
-      // 2. O traer tareas PENDIENTES o EN PROCESO (Vigentes de días anteriores)
-      const rangeCondition = `and(fecha_programada.gte.${dateFrom},fecha_programada.lte.${dateTo})`;
-      const pendingCondition = `estado.eq.pendiente`;
-      const processCondition = `estado.eq.en_proceso`;
+      // --- LÓGICA DE VISIBILIDAD (CORREGIDA) ---
+      // Regla 1: NUNCA mostrar tareas futuras (posteriores a dateTo)
+      // Regla 2: Mostrar tareas del rango seleccionado (dateFrom - dateTo)
+      // Regla 3: Mostrar tareas pendientes/en_proceso antiguas (Backlog) que sean <= dateTo
       
-      // Aplicamos filtro OR: (En Rango) O (Pendiente) O (En Proceso)
-      query = query.or(`${rangeCondition},${pendingCondition},${processCondition}`);
+      // Aplicamos filtro global de techo (Upper Bound)
+      query = query.lte('fecha_programada', dateTo);
+
+      // Aplicamos condición OR para el piso (Lower Bound):
+      // (Fecha >= dateFrom) OR (Estado es Pendiente/EnProceso)
+      // Esto permite ver historial completo dentro del rango, Y backlog pendiente fuera del rango (pero acotado por el techo arriba)
+      const fromCondition = `fecha_programada.gte.${dateFrom}`;
+      const statusCondition = `estado.eq.pendiente,estado.eq.en_proceso`;
+      
+      query = query.or(`${fromCondition},${statusCondition}`);
       
       // --- RESTRICCIÓN DE SEGURIDAD (Tenant & Role) ---
       if (profile?.role === 'administrador') {
