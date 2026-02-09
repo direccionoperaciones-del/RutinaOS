@@ -32,21 +32,11 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         `)
         .eq('tenant_id', tenantId);
 
-      // --- LÓGICA DE VISIBILIDAD (CORREGIDA) ---
-      // Regla 1: NUNCA mostrar tareas futuras (posteriores a dateTo)
-      // Regla 2: Mostrar tareas del rango seleccionado (dateFrom - dateTo)
-      // Regla 3: Mostrar tareas pendientes/en_proceso antiguas (Backlog) que sean <= dateTo
-      
-      // Aplicamos filtro global de techo (Upper Bound)
+      // --- FILTRADO ESTRICTO POR FECHAS ---
+      // Se muestran SOLO las tareas programadas dentro del rango seleccionado.
+      // Si el usuario quiere ver tareas de días anteriores, debe ampliar el rango de fechas.
+      query = query.gte('fecha_programada', dateFrom);
       query = query.lte('fecha_programada', dateTo);
-
-      // Aplicamos condición OR para el piso (Lower Bound):
-      // (Fecha >= dateFrom) OR (Estado es Pendiente/EnProceso)
-      // Esto permite ver historial completo dentro del rango, Y backlog pendiente fuera del rango (pero acotado por el techo arriba)
-      const fromCondition = `fecha_programada.gte.${dateFrom}`;
-      const statusCondition = `estado.eq.pendiente,estado.eq.en_proceso`;
-      
-      query = query.or(`${fromCondition},${statusCondition}`);
       
       // --- RESTRICCIÓN DE SEGURIDAD (Tenant & Role) ---
       if (profile?.role === 'administrador') {
