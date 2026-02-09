@@ -36,33 +36,33 @@ serve(async (req) => {
     try { const text = await req.text(); if (text) body = JSON.parse(text); } catch (e) {}
     
     let targetDate = body.date;
-    const targetTenantId = body.tenant_id; // NUEVO CAMPO OPCIONAL
+    const targetTenantId = body.tenant_id;
 
     if (!targetDate) {
-      // Fecha Colombia por defecto
       const now = new Date();
       const formatter = new Intl.DateTimeFormat('en-CA', { 
         timeZone: 'America/Bogota',
         year: 'numeric', month: '2-digit', day: '2-digit'
       });
-      targetDate = formatter.format(now); // YYYY-MM-DD
+      targetDate = formatter.format(now);
     }
 
     // Construir fecha segura para cálculos
     const [y, m, d] = targetDate.split('-').map(Number);
-    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0)); // Mediodía UTC para evitar saltos
+    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
     const dayOfWeek = dateObj.getUTCDay(); // 0=Dom
     const dayOfMonth = dateObj.getUTCDate();
 
     const logs: string[] = [];
-    logs.push(`🚀 INICIO GENERACIÓN: ${targetDate} (Día Sem: ${dayOfWeek}, Día Mes: ${dayOfMonth})`);
+    logs.push(`🚀 INICIO GENERACIÓN: ${targetDate}`);
+    logs.push(`📅 Análisis: Día Mes=${dayOfMonth}, Día Sem=${dayOfWeek} (0=Dom)`);
 
-    // 3. Obtener Tenants Activos (Filtrando si viene targetTenantId)
+    // 3. Obtener Tenants Activos
     let tenantQuery = supabaseAdmin.from('tenants').select('id, nombre').eq('activo', true);
     
     if (targetTenantId) {
       tenantQuery = tenantQuery.eq('id', targetTenantId);
-      logs.push(`🎯 FILTRO APLICADO: Organización ID ${targetTenantId}`);
+      logs.push(`🎯 FILTRO APLICADO: Org ID ${targetTenantId}`);
     }
 
     const { data: tenants } = await tenantQuery;
@@ -72,7 +72,7 @@ serve(async (req) => {
     let totalTasks = 0;
 
     for (const tenant of tenants) {
-      logs.push(`🏢 Org: ${tenant.nombre}`);
+      logs.push(`🏢 ORG: ${tenant.nombre}`);
 
       // 4. Obtener Asignaciones de Rutinas
       const { data: routineAssigns } = await supabaseAdmin
@@ -94,7 +94,7 @@ serve(async (req) => {
         continue;
       }
 
-      // 5. Obtener Responsables Vigentes (Validando Fechas)
+      // 5. Obtener Responsables Vigentes
       const { data: pdvAssigns } = await supabaseAdmin
         .from('pdv_assignments')
         .select('pdv_id, user_id, fecha_desde, fecha_hasta')
@@ -124,36 +124,54 @@ serve(async (req) => {
 
       for (const assign of routineAssigns) {
         const r = assign.routine_templates;
-        const pdvName = assign.pdv?.nombre;
+        const pdvName = assign.pdv?.nombre || 'PDV Desconocido';
 
-        if (!r || !r.activo) continue;
+        if (!r) continue;
+        if (!r.activo) {
+           // logs.push(`   ⚪ Saltada ${r.nombre}: Rutina inactiva.`);
+           continue;
+        }
 
         // --- LÓGICA DE FRECUENCIA ---
         let shouldRun = false;
+        let skipReason = "";
         
         if (r.frecuencia === 'diaria') {
           if (!r.dias_ejecucion || r.dias_ejecucion.length === 0 || r.dias_ejecucion.includes(dayOfWeek)) {
             shouldRun = true;
+          } else {
+            skipReason = `No toca hoy (Días: ${r.dias_ejecucion})`;
           }
         } else if (r.frecuencia === 'semanal') {
           if (r.dias_ejecucion?.includes(dayOfWeek)) shouldRun = true;
+          else skipReason = `No toca hoy (Días: ${r.dias_ejecucion})`;
         } else if (r.frecuencia === 'mensual') {
           if (dayOfMonth === 1) shouldRun = true;
+          else skipReason = `Mensual solo día 1`;
         } else if (r.frecuencia === 'quincenal') {
           const c1 = r.corte_1_inicio || 1;
           const c2 = r.corte_2_inicio || 16;
-          if (dayOfMonth === c1 || dayOfMonth === c2) shouldRun = true;
+          if (dayOfMonth === c1 || dayOfMonth === c2) {
+            shouldRun = true;
+          } else {
+            skipReason = `Hoy ${dayOfMonth} no es corte (${c1} o ${c2})`;
+          }
         } else if (r.frecuencia === 'fechas_especificas') {
           if (r.fechas_especificas?.includes(targetDate)) shouldRun = true;
+          else skipReason = `Fecha no listada en específicas`;
         }
 
-        if (!shouldRun) continue;
+        if (!shouldRun) {
+          // Log solo para depuración profunda, descomentar si es necesario
+          // logs.push(`   ⏭️ Saltada ${r.nombre}: ${skipReason}`);
+          continue;
+        }
 
         // --- VALIDAR RESPONSABLE ---
         let userId = respMap.get(assign.pdv_id);
         
         if (!userId) {
-          logs.push(`   ⚠️ ${pdvName}: Sin responsable activo para hoy.`);
+          logs.push(`   ⚠️ ${r.nombre} @ ${pdvName}: Sin responsable activo.`);
           continue;
         }
 
@@ -161,11 +179,11 @@ serve(async (req) => {
         const absence = absMap.get(userId);
         if (absence) {
           if (absence.politica === 'omitir') {
-            logs.push(`   ⏸️ ${pdvName}: Responsable ausente (Omitir).`);
+            logs.push(`   ⏸️ ${r.nombre} @ ${pdvName}: Responsable ausente (Omitir).`);
             continue;
           } else if (absence.politica === 'reasignar' && absence.receptor_id) {
             userId = absence.receptor_id;
-            logs.push(`   arrows_counterclockwise ${pdvName}: Reasignado por ausencia.`);
+            logs.push(`   🔄 ${r.nombre} @ ${pdvName}: Reasignado por ausencia.`);
           }
         }
 
@@ -190,13 +208,13 @@ serve(async (req) => {
           .upsert(tasksBatch, { onConflict: 'assignment_id,fecha_programada', ignoreDuplicates: true });
         
         if (insError) {
-          logs.push(`   ❌ Error insertando: ${insError.message}`);
+          logs.push(`   ❌ Error BD: ${insError.message}`);
         } else {
           totalTasks += tasksBatch.length;
-          logs.push(`   ✅ Generadas ${tasksBatch.length} tareas para ${tenant.nombre}.`);
+          logs.push(`   ✅ Creadas ${tasksBatch.length} tareas para ${tenant.nombre}.`);
         }
       } else {
-        logs.push(`   ℹ️ No hubo tareas para generar hoy.`);
+        logs.push(`   ℹ️ Ninguna rutina cumplió criterios para hoy.`);
       }
     }
 
@@ -214,6 +232,7 @@ serve(async (req) => {
       JSON.stringify({ 
         ok: true, 
         message: `Proceso finalizado. Tareas: ${totalTasks}`,
+        generated: totalTasks,
         logs 
       }), 
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
