@@ -34,20 +34,27 @@ export function usePushSubscription() {
     const isStand = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
     setIsStandalone(isStand);
 
-    // Verificar estado del Service Worker
-    if (hasSW) {
-        navigator.serviceWorker.ready.then(reg => {
-            console.log("[PushHook] SW Ready. Active:", !!reg.active);
-            if (!navigator.serviceWorker.controller) {
-                console.warn("[PushHook] ⚠️ SW registrado pero NO controla la página todavía (Hard Reload necesario?).");
-            }
-        });
-    }
-
     if (hasSW && hasPush && user) {
       checkSubscriptionState();
     }
   }, [user]);
+
+  const updateSubscriptionInDb = async (subscription: PushSubscription) => {
+    if (!user) return { error: "No user" };
+    const subJSON = subscription.toJSON();
+    
+    if (subJSON.keys?.p256dh && subJSON.keys?.auth && subJSON.endpoint) {
+       return await supabase.from('push_subscriptions').upsert({
+          user_id: user.id,
+          endpoint: subJSON.endpoint,
+          p256dh: subJSON.keys.p256dh,
+          auth: subJSON.keys.auth,
+          user_agent: navigator.userAgent,
+          last_used_at: new Date().toISOString()
+       }, { onConflict: 'endpoint' });
+    }
+    return { error: "Invalid keys" };
+  };
 
   const checkSubscriptionState = async () => {
     try {
@@ -55,6 +62,7 @@ export function usePushSubscription() {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setIsSubscribed(true);
+        // Sincronización silenciosa al cargar
         updateSubscriptionInDb(subscription);
       } else {
         setIsSubscribed(false);
@@ -64,62 +72,34 @@ export function usePushSubscription() {
     }
   };
 
-  const updateSubscriptionInDb = async (subscription: PushSubscription) => {
-    if (!user) return;
-    const subJSON = subscription.toJSON();
-    
-    // Validación estricta antes de guardar
-    if (subJSON.keys?.p256dh && subJSON.keys?.auth && subJSON.endpoint) {
-       console.log("[PushHook] Actualizando suscripción en DB...");
-       await supabase.from('push_subscriptions').upsert({
-          user_id: user.id,
-          endpoint: subJSON.endpoint,
-          p256dh: subJSON.keys.p256dh,
-          auth: subJSON.keys.auth,
-          last_used_at: new Date().toISOString()
-       }, { onConflict: 'endpoint' });
-    } else {
-        console.error("[PushHook] Suscripción inválida (faltan keys):", subJSON);
-    }
-  };
-
   const subscribeToPush = async () => {
     if (!user) return false;
     setLoading(true);
     setError(null);
 
-    if (isIOS && !isStandalone) {
-      setLoading(false);
-      setError("En iOS, debes instalar la app en inicio para recibir notificaciones.");
-      return false;
-    }
-
     try {
-      console.log("[PushHook] Solicitando permiso...");
       const permission = await Notification.requestPermission();
-      if (permission !== 'granted') throw new Error("Permiso denegado por el usuario.");
+      if (permission !== 'granted') throw new Error("Permiso denegado.");
 
-      console.log("[PushHook] Obteniendo VAPID Key...");
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
-      if (keyError || !keyData?.publicKey) throw new Error("Error obteniendo VAPID Public Key.");
+      if (keyError || !keyData?.publicKey) throw new Error("Error obteniendo llave pública.");
 
       const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
       const registration = await navigator.serviceWorker.ready;
       
-      console.log("[PushHook] Suscribiendo en navegador...");
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
       });
 
-      console.log("[PushHook] Suscripción exitosa. Guardando...");
-      await updateSubscriptionInDb(subscription);
+      const { error: dbError } = await updateSubscriptionInDb(subscription);
+      if (dbError) console.error("Error guardando suscripción:", dbError);
       
       setIsSubscribed(true);
       return true;
 
     } catch (err: any) {
-      console.error("[PushHook] Error subscribing:", err);
+      console.error("[PushHook] Error:", err);
       setError(err.message || "Error al suscribirse.");
       return false;
     } finally {
@@ -127,37 +107,40 @@ export function usePushSubscription() {
     }
   };
 
+  // --- DIAGNÓSTICO MEJORADO ---
   const runDiagnostics = async () => {
     const logs: string[] = [];
-    const log = (msg: string) => { console.log(`[Diag] ${msg}`); logs.push(msg); };
+    const log = (msg: string) => { logs.push(msg); }; // Solo guarda en array para UI
     
-    log("=== DIAGNÓSTICO PUSH V2 ===");
+    log("=== DIAGNÓSTICO V3 (DB CHECK) ===");
     
     try {
-        // 1. Chequeo de SW
-        if (!('serviceWorker' in navigator)) throw new Error("Navegador no soporta SW");
+        if (!('serviceWorker' in navigator)) throw new Error("Sin soporte SW");
+        
         const reg = await navigator.serviceWorker.ready;
         log(`✅ SW Estado: ${reg.active ? 'Activo' : 'Inactivo'}`);
         
-        if (!navigator.serviceWorker.controller) {
-            log("⚠️ ALERTA: SW no controla la página. Recarga forzada recomendada.");
+        const sub = await reg.pushManager.getSubscription();
+        if (!sub) throw new Error("❌ Sin suscripción local. Actívala primero.");
+        
+        log("✅ Suscripción navegador OK.");
+
+        // 1. INTENTO DE GUARDADO EN DB CON REPORTE
+        log("💾 Sincronizando con Supabase...");
+        const { error: dbError } = await updateSubscriptionInDb(sub);
+        
+        if (dbError) {
+            log(`❌ ERROR DB: ${dbError.message || dbError}`);
+            log("⚠️ Faltan políticas RLS en tabla push_subscriptions.");
+            return logs; // Detener si falla la DB
+        } else {
+            log("✅ DB Sincronizada (RLS Correcto).");
         }
 
-        // 2. Chequeo de Suscripción
-        const sub = await reg.pushManager.getSubscription();
-        if (!sub) throw new Error("❌ Sin suscripción activa en navegador.");
-        
-        log("✅ Suscripción local detectada.");
-        const subJson = sub.toJSON();
-        if(!subJson.keys?.auth) log("❌ Suscripción corrupta (sin auth key).");
-
-        // 3. Prueba de Envío
-        log("🚀 Enviando prueba al Backend...");
-        
+        // 2. PRUEBA DE ENVÍO
+        log("🚀 Enviando prueba...");
         const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) throw new Error("Sin sesión Supabase");
-
+        
         const PROJECT_URL = "https://lrnzxrrjcwkmwwldfdaq.supabase.co";
         const functionUrl = `${PROJECT_URL}/functions/v1/send-push`;
 
@@ -165,36 +148,26 @@ export function usePushSubscription() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${session?.access_token}`
             },
             body: JSON.stringify({
                 user_id: user?.id,
-                title: "Test Diagnóstico",
-                body: "Si ves esto, el sistema funciona.",
-                url: "/settings?test=true"
+                title: "Test Exitoso",
+                body: "Conexión DB <-> Navegador establecida.",
+                url: "/settings?success=true"
             })
         });
 
-        if (!response.ok) {
-            const txt = await response.text();
-            throw new Error(`Error HTTP ${response.status}: ${txt}`);
-        }
-
         const jsonResult = await response.json();
-        log(`📡 Respuesta Backend: ${JSON.stringify(jsonResult)}`);
-
+        
         if (jsonResult.success && jsonResult.sent > 0) {
-            log("✅ Backend reporta ENVÍO EXITOSO a FCM/Push Service.");
-            log("👀 Si no aparece visualmente, verifica:");
-            log("   1. 'No molestar' desactivado.");
-            log("   2. Permisos de notif. del SO.");
-            log("   3. Que el navegador no esté silenciado.");
+            log(`✅ ENVÍO EXITOSO (Sent: ${jsonResult.sent})`);
         } else {
-            log("⚠️ Backend reporta fallo en envío (suscripción inválida?).");
+            log(`⚠️ Backend respondió: ${JSON.stringify(jsonResult)}`);
         }
 
     } catch (e: any) {
-        log(`❌ ERROR: ${e.message}`);
+        log(`❌ CRITICAL: ${e.message}`);
     }
 
     return logs;
