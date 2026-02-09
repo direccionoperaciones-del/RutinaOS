@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { Clock, Calendar as CalendarIcon, X } from "lucide-react";
+import { Clock, Calendar as CalendarIcon, X, ArrowRight } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -113,43 +113,95 @@ export function RoutineScheduleTab({ form }: RoutineScheduleTabProps) {
 
         {/* Quincenal */}
         {watchFrecuencia === 'quincenal' && (
-          <div className="grid grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name="corte_1_limite"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Vencimiento 1er Corte</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
-                        <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>Rango: 1 al 15</FormDescription>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="corte_2_limite"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Vencimiento 2do Corte</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      {Array.from({ length: 16 }, (_, i) => i + 16).map((d) => (
-                        <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>Rango: 16 al 31</FormDescription>
-                </FormItem>
-              )}
-            />
+          <div className="space-y-4">
+            <div className="bg-white p-3 rounded border shadow-sm">
+              <h4 className="text-sm font-semibold mb-3 text-blue-700">1er Corte del Mes</h4>
+              <div className="grid grid-cols-2 gap-4 items-end">
+                <FormField
+                  control={form.control}
+                  name="corte_1_inicio"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Día Generación</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
+                            <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <div className="flex items-center gap-2">
+                  <ArrowRight className="w-4 h-4 text-muted-foreground mb-2" />
+                  <FormField
+                    control={form.control}
+                    name="corte_1_limite"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel className="text-xs">Día Límite</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            {Array.from({ length: 15 }, (_, i) => i + 1).map((d) => (
+                              <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-3 rounded border shadow-sm">
+              <h4 className="text-sm font-semibold mb-3 text-blue-700">2do Corte del Mes</h4>
+              <div className="grid grid-cols-2 gap-4 items-end">
+                <FormField
+                  control={form.control}
+                  name="corte_2_inicio"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Día Generación</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {Array.from({ length: 16 }, (_, i) => i + 16).map((d) => (
+                            <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <div className="flex items-center gap-2">
+                  <ArrowRight className="w-4 h-4 text-muted-foreground mb-2" />
+                  <FormField
+                    control={form.control}
+                    name="corte_2_limite"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel className="text-xs">Día Límite</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            {Array.from({ length: 16 }, (_, i) => i + 16).map((d) => (
+                              <SelectItem key={d} value={d.toString()}>Día {d}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+            <FormDescription>
+              Configura el día en que APARECE la tarea (Generación) y el día máximo para hacerla (Límite).
+            </FormDescription>
           </div>
         )}
 

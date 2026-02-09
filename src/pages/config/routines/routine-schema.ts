@@ -12,13 +12,18 @@ export const routineSchema = z.object({
   
   // Configuración Frecuencias
   dias_ejecucion: z.array(z.number()).default([]), // 0=Dom, 1=Lun...
-  corte_1_limite: z.coerce.number().optional(), // Para Quincenal (1-15)
-  corte_2_limite: z.coerce.number().optional(), // Para Quincenal (16-31)
+  
+  // Quincenal: Inicio (Generación) y Límite (Vencimiento)
+  corte_1_inicio: z.coerce.number().optional().default(1),
+  corte_1_limite: z.coerce.number().optional().default(15),
+  corte_2_inicio: z.coerce.number().optional().default(16),
+  corte_2_limite: z.coerce.number().optional().default(30),
+  
   vencimiento_dia_mes: z.coerce.number().optional(), // Para Mensual (1-31)
   fechas_especificas: z.array(z.string()).max(5, "Máximo 5 fechas específicas").default([]),
 
   // Requisitos
-  requiere_auditoria: z.boolean().default(true), // NUEVO CAMPO
+  requiere_auditoria: z.boolean().default(true),
   gps_obligatorio: z.boolean().default(false),
   fotos_obligatorias: z.boolean().default(false),
   min_fotos: z.coerce.number().min(0).default(0),
