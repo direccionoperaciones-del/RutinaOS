@@ -8,9 +8,11 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Search, Plus, Download, Upload, Loader2, Trash2, Power } from "lucide-react";
 import { AssignmentForm } from "./AssignmentForm";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function AssignmentList() {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Hook para el contexto del tenant
   const [assignments, setAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -21,7 +23,9 @@ export default function AssignmentList() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchAssignments = async () => {
+    if (!tenantId) return; // Esperar a que cargue el tenant
     setLoading(true);
+    
     const { data, error } = await supabase
       .from('routine_assignments')
       .select(`
@@ -30,6 +34,7 @@ export default function AssignmentList() {
         routine_templates (id, nombre, frecuencia),
         pdv (id, nombre, ciudad, codigo_interno)
       `)
+      .eq('tenant_id', tenantId) // <--- FILTRO DE AISLAMIENTO
       .order('created_at', { ascending: false });
     
     if (error) {
@@ -42,7 +47,7 @@ export default function AssignmentList() {
 
   useEffect(() => {
     fetchAssignments();
-  }, []);
+  }, [tenantId]); // Recargar si cambia el tenant (God Mode)
 
   const handleToggleStatus = async (assignment: any) => {
     const newStatus = assignment.estado === 'activa' ? 'inactiva' : 'activa';
@@ -91,14 +96,15 @@ export default function AssignmentList() {
   };
 
   const downloadTemplate = async () => {
+    if (!tenantId) return;
     setIsDownloading(true);
     try {
-      // 1. Fetch reference data
-      const { data: routines } = await supabase.from('routine_templates').select('nombre, frecuencia').eq('activo', true).order('nombre');
-      const { data: pdvs } = await supabase.from('pdv').select('id, nombre, codigo_interno, ciudad').eq('activo', true).order('nombre');
+      // 1. Fetch reference data FILTRADO
+      const { data: routines } = await supabase.from('routine_templates').select('nombre, frecuencia').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
+      const { data: pdvs } = await supabase.from('pdv').select('id, nombre, codigo_interno, ciudad').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
       
       // Get responsibles for PDVs to show in template as reference
-      const { data: assignments } = await supabase.from('pdv_assignments').select('pdv_id, profiles(nombre, apellido)').eq('vigente', true);
+      const { data: assignments } = await supabase.from('pdv_assignments').select('pdv_id, profiles(nombre, apellido)').eq('tenant_id', tenantId).eq('vigente', true);
       const responsibleMap = new Map();
       assignments?.forEach((a: any) => {
         if (a.profiles) responsibleMap.set(a.pdv_id, `${a.profiles.nombre} ${a.profiles.apellido}`);
@@ -205,12 +211,13 @@ export default function AssignmentList() {
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-      if (!profile?.tenant_id) throw new Error("Sin tenant");
+      
+      // Usar tenant del contexto
+      if (!tenantId) throw new Error("Sin tenant asignado");
 
-      // Load maps for lookup
-      const { data: rList } = await supabase.from('routine_templates').select('id, nombre').eq('tenant_id', profile.tenant_id);
-      const { data: pList } = await supabase.from('pdv').select('id, codigo_interno').eq('tenant_id', profile.tenant_id);
+      // Load maps for lookup (FILTERED BY TENANT)
+      const { data: rList } = await supabase.from('routine_templates').select('id, nombre').eq('tenant_id', tenantId);
+      const { data: pList } = await supabase.from('pdv').select('id, codigo_interno').eq('tenant_id', tenantId);
       
       const routineMap = new Map(rList?.map(r => [r.nombre.toLowerCase().trim(), r.id]));
       const pdvMap = new Map(pList?.map(p => [p.codigo_interno.toLowerCase().trim(), p.id]));
@@ -223,14 +230,11 @@ export default function AssignmentList() {
         const rName = cols[0];
         const pCode = cols[1];
 
-        if (!rName && !pCode) continue; // Skip empty rows (maybe from references)
+        if (!rName && !pCode) continue; 
         if (!rName || !pCode) {
-           // If one is missing but not both, it might be a data row
-           // But if it's just reference columns populated, skip
            if (!rName && !pCode) continue; 
         }
 
-        // Validate if it's a data row (cols 0 and 1 present)
         if (!rName || !pCode) continue;
 
         const rId = routineMap.get(rName.toLowerCase());
@@ -240,7 +244,7 @@ export default function AssignmentList() {
         if (!pId) { errors.push(`Fila ${i+2}: PDV "${pCode}" no encontrado.`); continue; }
 
         const { error } = await supabase.from('routine_assignments').insert({
-          tenant_id: profile.tenant_id,
+          tenant_id: tenantId,
           rutina_id: rId,
           pdv_id: pId,
           estado: 'activa',

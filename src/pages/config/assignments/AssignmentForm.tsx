@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, CheckSquare, Store } from "lucide-react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 const assignmentSchema = z.object({
   rutina_id: z.string().min(1, "Debe seleccionar una rutina"),
@@ -27,6 +28,7 @@ interface AssignmentFormProps {
 
 export function AssignmentForm({ open, onOpenChange, onSuccess }: AssignmentFormProps) {
   const { toast } = useToast();
+  const { tenantId } = useCurrentUser(); // Hook para obtener el tenant activo
   const [isLoading, setIsLoading] = useState(false);
   const [routines, setRoutines] = useState<any[]>([]);
   const [pdvs, setPdvs] = useState<any[]>([]);
@@ -40,32 +42,36 @@ export function AssignmentForm({ open, onOpenChange, onSuccess }: AssignmentForm
     },
   });
 
-  // Cargar datos iniciales
+  // Cargar datos iniciales FILTRADOS por tenant
   useEffect(() => {
     const fetchData = async () => {
+      if (!tenantId) return;
+
       const { data: rData } = await supabase
         .from('routine_templates')
         .select('id, nombre, frecuencia')
+        .eq('tenant_id', tenantId) // <--- FILTRO AGREGADO
         .eq('activo', true)
         .order('nombre');
       
       const { data: pData } = await supabase
         .from('pdv')
         .select('id, nombre, ciudad, codigo_interno')
+        .eq('tenant_id', tenantId) // <--- FILTRO AGREGADO
         .eq('activo', true)
         .order('nombre');
 
       if (rData) setRoutines(rData);
       if (pData) setPdvs(pData);
     };
-    if (open) {
+    if (open && tenantId) {
       fetchData();
       form.reset();
       setExistingAssignments(new Set());
     }
-  }, [open]);
+  }, [open, tenantId]);
 
-  // Cuando cambia la rutina seleccionada, buscar asignaciones existentes para deshabilitarlas visualmente o marcarlas
+  // Cuando cambia la rutina seleccionada, buscar asignaciones existentes
   const selectedRoutineId = form.watch("rutina_id");
   
   useEffect(() => {
@@ -80,8 +86,6 @@ export function AssignmentForm({ open, onOpenChange, onSuccess }: AssignmentForm
       if (data) {
         const assignedPdvIds = new Set(data.map(d => d.pdv_id));
         setExistingAssignments(assignedPdvIds);
-        // Opcional: Podríamos pre-seleccionar los que ya la tienen, pero mejor dejar limpio para "Nuevas asignaciones"
-        // O bloquear los que ya existen para evitar errores unique
       }
     };
     fetchExisting();
@@ -93,8 +97,7 @@ export function AssignmentForm({ open, onOpenChange, onSuccess }: AssignmentForm
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No autenticado");
       
-      const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('id', user.id).single();
-      if (!profile?.tenant_id) throw new Error("Sin tenant asignado");
+      if (!tenantId) throw new Error("Sin organización asignada");
 
       // Filtrar PDVs que ya tienen la asignación para evitar errores
       const newPdvIds = values.pdv_ids.filter(id => !existingAssignments.has(id));
@@ -106,7 +109,7 @@ export function AssignmentForm({ open, onOpenChange, onSuccess }: AssignmentForm
       }
 
       const rowsToInsert = newPdvIds.map(pdv_id => ({
-        tenant_id: profile.tenant_id,
+        tenant_id: tenantId, // Usamos el tenant del contexto (correcto para Superadmin)
         rutina_id: values.rutina_id,
         pdv_id: pdv_id,
         estado: 'activa',
@@ -244,6 +247,11 @@ export function AssignmentForm({ open, onOpenChange, onSuccess }: AssignmentForm
                           </div>
                         );
                       })}
+                      {pdvs.length === 0 && (
+                        <div className="text-center text-muted-foreground text-sm py-4">
+                          No hay PDVs activos en esta organización.
+                        </div>
+                      )}
                     </div>
                   )}
                 </ScrollArea>
