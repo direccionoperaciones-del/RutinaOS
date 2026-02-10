@@ -77,7 +77,8 @@ serve(async (req) => {
       ? `🚨 ${msg.asunto} 🚨`
       : `${prefix} ${msg.asunto}`;
 
-    const body = `RunOp\n${msg.cuerpo?.length > 100 ? msg.cuerpo.substring(0, 100) + '...' : msg.cuerpo || ''}`;
+    // Eliminado "RunOp\n" para evitar redundancia
+    const body = `${msg.cuerpo?.length > 100 ? msg.cuerpo.substring(0, 100) + '...' : msg.cuerpo || ''}`;
 
     console.log(`[notify-message] Payload prepared. Title: "${title}"`);
 

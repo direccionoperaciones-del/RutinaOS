@@ -25,7 +25,7 @@ serve(async (req) => {
     // Aseguramos que 'icon' siempre vaya, y que 'url' tenga un valor por defecto
     const payload = {
       title: title || "🔔 Conexión Establecida",
-      body: body || "RunOp\nSistema Operativo y conectado.",
+      body: body || "Sistema Operativo y conectado.", // Eliminado "RunOp\n"
       url: url || "/",
       icon: APP_ICON_URL,
       tag: "general-" + Date.now() // Tag único para evitar agrupación excesiva si no se desea
