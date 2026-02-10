@@ -168,14 +168,9 @@ export function NewMessageModal({ open, onOpenChange, onSuccess }: NewMessageMod
 
       if (error) throw error;
 
-      // 2. Notificaciones Push
-      if (!values.scheduled_date && messageId) {
-        supabase.functions.invoke('notify-message', { body: { message_id: messageId } })
-          .catch(e => console.error("Push Error", e));
-      }
-
       let desc = "Mensaje enviado correctamente a la organización seleccionada.";
       if (values.tipo === 'tarea_flash') desc = "Tarea Flash asignada.";
+      if (values.scheduled_date) desc += " (Programado)";
 
       toast({ title: "Enviado", description: desc });
       onSuccess();
