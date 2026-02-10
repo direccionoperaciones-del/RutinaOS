@@ -38,6 +38,7 @@ export default async function handler(request: Request) {
       .from('notifications')
       .select('id, entity_id') 
       .is('sent_at', null)
+      .not('scheduled_at', 'is', null) // <-- FIX: Solo procesar si tiene fecha programada
       .lte('scheduled_at', now)
       .eq('status', 'pending')
       .limit(50);
