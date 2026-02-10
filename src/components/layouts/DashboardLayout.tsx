@@ -239,7 +239,7 @@ const DashboardLayout = () => {
                     label={item.label}
                     path={item.path}
                     active={location.pathname === item.path}
-                    badgeCount={item.showBadge ? unreadCount : 0}
+                    badgeCount={(item as any).showBadge ? unreadCount : 0}
                     onClick={() => {
                       navigate(item.path);
                       setIsMobileMenuOpen(false);

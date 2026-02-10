@@ -130,7 +130,7 @@ export function usePushSubscription() {
         const { error: dbError } = await updateSubscriptionInDb(sub);
         
         if (dbError) {
-            log(`❌ ERROR DB: ${dbError.message || dbError}`);
+            log(`❌ ERROR DB: ${(dbError as any).message || dbError}`);
             log("⚠️ Faltan políticas RLS en tabla push_subscriptions.");
             return logs; // Detener si falla la DB
         } else {
