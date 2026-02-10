@@ -24,8 +24,8 @@ serve(async (req) => {
     // Construir Payload Estricto para el Service Worker
     // Aseguramos que 'icon' siempre vaya, y que 'url' tenga un valor por defecto
     const payload = {
-      title: title || "RunOp",
-      body: body || "Nueva notificación",
+      title: title || "🔔 Conexión Establecida",
+      body: body || "RunOp\nSistema Operativo y conectado.",
       url: url || "/",
       icon: APP_ICON_URL,
       tag: "general-" + Date.now() // Tag único para evitar agrupación excesiva si no se desea

@@ -69,11 +69,15 @@ serve(async (req) => {
 
     // 3. Preparar Payload
     let prefix = "Nuevo Mensaje";
-    if (msg.tipo === 'comunicado') prefix = "📢 Comunicado";
-    if (msg.tipo === 'tarea_flash') prefix = "🚨 Tarea Flash";
+    if (msg.tipo === 'comunicado') prefix = "📣";
+    if (msg.tipo === 'tarea_flash') prefix = "🚨";
+    if (msg.tipo === 'mensaje_directo') prefix = "✉️";
 
-    const title = `${prefix}: ${msg.asunto}`;
-    const body = msg.cuerpo.length > 100 ? msg.cuerpo.substring(0, 100) + '...' : msg.cuerpo;
+    const title = msg.tipo === 'tarea_flash' 
+      ? `🚨 ${msg.asunto} 🚨`
+      : `${prefix} ${msg.asunto}`;
+
+    const body = `RunOp\n${msg.cuerpo?.length > 100 ? msg.cuerpo.substring(0, 100) + '...' : msg.cuerpo || ''}`;
 
     console.log(`[notify-message] Payload prepared. Title: "${title}"`);
 
