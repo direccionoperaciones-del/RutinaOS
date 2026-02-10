@@ -25,7 +25,7 @@ serve(async (req) => {
     // Aseguramos que 'icon' siempre vaya, y que 'url' tenga un valor por defecto
     const payload = {
       title: title || "RunOp",
-      body: body || "Tienes un mensaje nuevo en RunOp.",
+      body: body || "Nueva notificación",
       url: url || "/",
       icon: APP_ICON_URL,
       tag: "general-" + Date.now() // Tag único para evitar agrupación excesiva si no se desea
