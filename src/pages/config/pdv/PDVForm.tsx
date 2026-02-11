@@ -231,7 +231,18 @@ export function PDVForm({ open, onOpenChange, pdvToEdit, onSuccess }: PDVFormPro
       onOpenChange(false);
     } catch (error: any) {
       console.error(error);
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      // Manejo específico de error de duplicados
+      if (error.code === '23505' || error.message?.includes('duplicate key')) {
+        toast({ 
+          variant: "destructive", 
+          title: "Código duplicado", 
+          description: `El código "${values.codigo_interno}" ya existe en esta organización. Por favor usa otro.` 
+        });
+        form.setError('codigo_interno', { message: "Este código ya está en uso" });
+        setActiveTab('general');
+      } else {
+        toast({ variant: "destructive", title: "Error", description: error.message });
+      }
     } finally {
       setIsLoading(false);
     }
