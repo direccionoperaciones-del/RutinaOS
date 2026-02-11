@@ -94,7 +94,7 @@ const Login = () => {
             nombre: values.nombre,
             apellido: values.apellido,
             tenant_name: values.tenant_name,
-            role: 'director' // Set default role to director for new organization creators
+            // Role is now enforced by the database trigger for security
           }
         }
       });

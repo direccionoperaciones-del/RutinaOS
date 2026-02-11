@@ -387,6 +387,59 @@ CREATE INDEX idx_audit_table ON system_audit_log(table_name, record_id);
 
 ---
 
+## Seguridad: Manejo de Usuarios y Roles
+
+### 1. Trigger de Registro (handle_new_user)
+
+**Seguridad Reforzada (2026-01-21):**
+El trigger ignora cualquier metadata de rol o tenant_id enviada por el cliente.
+- Si se provee `tenant_name`: Crea tenant y asigna rol **'director'** forzadamente.
+- Si NO se provee `tenant_name`: No hace nada (asume que la creación es vía invitación segura).
+
+```sql
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  v_tenant_id UUID;
+  v_tenant_name TEXT;
+  v_tenant_code TEXT;
+BEGIN
+  -- 1. Registro Seguro (Creación de Empresa)
+  IF (new.raw_user_meta_data ->> 'tenant_name') IS NOT NULL THEN
+    
+    v_tenant_name := new.raw_user_meta_data ->> 'tenant_name';
+    v_tenant_code := UPPER(SUBSTRING(REGEXP_REPLACE(v_tenant_name, '[^a-zA-Z0-9]', '', 'g') FROM 1 FOR 4)) 
+                     || '-' || SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 FOR 6);
+    
+    INSERT INTO public.tenants (nombre, codigo, activo)
+    VALUES (v_tenant_name, v_tenant_code, true)
+    RETURNING id INTO v_tenant_id;
+
+    -- Forzar rol Director para el creador
+    INSERT INTO public.profiles (id, tenant_id, nombre, apellido, email, role, activo)
+    VALUES (
+      new.id, 
+      v_tenant_id,
+      COALESCE(new.raw_user_meta_data ->> 'nombre', 'Usuario'), 
+      COALESCE(new.raw_user_meta_data ->> 'apellido', 'Nuevo'),
+      new.email,
+      'director', 
+      true
+    )
+    ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id;
+  END IF;
+
+  RETURN new;
+END;
+$$;
+```
+
+---
+
 ## Row Level Security (RLS) Policies
 
 ### 1. Política Base: Multi-tenancy
