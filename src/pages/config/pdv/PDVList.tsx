@@ -27,19 +27,38 @@ export default function PDVList() {
     if (!tenantId) return;
     setLoading(true);
     
-    // Fallback simple si el join falla (Join puede fallar si profiles tiene RLS estricto pero pdv no)
-    const { data, error } = await supabase
-      .from('pdv')
-      .select(`*, pdv_assignments(profiles(nombre, apellido))`)
-      .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
-      .order('codigo_interno', { ascending: true });
-      
-    if (error) {
-      toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los PDVs" });
-    } else {
+    try {
+      // INTENTO 1: Carga completa con relaciones (puede fallar por RLS en tablas unidas)
+      const { data, error } = await supabase
+        .from('pdv')
+        .select(`*, pdv_assignments(profiles(nombre, apellido))`)
+        .eq('tenant_id', tenantId)
+        .order('codigo_interno', { ascending: true });
+        
+      if (error) throw error;
       setPdvs(data || []);
+
+    } catch (err: any) {
+      console.warn("Fallo carga completa PDV, intentando modo simple:", err.message);
+      
+      // INTENTO 2: Fallback a carga simple (solo tabla pdv)
+      try {
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('pdv')
+          .select('*')
+          .eq('tenant_id', tenantId)
+          .order('codigo_interno', { ascending: true });
+
+        if (simpleError) throw simpleError;
+        setPdvs(simpleData || []);
+        
+      } catch (finalErr: any) {
+        toast({ variant: "destructive", title: "Error", description: "No se pudieron cargar los PDVs: " + finalErr.message });
+        setPdvs([]);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => { fetchPDVs(); }, [tenantId]);
@@ -70,7 +89,14 @@ export default function PDVList() {
     setIsDownloading(true);
     try {
       toast({ title: "Generando plantilla...", description: "Consultando usuarios activos..." });
-      const { data: users } = await supabase.from('profiles').select('nombre, apellido, role').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
+      
+      // Intentamos obtener usuarios, si falla (por permisos), seguimos sin usuarios de referencia
+      let users: any[] = [];
+      try {
+        const { data } = await supabase.from('profiles').select('nombre, apellido, role').eq('tenant_id', tenantId).eq('activo', true).order('nombre');
+        users = data || [];
+      } catch (e) { console.warn("No se pudieron cargar usuarios para plantilla"); }
+
       const headers = ["codigo_interno", "nombre", "ciudad", "direccion", "telefono", "latitud", "longitud", "radio_gps", "responsable", "", "USUARIO_REFERENCIA (COPIAR)", "ROL_REFERENCIA"];
       const rows = [];
       const firstUser = users && users.length > 0 ? `${users[0].nombre} ${users[0].apellido}` : "Juan Perez";
@@ -128,14 +154,17 @@ export default function PDVList() {
     // Usamos el tenantId del hook en lugar de consultar profiles
     if (!tenantId) throw new Error("Sin organización asignada");
     
-    const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('tenant_id', tenantId).eq('activo', true);
-    const userMap = new Map(); 
-    users?.forEach(u => {
-      const key = `${u.nombre}${u.apellido}`.toLowerCase().replace(/\s+/g, '');
-      userMap.set(key, u.id);
-      const keySpaced = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
-      userMap.set(keySpaced, u.id);
-    });
+    let userMap = new Map();
+    try {
+      const { data: users } = await supabase.from('profiles').select('id, nombre, apellido').eq('tenant_id', tenantId).eq('activo', true);
+      users?.forEach(u => {
+        const key = `${u.nombre}${u.apellido}`.toLowerCase().replace(/\s+/g, '');
+        userMap.set(key, u.id);
+        const keySpaced = `${u.nombre} ${u.apellido}`.toLowerCase().trim();
+        userMap.set(keySpaced, u.id);
+      });
+    } catch (e) { console.warn("Error cargando mapa de usuarios para importación"); }
+
     let successCount = 0;
     let errors: string[] = [];
     for (let i = 0; i < rows.length; i++) {
