@@ -247,6 +247,10 @@ export default function AuditList() {
       </Card>
 
       <AuditReviewModal task={selectedTask} open={isModalOpen} onOpenChange={setIsModalOpen} onSuccess={fetchTasks} />
+
+      <div className="mt-8 pt-4 text-center border-t">
+        <p className="text-xs text-muted-foreground">Runop v1.0</p>
+      </div>
     </div>
   );
 }
