@@ -10,10 +10,5 @@
       "path": "/api/cron/scheduled-notifications",
       "schedule": "0 10 * * *"
     }
-  ],
-  "functions": {
-    "api/**/*.ts": {
-      "runtime": "edge"
-    }
-  }
+  ]
 }
