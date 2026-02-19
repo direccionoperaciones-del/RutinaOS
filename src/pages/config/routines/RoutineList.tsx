@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box, ChevronRight } from "lucide-react";
+import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box, ChevronRight, MessageSquareText, FileText, Mail } from "lucide-react";
 import { RoutineForm } from "./RoutineForm";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
@@ -117,6 +117,9 @@ export default function RoutineList() {
                   {routine.gps_obligatorio && <MapPin className="w-4 h-4 text-blue-500" />}
                   {routine.fotos_obligatorias && <Camera className="w-4 h-4 text-purple-500" />}
                   {routine.requiere_inventario && <Box className="w-4 h-4 text-orange-500" />}
+                  {routine.comentario_obligatorio && <MessageSquareText className="w-4 h-4 text-yellow-500" />}
+                  {routine.archivo_obligatorio && <FileText className="w-4 h-4 text-cyan-500" />}
+                  {(routine.enviar_email || routine.responder_email) && <Mail className="w-4 h-4 text-pink-500" />}
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => handleEdit(routine)} className="h-8">
                   Editar <ChevronRight className="w-4 h-4 ml-1" />
@@ -164,17 +167,39 @@ export default function RoutineList() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5 flex-wrap">
                       {routine.gps_obligatorio && (
-                        <Badge variant="outline" title="GPS Obligatorio"><MapPin className="w-3 h-3" /></Badge>
+                        <Badge variant="outline" className="px-1.5 py-0.5 border-blue-200 bg-blue-50 text-blue-700" title="GPS Obligatorio">
+                          <MapPin className="w-3 h-3" />
+                        </Badge>
                       )}
                       {routine.fotos_obligatorias && (
-                        <Badge variant="outline" title="Fotos Obligatorias"><Camera className="w-3 h-3" /></Badge>
+                        <Badge variant="outline" className="px-1.5 py-0.5 border-purple-200 bg-purple-50 text-purple-700" title={`Fotos Obligatorias (${routine.min_fotos || 1})`}>
+                          <Camera className="w-3 h-3" />
+                        </Badge>
                       )}
                       {routine.requiere_inventario && (
-                        <Badge variant="outline" title="Inventario"><Box className="w-3 h-3" /></Badge>
+                        <Badge variant="outline" className="px-1.5 py-0.5 border-orange-200 bg-orange-50 text-orange-700" title="Inventario">
+                          <Box className="w-3 h-3" />
+                        </Badge>
                       )}
-                      {!routine.gps_obligatorio && !routine.fotos_obligatorias && !routine.requiere_inventario && (
+                      {routine.comentario_obligatorio && (
+                        <Badge variant="outline" className="px-1.5 py-0.5 border-yellow-200 bg-yellow-50 text-yellow-700" title="Comentario Obligatorio">
+                          <MessageSquareText className="w-3 h-3" />
+                        </Badge>
+                      )}
+                      {routine.archivo_obligatorio && (
+                        <Badge variant="outline" className="px-1.5 py-0.5 border-cyan-200 bg-cyan-50 text-cyan-700" title="Archivo Adjunto">
+                          <FileText className="w-3 h-3" />
+                        </Badge>
+                      )}
+                      {(routine.enviar_email || routine.responder_email) && (
+                        <Badge variant="outline" className="px-1.5 py-0.5 border-pink-200 bg-pink-50 text-pink-700" title="Gestión Email">
+                          <Mail className="w-3 h-3" />
+                        </Badge>
+                      )}
+                      
+                      {!routine.gps_obligatorio && !routine.fotos_obligatorias && !routine.requiere_inventario && !routine.comentario_obligatorio && !routine.archivo_obligatorio && !routine.enviar_email && !routine.responder_email && (
                         <span className="text-xs text-muted-foreground">-</span>
                       )}
                     </div>
