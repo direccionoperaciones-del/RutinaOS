@@ -4,7 +4,6 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { supabase } from "@/integrations/supabase/client";
-import { browserLocalPersistence, browserSessionPersistence } from '@supabase/supabase-js';
 import { Loader2, Lock, Mail, User, Building, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,10 +54,16 @@ const Login = () => {
   const onLogin = async (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
     try {
-      // Configurar persistencia según el checkbox
-      await supabase.auth.setPersistence(
-        rememberMe ? browserLocalPersistence : browserSessionPersistence
-      );
+      // Definir persistencia manualmente para evitar errores de exportación con Vite
+      // LocalStorage = Persistente (Remember Me)
+      // SessionStorage = Sesión (No Remember Me)
+      const persistenceStorage = rememberMe ? localStorage : sessionStorage;
+      
+      await supabase.auth.setPersistence({
+        getItem: (key) => persistenceStorage.getItem(key),
+        setItem: (key, value) => persistenceStorage.setItem(key, value),
+        removeItem: (key) => persistenceStorage.removeItem(key),
+      });
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,
