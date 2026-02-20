@@ -54,10 +54,7 @@ const Login = () => {
   const onLogin = async (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
     try {
-      // Definir persistencia manualmente para evitar errores de exportación con Vite
-      // LocalStorage = Persistente (Remember Me)
-      // SessionStorage = Sesión (No Remember Me)
-      const persistenceStorage = rememberMe ? localStorage : sessionStorage;
+      // NOTE: Default persistence (localStorage) is used automatically.
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,
