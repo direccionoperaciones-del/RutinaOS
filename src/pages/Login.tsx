@@ -58,12 +58,6 @@ const Login = () => {
       // LocalStorage = Persistente (Remember Me)
       // SessionStorage = Sesión (No Remember Me)
       const persistenceStorage = rememberMe ? localStorage : sessionStorage;
-      
-      await supabase.auth.setPersistence({
-        getItem: (key) => persistenceStorage.getItem(key),
-        setItem: (key, value) => persistenceStorage.setItem(key, value),
-        removeItem: (key) => persistenceStorage.removeItem(key),
-      });
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,
