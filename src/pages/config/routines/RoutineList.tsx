@@ -4,11 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box, ChevronRight, MessageSquareText, FileText, Mail } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Search, Plus, Edit, Calendar, Clock, MapPin, Camera, Box, MessageSquareText, FileText, Mail, Zap, Loader2, Play } from "lucide-react";
 import { RoutineForm } from "./RoutineForm";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { format } from "date-fns";
 
 export default function RoutineList() {
   const { toast } = useToast();
@@ -18,6 +19,9 @@ export default function RoutineList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRoutine, setSelectedRoutine] = useState<any>(null);
+  
+  // Estado para controlar qué rutina se está ejecutando manualmente
+  const [runningRoutineId, setRunningRoutineId] = useState<string | null>(null);
 
   const fetchRoutines = async () => {
     if (!tenantId) return;
@@ -25,7 +29,7 @@ export default function RoutineList() {
     const { data, error } = await supabase
       .from('routine_templates')
       .select('*')
-      .eq('tenant_id', tenantId) // <--- FILTRO EXPLÍCITO
+      .eq('tenant_id', tenantId)
       .order('nombre', { ascending: true });
     
     if (error) {
@@ -48,6 +52,39 @@ export default function RoutineList() {
   const handleCreate = () => {
     setSelectedRoutine(null);
     setIsModalOpen(true);
+  };
+
+  const handleRunNow = async (routine: any) => {
+    if (!confirm(`¿Estás seguro de generar las tareas para "${routine.nombre}" AHORA?\n\nEsto creará las tareas pendientes para hoy en todos los PDVs asignados.`)) {
+      return;
+    }
+
+    setRunningRoutineId(routine.id);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data, error } = await supabase.functions.invoke('generate-daily-tasks', {
+        body: {
+          date: today,
+          tenant_id: tenantId,
+          routine_id: routine.id // Parametro clave para forzar ejecución individual
+        }
+      });
+
+      if (error) throw error;
+      if (data && data.error) throw new Error(data.error);
+
+      toast({ 
+        title: "Ejecución Exitosa", 
+        description: data.message || "Tareas generadas correctamente." 
+      });
+
+    } catch (error: any) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: error.message || "No se pudo ejecutar la rutina." });
+    } finally {
+      setRunningRoutineId(null);
+    }
   };
 
   const filteredRoutines = routines.filter(r => 
@@ -121,16 +158,26 @@ export default function RoutineList() {
                   {routine.archivo_obligatorio && <FileText className="w-4 h-4 text-cyan-500" />}
                   {(routine.enviar_email || routine.responder_email) && <Mail className="w-4 h-4 text-pink-500" />}
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => handleEdit(routine)} className="h-8">
-                  Editar <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
+                <div className="flex gap-2">
+                  {routine.activo && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-8 w-8 p-0 border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100"
+                      onClick={() => handleRunNow(routine)}
+                      disabled={runningRoutineId === routine.id}
+                    >
+                      {runningRoutineId === routine.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Zap className="w-4 h-4 fill-orange-600" />}
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => handleEdit(routine)} className="h-8">
+                    Editar
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
         ))}
-        {filteredRoutines.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">No se encontraron rutinas.</div>
-        )}
       </div>
 
       {/* --- VISTA DESKTOP: TABLA --- */}
@@ -149,7 +196,7 @@ export default function RoutineList() {
             </TableHeader>
             <TableBody>
               {filteredRoutines.map((routine) => (
-                <TableRow key={routine.id}>
+                <TableRow key={routine.id} className={!routine.activo ? "opacity-60 bg-muted/20" : ""}>
                   <TableCell>
                     <div className="font-medium">{routine.nombre}</div>
                     <div className="text-xs text-muted-foreground truncate max-w-[200px]">{routine.descripcion}</div>
@@ -210,9 +257,24 @@ export default function RoutineList() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" onClick={() => handleEdit(routine)}>
-                      <Edit className="w-4 h-4" />
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      {routine.activo && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-8 text-xs border-orange-200 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                          onClick={() => handleRunNow(routine)}
+                          disabled={runningRoutineId === routine.id}
+                          title="Generar tareas de esta rutina para HOY"
+                        >
+                          {runningRoutineId === routine.id ? <Loader2 className="w-3 h-3 animate-spin"/> : <Zap className="w-3 h-3 mr-1.5 fill-orange-600" />}
+                          Ejecutar
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" onClick={() => handleEdit(routine)} className="h-8 w-8">
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

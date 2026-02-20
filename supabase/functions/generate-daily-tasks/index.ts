@@ -37,10 +37,10 @@ serve(async (req) => {
     
     let targetDate = body.date;
     const targetTenantId = body.tenant_id;
+    const forceRoutineId = body.routine_id; // NUEVO: ID para forzar ejecución
 
     if (!targetDate) {
       const now = new Date();
-      // Ajuste a hora Colombia para cron automático
       const formatter = new Intl.DateTimeFormat('en-CA', { 
         timeZone: 'America/Bogota',
         year: 'numeric', month: '2-digit', day: '2-digit'
@@ -48,15 +48,13 @@ serve(async (req) => {
       targetDate = formatter.format(now);
     }
 
-    // Análisis de fecha
     const [y, m, d] = targetDate.split('-').map(Number);
-    // Usamos UTC para asegurar que el día no cambie por timezone del servidor
     const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-    const dayOfWeek = dateObj.getUTCDay(); // 0=Dom
+    const dayOfWeek = dateObj.getUTCDay(); 
     const dayOfMonth = dateObj.getUTCDate();
 
     const logs: string[] = [];
-    logs.push(`🚀 INICIO: ${targetDate} (Día ${dayOfMonth})`);
+    logs.push(`🚀 INICIO: ${targetDate} (Día ${dayOfMonth}) ${forceRoutineId ? '[FORZADO]' : ''}`);
 
     // 3. Obtener Tenants
     let tenantQuery = supabaseAdmin.from('tenants').select('id, nombre').eq('activo', true);
@@ -71,7 +69,7 @@ serve(async (req) => {
       logs.push(`🏢 ORG: ${tenant.nombre}`);
 
       // 4. Asignaciones con Rutinas (JOIN)
-      const { data: routineAssigns } = await supabaseAdmin
+      let assignQuery = supabaseAdmin
         .from('routine_assignments')
         .select(`
           id, pdv_id, rutina_id,
@@ -85,8 +83,15 @@ serve(async (req) => {
         .eq('tenant_id', tenant.id)
         .eq('estado', 'activa');
 
+      // FILTRO DE RUTINA ESPECÍFICA (SI ES MANUAL)
+      if (forceRoutineId) {
+        assignQuery = assignQuery.eq('rutina_id', forceRoutineId);
+      }
+
+      const { data: routineAssigns } = await assignQuery;
+
       if (!routineAssigns?.length) {
-        logs.push(`   ℹ️ No hay rutinas asignadas activas.`);
+        logs.push(`   ℹ️ No hay asignaciones activas para procesar.`);
         continue;
       }
 
@@ -123,42 +128,45 @@ serve(async (req) => {
         let shouldRun = false;
         let details = "";
 
-        // LÓGICA DE FRECUENCIA DETALLADA
-        if (r.frecuencia === 'diaria') {
-          const dias = r.dias_ejecucion || [];
-          if (dias.length === 0 || dias.includes(dayOfWeek)) shouldRun = true;
-          else details = `Día sem ${dayOfWeek} no está en [${dias}]`;
-        } 
-        else if (r.frecuencia === 'semanal') {
-          const dias = r.dias_ejecucion || [];
-          if (dias.includes(dayOfWeek)) shouldRun = true;
-          else details = `Día sem ${dayOfWeek} no está en [${dias}]`;
-        } 
-        else if (r.frecuencia === 'quincenal') {
-          // Asegurar conversión a número para evitar errores de tipo '3' !== 3
-          const c1 = Number(r.corte_1_inicio) || 1;
-          const c2 = Number(r.corte_2_inicio) || 16;
-          
-          if (dayOfMonth === c1 || dayOfMonth === c2) {
-            shouldRun = true;
-            details = `Corte coincidió (${dayOfMonth})`;
-          } else {
-            details = `Hoy ${dayOfMonth} != Cortes [${c1}, ${c2}]`;
+        // SI ES MANUAL (FORZADO), SALTAMOS VALIDACIÓN DE FECHA
+        if (forceRoutineId) {
+          shouldRun = true;
+          details = "Ejecución Manual Forzada";
+        } else {
+          // LÓGICA DE FRECUENCIA NORMAL
+          if (r.frecuencia === 'diaria') {
+            const dias = r.dias_ejecucion || [];
+            if (dias.length === 0 || dias.includes(dayOfWeek)) shouldRun = true;
+            else details = `Día sem ${dayOfWeek} no está en [${dias}]`;
+          } 
+          else if (r.frecuencia === 'semanal') {
+            const dias = r.dias_ejecucion || [];
+            if (dias.includes(dayOfWeek)) shouldRun = true;
+            else details = `Día sem ${dayOfWeek} no está en [${dias}]`;
+          } 
+          else if (r.frecuencia === 'quincenal') {
+            const c1 = Number(r.corte_1_inicio) || 1;
+            const c2 = Number(r.corte_2_inicio) || 16;
+            if (dayOfMonth === c1 || dayOfMonth === c2) {
+              shouldRun = true;
+              details = `Corte coincidió (${dayOfMonth})`;
+            } else {
+              details = `Hoy ${dayOfMonth} != Cortes [${c1}, ${c2}]`;
+            }
+          } 
+          else if (r.frecuencia === 'mensual') {
+            if (dayOfMonth === 1) shouldRun = true;
+            else details = `Mensual es solo el día 1`;
+          } 
+          else if (r.frecuencia === 'fechas_especificas') {
+            if (r.fechas_especificas?.includes(targetDate)) shouldRun = true;
+            else details = `Fecha no en lista específica`;
           }
-        } 
-        else if (r.frecuencia === 'mensual') {
-          if (dayOfMonth === 1) shouldRun = true;
-          else details = `Mensual es solo el día 1`;
-        } 
-        else if (r.frecuencia === 'fechas_especificas') {
-          if (r.fechas_especificas?.includes(targetDate)) shouldRun = true;
-          else details = `Fecha no en lista específica`;
         }
 
         if (shouldRun) {
           // Validar Responsable
           let userId = respMap.get(assign.pdv_id);
-          
           if (!userId) {
             logs.push(`   ⚠️ ${r.nombre} -> ${pdvName}: Sin responsable.`);
             continue;
@@ -189,12 +197,9 @@ serve(async (req) => {
             hora_limite_snapshot: r.hora_limite || '23:59:59',
             created_at: new Date().toISOString()
           });
-          
-          // Log de éxito en preparación
-          // logs.push(`   ✅ ${r.nombre} -> ${pdvName}: Preparada.`);
         } else {
-          // Log de diagnóstico para entender por qué NO corrió
-          logs.push(`   ⛔ ${r.nombre}: ${details}`);
+          // Solo loguear skips si no es ejecución forzada (para no hacer ruido)
+          if (!forceRoutineId) logs.push(`   ⛔ ${r.nombre}: ${details}`);
         }
       }
 
@@ -208,6 +213,8 @@ serve(async (req) => {
           totalTasks += tasksBatch.length;
           logs.push(`   ✅ INSERTADOS: ${tasksBatch.length} tareas.`);
         }
+      } else if (forceRoutineId) {
+        logs.push(`   ⚠️ No se generaron tareas. Verifica que la rutina esté ASIGNADA a algún PDV y ACTIVA.`);
       }
     }
 

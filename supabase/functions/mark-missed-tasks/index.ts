@@ -26,12 +26,11 @@ serve(async (req) => {
     let isAuthorized = false
     let targetTenantId: string | null = null;
 
-    // 1. Autorización por Service Key (Cron Jobs internos)
+    // 1. Autorización
     if (token === supabaseServiceKey) {
       isAuthorized = true;
-      targetTenantId = requestedTenantId; // Confiamos en el input del sistema
+      targetTenantId = requestedTenantId;
     } else {
-      // 2. Autorización por Usuario (Request desde Frontend)
       const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
       const { data: { user }, error } = await supabaseClient.auth.getUser(token)
       
@@ -42,49 +41,41 @@ serve(async (req) => {
           .eq('id', user.id)
           .single()
         
-        // Permitir Superadmin, Director y Líder
         const allowedRoles = ['superadmin', 'director', 'lider'];
-        
         if (profile && allowedRoles.includes(profile.role)) {
           isAuthorized = true;
-          
-          if (profile.role === 'superadmin') {
-            // Superadmin usa el tenant enviado en el body (Impersonation)
-            targetTenantId = requestedTenantId || profile.tenant_id;
-          } else {
-            // Directores y Líderes están confinados a su propio tenant
-            targetTenantId = profile.tenant_id;
-          }
+          targetTenantId = profile.role === 'superadmin' ? (requestedTenantId || profile.tenant_id) : profile.tenant_id;
         }
       }
     }
 
     if (!isAuthorized) {
-      console.error("Unauthorized attempt to mark missed tasks");
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized: Permisos insuficientes.' }), 
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     
+    // Configuración de fecha
     let targetDateStr = body.date;
+    const now = new Date();
+    
     if (!targetDateStr) {
-      const now = new Date();
-      // 'en-CA' formato es YYYY-MM-DD, perfecto para ISO
       const formatter = new Intl.DateTimeFormat('en-CA', { 
-        timeZone: 'America/Bogota',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
+        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit'
       });
       targetDateStr = formatter.format(now);
     }
 
-    // Actualizar tareas pendientes
+    const todayDateObj = new Date(targetDateStr);
+    const dayOfMonth = todayDateObj.getDate();
+
+    // 2. Obtener tareas candidatas a vencer (Pendientes con fecha <= hoy)
     let query = supabase.from('task_instances')
-      .update({ estado: 'incumplida' })
+      .select(`
+        id, 
+        fecha_programada, 
+        routine_templates (frecuencia, vencimiento_dia_mes, corte_1_limite, corte_2_limite)
+      `)
       .eq('estado', 'pendiente')
       .lte('fecha_programada', targetDateStr);
 
@@ -92,12 +83,68 @@ serve(async (req) => {
         query = query.eq('tenant_id', targetTenantId);
     }
 
-    const { data, error } = await query.select('id');
+    const { data: candidates, error: fetchError } = await query;
+    if (fetchError) throw fetchError;
 
-    if (error) throw error
+    // 3. Filtrar cuáles REALMENTE deben vencerse
+    const tasksToFail: string[] = [];
+
+    candidates?.forEach((task: any) => {
+      const routine = task.routine_templates;
+      let shouldFail = true;
+
+      // LÓGICA DE EXCEPCIÓN MENSUAL/QUINCENAL
+      if (routine) {
+        const programada = new Date(task.fecha_programada);
+        // Solo aplicar lógica de preservación si la tarea es del mes actual o anterior pero dentro de rango
+        // Para simplificar: Si es mensual, miramos el día de vencimiento.
+        
+        if (routine.frecuencia === 'mensual' && routine.vencimiento_dia_mes) {
+          // Si hoy es día 6, y vence el 20, NO debe fallar.
+          // Si hoy es día 21, y vencía el 20, SÍ debe fallar.
+          // Nota: targetDateStr es "hoy".
+          
+          // Asumimos que la tarea es del mismo mes que "hoy". 
+          // Si la tarea es del mes pasado (fecha_programada muy vieja), sí debería vencerse.
+          const isSameMonth = programada.getMonth() === todayDateObj.getMonth();
+          
+          if (isSameMonth) {
+             if (dayOfMonth <= routine.vencimiento_dia_mes) {
+               shouldFail = false; // Aún tiene tiempo
+             }
+          }
+        }
+        
+        // Lógica similar podría aplicar para Quincenal si se quisiera extender, 
+        // pero por ahora nos enfocamos en el requerimiento Mensual.
+      }
+
+      if (shouldFail) {
+        tasksToFail.push(task.id);
+      }
+    });
+
+    // 4. Actualizar masivamente solo las filtradas
+    let updatedCount = 0;
+    if (tasksToFail.length > 0) {
+      const { error: updateError, count } = await supabase
+        .from('task_instances')
+        .update({ estado: 'incumplida' })
+        .in('id', tasksToFail)
+        .select('id', { count: 'exact' });
+      
+      if (updateError) throw updateError;
+      updatedCount = count || 0;
+    }
 
     return new Response(
-      JSON.stringify({ success: true, updated: data.length, date: targetDateStr, tenant: targetTenantId }),
+      JSON.stringify({ 
+        success: true, 
+        updated: updatedCount, 
+        processed: candidates?.length || 0,
+        preserved: (candidates?.length || 0) - updatedCount,
+        date: targetDateStr 
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
