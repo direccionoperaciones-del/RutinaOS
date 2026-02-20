@@ -552,12 +552,12 @@ export default function TasksList() {
       />
 
       {showCongratulation && !isFetching && (
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden mb-6">
-          <div className="absolute top-0 right-0 opacity-10"><PartyPopper className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-green-600" /></div>
+        <div className="bg-gradient-to-r from-slate-50 to-gray-50 border border-slate-200 rounded-xl p-6 text-center shadow-sm animate-in slide-in-from-top-4 duration-500 relative overflow-hidden mb-6">
+          <div className="absolute top-0 right-0 opacity-10"><CheckCircle2 className="w-32 h-32 rotate-12 -mr-8 -mt-8 text-slate-600" /></div>
           <div className="flex flex-col items-center gap-2 relative z-10">
-            <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center mb-2 animate-bounce"><Trophy className="h-6 w-6 text-green-600" /></div>
-            <h3 className="text-xl font-bold text-green-800 tracking-tight">¡FELICITACIONES!</h3>
-            <p className="text-green-700 font-medium">La operación del día está completa.</p>
+            <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center mb-2"><CheckCircle2 className="h-6 w-6 text-slate-600" /></div>
+            <h3 className="text-xl font-bold text-slate-800 tracking-tight">Operación Finalizada</h3>
+            <p className="text-slate-600 font-medium">Las actividades del día han sido completadas.</p>
           </div>
         </div>
       )}
