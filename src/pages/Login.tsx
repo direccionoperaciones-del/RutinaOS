@@ -50,12 +50,11 @@ const Login = () => {
     defaultValues: { nombre: "", apellido: "", tenant_name: "", email: "", password: "" },
   });
 
-  // --- HANDLERS (Same Logic) ---
+  // --- HANDLERS ---
   const onLogin = async (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
     try {
-      // NOTE: Default persistence (localStorage) is used automatically.
-
+      // Default persistence is used automatically by the Supabase client.
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,
         password: values.password,
@@ -97,7 +96,6 @@ const Login = () => {
             nombre: values.nombre,
             apellido: values.apellido,
             tenant_name: values.tenant_name,
-            // Role is now enforced by the database trigger for security
           }
         }
       });
@@ -143,7 +141,6 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-      {/* Background Decor */}
       <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
       
       <Card className="w-full max-w-[420px] shadow-xl border-t-4 border-t-primary animate-in fade-in-50 zoom-in-95 duration-300 z-10">
