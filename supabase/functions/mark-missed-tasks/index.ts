@@ -15,34 +15,59 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     
+    // Parse body primero para tener acceso a los parámetros
+    const body = await req.json().catch(() => ({}))
+    const requestedTenantId = body.tenant_id;
+
     // Header de autorización
     const authHeader = req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '') ?? ''
     
     let isAuthorized = false
-    let requesterTenantId: string | null = null;
+    let targetTenantId: string | null = null;
 
+    // 1. Autorización por Service Key (Cron Jobs internos)
     if (token === supabaseServiceKey) {
-      isAuthorized = true
+      isAuthorized = true;
+      targetTenantId = requestedTenantId; // Confiamos en el input del sistema
     } else {
+      // 2. Autorización por Usuario (Request desde Frontend)
       const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
       const { data: { user }, error } = await supabaseClient.auth.getUser(token)
       
       if (user && !error) {
-        const { data: profile } = await supabaseClient.from('profiles').select('role, tenant_id').eq('id', user.id).single()
-        if (profile?.role === 'director') {
-          isAuthorized = true
-          requesterTenantId = profile.tenant_id;
+        const { data: profile } = await supabaseClient
+          .from('profiles')
+          .select('role, tenant_id')
+          .eq('id', user.id)
+          .single()
+        
+        // Permitir Superadmin, Director y Líder
+        const allowedRoles = ['superadmin', 'director', 'lider'];
+        
+        if (profile && allowedRoles.includes(profile.role)) {
+          isAuthorized = true;
+          
+          if (profile.role === 'superadmin') {
+            // Superadmin usa el tenant enviado en el body (Impersonation)
+            targetTenantId = requestedTenantId || profile.tenant_id;
+          } else {
+            // Directores y Líderes están confinados a su propio tenant
+            targetTenantId = profile.tenant_id;
+          }
         }
       }
     }
 
     if (!isAuthorized) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      console.error("Unauthorized attempt to mark missed tasks");
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Permisos insuficientes.' }), 
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    const body = await req.json().catch(() => ({}))
     
     let targetDateStr = body.date;
     if (!targetDateStr) {
@@ -63,8 +88,8 @@ serve(async (req) => {
       .eq('estado', 'pendiente')
       .lte('fecha_programada', targetDateStr);
 
-    if (requesterTenantId) {
-        query = query.eq('tenant_id', requesterTenantId);
+    if (targetTenantId) {
+        query = query.eq('tenant_id', targetTenantId);
     }
 
     const { data, error } = await query.select('id');
@@ -72,11 +97,15 @@ serve(async (req) => {
     if (error) throw error
 
     return new Response(
-      JSON.stringify({ success: true, updated: data.length, date: targetDateStr }),
+      JSON.stringify({ success: true, updated: data.length, date: targetDateStr, tenant: targetTenantId }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 })
+    console.error("Error in mark-missed-tasks:", error);
+    return new Response(
+      JSON.stringify({ error: error.message }), 
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+    )
   }
 })
