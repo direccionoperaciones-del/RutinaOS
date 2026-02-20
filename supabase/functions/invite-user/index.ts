@@ -71,29 +71,59 @@ serve(async (req) => {
 
     console.log(`Inviting ${email} to tenant ${finalTenantId} with redirect ${redirectTo}`);
 
-    // 4. Invite Logic
-    const { data: newUser, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-        data: {
-            nombre: nombre,
-            apellido: apellido,
-            tenant_id: finalTenantId,
-            role: role
-        },
-        redirectTo: redirectTo
-    })
+    // 4. Invite Logic with Fallback
+    let newUser;
+    let inviteLink = null;
+    let manualMode = false;
 
-    if (inviteError) {
-        console.error("Supabase Invite Error:", inviteError);
-        // Supabase devuelve errores como "Enter a valid email address", etc.
-        throw new Error(`Error de Supabase: ${inviteError.message}`)
+    const metadata = {
+        nombre: nombre,
+        apellido: apellido,
+        tenant_id: finalTenantId,
+        role: role
+    };
+
+    try {
+        // Intento 1: Envío automático de correo
+        const { data, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+            data: metadata,
+            redirectTo: redirectTo
+        });
+
+        if (inviteError) throw inviteError;
+        newUser = data.user;
+
+    } catch (inviteError: any) {
+        console.warn("SMTP Invite failed, attempting manual link generation:", inviteError.message);
+        
+        // Intento 2: Generación manual de link (Fallback)
+        // Esto funciona incluso si el SMTP de Supabase está roto o saturado
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+            type: 'invite',
+            email: email,
+            options: {
+                data: metadata,
+                redirectTo: redirectTo
+            }
+        });
+
+        if (linkError) {
+            console.error("Manual link generation failed:", linkError);
+            throw new Error(`Error invitando usuario: ${inviteError.message} (y falló generación manual: ${linkError.message})`);
+        }
+
+        newUser = linkData.user;
+        // @ts-ignore
+        inviteLink = linkData.properties?.action_link;
+        manualMode = true;
     }
 
-    // 5. Ensure Profile Sync
-    if (newUser.user) {
+    // 5. Ensure Profile Sync (Critical for both methods)
+    if (newUser) {
          const { error: upsertError } = await supabaseAdmin
         .from('profiles')
         .upsert({ 
-            id: newUser.user.id,
+            id: newUser.id,
             tenant_id: finalTenantId,
             email: email,
             nombre: nombre,
@@ -104,12 +134,16 @@ serve(async (req) => {
         
         if (upsertError) {
             console.error("Profile Upsert Error:", upsertError);
-            // No fallamos la request completa si el invite funcionó, pero logueamos
         }
     }
 
     return new Response(
-      JSON.stringify({ success: true, user: newUser.user }),
+      JSON.stringify({ 
+          success: true, 
+          user: newUser, 
+          inviteLink: inviteLink, // Será null si se envió el correo, o string si es manual
+          manualMode: manualMode
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
