@@ -10,7 +10,8 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Shield, User } from "lucide-react";
+import { Loader2, Mail, Shield, User, KeyRound } from "lucide-react";
+import { ResetPasswordDialog } from "../users/ResetPasswordDialog";
 
 const userSchema = z.object({
   nombre: z.string().min(1, "Nombre requerido"),
@@ -31,6 +32,7 @@ interface EditUserModalProps {
 export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: EditUserModalProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userSchema),
@@ -79,102 +81,114 @@ export function EditUserModal({ open, onOpenChange, userToEdit, onSuccess }: Edi
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Gestionar Usuario</DialogTitle>
-        </DialogHeader>
-        
-        <div className="bg-muted/30 p-4 rounded-lg flex items-center gap-3 mb-2 border">
-          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <User className="w-5 h-5" />
-          </div>
-          <div className="overflow-hidden">
-            <p className="text-sm font-medium">{userToEdit?.email}</p>
-            <p className="text-xs text-muted-foreground">ID: {userToEdit?.id?.slice(0, 8)}...</p>
-          </div>
-        </div>
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="nombre"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nombre</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="apellido"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Apellido</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Gestionar Usuario</DialogTitle>
+          </DialogHeader>
+          
+          <div className="bg-muted/30 p-4 rounded-lg flex items-center gap-3 mb-2 border">
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <User className="w-5 h-5" />
             </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-medium">{userToEdit?.email}</p>
+              <p className="text-xs text-muted-foreground">ID: {userToEdit?.id?.slice(0, 8)}...</p>
+            </div>
+          </div>
 
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Rol / Permisos</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="nombre"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nombre</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="apellido"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Apellido</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Rol / Permisos</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <Shield className="w-4 h-4 mr-2 text-muted-foreground" />
+                          <SelectValue placeholder="Seleccione rol" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="director">Director (Acceso Total)</SelectItem>
+                        <SelectItem value="lider">Líder (Gestión y Auditoría)</SelectItem>
+                        <SelectItem value="administrador">Administrador (Ejecución Operativa)</SelectItem>
+                        <SelectItem value="auditor">Auditor (Solo Lectura y Revisión)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>Define qué módulos puede ver y editar este usuario.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="activo"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-card">
+                    <div className="space-y-0.5">
+                      <FormLabel>Acceso al Sistema</FormLabel>
+                      <FormDescription>
+                        {field.value ? "El usuario puede iniciar sesión." : "El usuario está bloqueado."}
+                      </FormDescription>
+                    </div>
                     <FormControl>
-                      <SelectTrigger>
-                        <Shield className="w-4 h-4 mr-2 text-muted-foreground" />
-                        <SelectValue placeholder="Seleccione rol" />
-                      </SelectTrigger>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="director">Director (Acceso Total)</SelectItem>
-                      <SelectItem value="lider">Líder (Gestión y Auditoría)</SelectItem>
-                      <SelectItem value="administrador">Administrador (Ejecución Operativa)</SelectItem>
-                      <SelectItem value="auditor">Auditor (Solo Lectura y Revisión)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>Define qué módulos puede ver y editar este usuario.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="activo"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-card">
-                  <div className="space-y-0.5">
-                    <FormLabel>Acceso al Sistema</FormLabel>
-                    <FormDescription>
-                      {field.value ? "El usuario puede iniciar sesión." : "El usuario está bloqueado."}
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+              <DialogFooter className="pt-4 border-t">
+                <Button type="button" variant="secondary" onClick={() => setIsResetPasswordOpen(true)}>
+                  <KeyRound className="mr-2 h-4 w-4" /> Restablecer Contraseña
+                </Button>
+                <Button type="submit" disabled={isLoading}>
+                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Guardar Cambios
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button type="submit" disabled={isLoading}>
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Guardar Cambios
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+      {userToEdit && (
+        <ResetPasswordDialog 
+          open={isResetPasswordOpen}
+          onOpenChange={setIsResetPasswordOpen}
+          user={userToEdit}
+        />
+      )}
+    </>
   );
 }
