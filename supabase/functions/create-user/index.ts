@@ -103,54 +103,59 @@ serve(async (req) => {
     } 
     // Si es Director, ignoramos body.tenant_id por seguridad y usamos el suyo propio.
 
-    // 6. Crear Usuario (Admin API)
-    const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email: email,
-        password: password,
-        email_confirm: true,
-        user_metadata: {
-            nombre: nombre,
-            apellido: apellido,
-            tenant_id: finalTenantId,
-            role: role 
-        }
-    })
+    // 6. LÓGICA MEJORADA: Buscar si el usuario ya existe
+    const { data: existingUserData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+    let finalUser;
 
-    if (createError) {
-        console.error("Error creating user:", createError)
-        return new Response(
-            JSON.stringify({ error: `Error creando usuario: ${createError.message}` }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-        )
+    if (existingUserData && existingUserData.user) {
+        // Usuario existe: Actualizar contraseña y metadatos
+        console.log(`[create-user] User ${email} exists. Updating password and metadata.`);
+        const { data: updatedUser, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+            existingUserData.user.id,
+            {
+                password: password,
+                user_metadata: { nombre, apellido, tenant_id: finalTenantId, role }
+            }
+        );
+        if (updateError) throw new Error(`Error actualizando usuario existente: ${updateError.message}`);
+        finalUser = updatedUser.user;
+    } else {
+        // Usuario no existe: Crear nuevo
+        console.log(`[create-user] User ${email} does not exist. Creating new user.`);
+        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+            email: email,
+            password: password,
+            email_confirm: true, // Auto-confirmar ya que es una acción de admin
+            user_metadata: { nombre, apellido, tenant_id: finalTenantId, role }
+        });
+        if (createError) throw new Error(`Error creando usuario: ${createError.message}`);
+        finalUser = newUser.user;
     }
 
-    if (!newUser.user) {
-         return new Response(
-            JSON.stringify({ error: 'No se pudo crear el usuario.' }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-        )
-    }
+    if (!finalUser) throw new Error('No se pudo crear o actualizar el usuario.');
 
-    // 7. Asegurar Perfil
-    const { error: profileUpdateError } = await supabaseAdmin
+    // 7. Asegurar que el perfil exista y esté correcto (UPSERT)
+    console.log(`[create-user] Upserting profile for user ${finalUser.id}`);
+    const { error: profileUpsertError } = await supabaseAdmin
         .from('profiles')
         .upsert({ 
-            id: newUser.user.id,
+            id: finalUser.id,
             tenant_id: finalTenantId,
             email: email,
             nombre: nombre,
             apellido: apellido,
             role: role,
             activo: true
-        })
-    
-    if (profileUpdateError) {
-        console.error("Error updating profile manually:", profileUpdateError)
+        });
+
+    if (profileUpsertError) {
+        // No lanzar error, solo loguear. La creación del usuario de auth es lo más importante.
+        console.error("Error en upsert de perfil (no crítico):", profileUpsertError);
     }
 
     // 8. Éxito
     return new Response(
-      JSON.stringify({ success: true, user: newUser.user }),
+      JSON.stringify({ success: true, user: finalUser }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 
