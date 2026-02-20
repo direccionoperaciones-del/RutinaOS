@@ -43,7 +43,10 @@ export function InviteUserModal({ open, onOpenChange, onSuccess }: InviteUserMod
   });
 
   const onSubmit = async (values: InviteUserFormValues) => {
-    if (!tenantId) return;
+    if (!tenantId) {
+      toast({ variant: "destructive", title: "Error", description: "No se ha identificado la organización." });
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -54,8 +57,25 @@ export function InviteUserModal({ open, onOpenChange, onSuccess }: InviteUserMod
         }
       });
 
-      if (error) throw new Error(error.message);
-      if (data && data.error) throw new Error(data.error);
+      if (error) {
+        // Lógica robusta para extraer el mensaje real del error HTTP
+        let errorMessage = error.message;
+        try {
+          // @ts-ignore: Propiedad no tipada en el cliente estándar pero existente en errores HTTP
+          if (error.context && typeof error.context.json === 'function') {
+             // @ts-ignore
+             const body = await error.context.json();
+             if (body && body.error) errorMessage = body.error;
+          }
+        } catch (e) {
+          console.warn("No se pudo leer el cuerpo del error", e);
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
 
       toast({ 
         title: "Invitación enviada", 
@@ -66,7 +86,12 @@ export function InviteUserModal({ open, onOpenChange, onSuccess }: InviteUserMod
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message || "Error al enviar invitación" });
+      console.error("Error invitando usuario:", error);
+      toast({ 
+        variant: "destructive", 
+        title: "Error al enviar invitación", 
+        description: error.message || "Ocurrió un error inesperado." 
+      });
     } finally {
       setIsLoading(false);
     }

@@ -16,12 +16,12 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Configuración del servidor incompleta.')
+      throw new Error('Configuración del servidor incompleta (Missing Secrets).')
     }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 1. Verificar Autenticación del que invita
+    // 1. Auth Check
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
         throw new Error('Falta cabecera de autorización')
@@ -30,10 +30,11 @@ serve(async (req) => {
     const { data: { user: requestUser }, error: userError } = await supabaseAdmin.auth.getUser(token)
     
     if (userError || !requestUser) {
+        console.error("Auth error:", userError);
         throw new Error('Sesión inválida o expirada.')
     }
 
-    // 2. Verificar Permisos (Director o Superadmin)
+    // 2. Permission Check
     const { data: requesterProfile } = await supabaseAdmin
         .from('profiles')
         .select('role, tenant_id')
@@ -44,20 +45,33 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: 'No tienes permisos para invitar usuarios.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const { email, nombre, apellido, role, tenant_id } = await req.json()
-
-    if (!email || !nombre || !apellido || !role) {
-        throw new Error('Faltan campos obligatorios.')
+    // 3. Body Parsing
+    let body;
+    try {
+        body = await req.json();
+    } catch (e) {
+        throw new Error("El cuerpo de la petición no es un JSON válido.");
     }
 
-    // Determinar Tenant
+    const { email, nombre, apellido, role, tenant_id } = body;
+
+    if (!email || !nombre || !apellido || !role) {
+        throw new Error('Faltan campos obligatorios (email, nombre, apellido, role).')
+    }
+
+    // Tenant Resolution
     let finalTenantId = requesterProfile.tenant_id;
     if (requesterProfile.role === 'superadmin' && tenant_id) {
         finalTenantId = tenant_id;
     }
 
-    // 3. Invitar Usuario (Magic Link)
-    // Esto enviará el correo configurado en Supabase Authentication > Email Templates > Invite User
+    // Validate origin for redirect
+    const origin = req.headers.get('origin') || 'https://runop.app';
+    const redirectTo = `${origin}/`;
+
+    console.log(`Inviting ${email} to tenant ${finalTenantId} with redirect ${redirectTo}`);
+
+    // 4. Invite Logic
     const { data: newUser, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
         data: {
             nombre: nombre,
@@ -65,17 +79,18 @@ serve(async (req) => {
             tenant_id: finalTenantId,
             role: role
         },
-        // Redirige al home de la app. Asegúrate que Site URL esté configurado en Supabase
-        redirectTo: `${req.headers.get('origin') || 'https://runop.app'}/` 
+        redirectTo: redirectTo
     })
 
     if (inviteError) {
-        throw inviteError
+        console.error("Supabase Invite Error:", inviteError);
+        // Supabase devuelve errores como "Enter a valid email address", etc.
+        throw new Error(`Error de Supabase: ${inviteError.message}`)
     }
 
-    // 4. Asegurar Perfil (Doble check para garantizar datos correctos)
+    // 5. Ensure Profile Sync
     if (newUser.user) {
-         await supabaseAdmin
+         const { error: upsertError } = await supabaseAdmin
         .from('profiles')
         .upsert({ 
             id: newUser.user.id,
@@ -85,7 +100,12 @@ serve(async (req) => {
             apellido: apellido,
             role: role,
             activo: true
-        })
+        });
+        
+        if (upsertError) {
+            console.error("Profile Upsert Error:", upsertError);
+            // No fallamos la request completa si el invite funcionó, pero logueamos
+        }
     }
 
     return new Response(
@@ -94,8 +114,9 @@ serve(async (req) => {
     )
 
   } catch (error: any) {
+    console.error("Function Error:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message || "Error interno del servidor" }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
     )
   }
