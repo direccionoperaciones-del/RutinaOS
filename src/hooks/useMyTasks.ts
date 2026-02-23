@@ -15,7 +15,32 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
     queryFn: async () => {
       if (!user || !tenantId) throw new Error("No autenticado o sin tenant");
 
-      let query = supabase
+      // 1. Preparar filtros de seguridad (Rol)
+      let pdvIdsFilter: string[] | null = null;
+      let userIdFilter: string | null = null;
+
+      if (profile?.role === 'administrador') {
+        const { data: assignments } = await supabase
+          .from('pdv_assignments')
+          .select('pdv_id')
+          .eq('user_id', user.id)
+          .eq('vigente', true);
+        
+        const ids = assignments?.map(a => a.pdv_id) || [];
+        if (ids.length > 0) pdvIdsFilter = ids;
+        else userIdFilter = user.id;
+      }
+
+      // Helper para aplicar filtros comunes
+      const applyFilters = (query: any) => {
+        if (pdvIdsFilter) return query.in('pdv_id', pdvIdsFilter);
+        if (userIdFilter) return query.eq('completado_por', userIdFilter);
+        return query;
+      };
+
+      // --- CONSULTA A: Rango de Fechas (Calendario Normal) ---
+      // Trae TODAS las tareas (diarias, semanales, quincenales, mensuales) que caen en el rango seleccionado
+      let queryRange = supabase
         .from('task_instances')
         .select(`
           *,
@@ -30,48 +55,68 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
           pdv (id, nombre, ciudad, radio_gps, latitud, longitud),
           profiles:completado_por (id, nombre, apellido)
         `)
-        .eq('tenant_id', tenantId);
+        .eq('tenant_id', tenantId)
+        .gte('fecha_programada', dateFrom)
+        .lte('fecha_programada', dateTo);
 
-      // --- LOGICA DE BANDEJA DE ENTRADA + CALENDARIO ---
-      // 1. Siempre limitamos por la fecha superior para no traer tareas del futuro lejano
-      query = query.lte('fecha_programada', dateTo);
+      queryRange = applyFilters(queryRange);
 
-      // 2. Traemos:
-      //    a) Tareas dentro del rango seleccionado (fecha >= dateFrom)
-      //    b) Tareas antiguas que siguen pendientes (estado = pendiente/en_proceso)
-      // Esto permite que una tarea mensual del día 1 siga visible el día 20 si no se ha hecho.
-      query = query.or(`fecha_programada.gte.${dateFrom},estado.eq.pendiente,estado.eq.en_proceso`);
+      // --- CONSULTA B: Backlog EXCLUSIVO MENSUAL ---
+      // Trae tareas antiguas que siguen pendientes PERO SOLO si son MENSUALES.
+      // (Diarias, Semanales y Quincenales antiguas NO se traen aquí, por lo tanto desaparecen si no se hicieron en su día)
+      let queryBacklog = supabase
+        .from('task_instances')
+        .select(`
+          *,
+          routine_templates!inner (
+            id, nombre, descripcion, prioridad, frecuencia,
+            gps_obligatorio, fotos_obligatorias, min_fotos,
+            comentario_obligatorio, requiere_inventario,
+            categorias_ids, archivo_obligatorio,
+            enviar_email, responder_email,
+            vencimiento_dia_mes, corte_1_limite, corte_2_limite
+          ),
+          pdv (id, nombre, ciudad, radio_gps, latitud, longitud),
+          profiles:completado_por (id, nombre, apellido)
+        `)
+        .eq('tenant_id', tenantId)
+        .lt('fecha_programada', dateFrom) // Anteriores al rango actual
+        .in('estado', ['pendiente', 'en_proceso']) // Que no se han cerrado
+        .eq('routine_templates.frecuencia', 'mensual'); // ESTRICTAMENTE SOLO MENSUAL
+
+      queryBacklog = applyFilters(queryBacklog);
+
+      // Ejecutar en paralelo
+      const [resRange, resBacklog] = await Promise.all([queryRange, queryBacklog]);
+
+      if (resRange.error) throw resRange.error;
+      if (resBacklog.error) throw resBacklog.error;
+
+      // Unir resultados eliminando duplicados
+      const allTasks = [...(resRange.data || []), ...(resBacklog.data || [])];
       
-      // --- RESTRICCIÓN DE SEGURIDAD (Tenant & Role) ---
-      if (profile?.role === 'administrador') {
-        const { data: assignments } = await supabase
-          .from('pdv_assignments')
-          .select('pdv_id')
-          .eq('user_id', user.id)
-          .eq('vigente', true);
-        
-        const myPdvIds = assignments?.map(a => a.pdv_id) || [];
-        
-        if (myPdvIds.length > 0) {
-          // Ver tareas de mis PDVs asignados
-          query = query.in('pdv_id', myPdvIds);
-        } else {
-          // Si no tiene PDV, solo ve lo que haya completado él (histórico personal)
-          query = query.eq('completado_por', user.id);
-        }
-      }
+      // Map para unicidad por ID
+      const uniqueMap = new Map();
+      allTasks.forEach(t => uniqueMap.set(t.id, t));
       
-      // Ordenar: Primero las críticas/altas, luego por fecha
-      const { data, error } = await query
-        .order('fecha_programada', { ascending: true }) 
-        .order('prioridad_snapshot', { ascending: false });
+      const combined = Array.from(uniqueMap.values());
 
-      if (error) {
-        console.error("Error fetching tasks:", error);
-        throw error;
-      }
-
-      return data || [];
+      // Ordenar: Prioridad -> Fecha
+      return combined.sort((a, b) => {
+        const prioScore = (p: string) => {
+          if (p === 'critica') return 4;
+          if (p === 'alta') return 3;
+          if (p === 'media') return 2;
+          return 1;
+        };
+        
+        const scoreA = prioScore(a.prioridad_snapshot);
+        const scoreB = prioScore(b.prioridad_snapshot);
+        
+        if (scoreA !== scoreB) return scoreB - scoreA; // Mayor prioridad primero
+        
+        return new Date(a.fecha_programada).getTime() - new Date(b.fecha_programada).getTime(); // Más antiguas primero
+      });
     }
   });
 }
