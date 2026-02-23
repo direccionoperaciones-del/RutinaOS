@@ -32,11 +32,15 @@ export function useMyTasks(dateFrom: string, dateTo: string) {
         `)
         .eq('tenant_id', tenantId);
 
-      // --- FILTRADO ESTRICTO POR FECHAS ---
-      // Se muestran SOLO las tareas programadas dentro del rango seleccionado.
-      // Si el usuario quiere ver tareas de días anteriores, debe ampliar el rango de fechas.
-      query = query.gte('fecha_programada', dateFrom);
+      // --- LOGICA DE BANDEJA DE ENTRADA + CALENDARIO ---
+      // 1. Siempre limitamos por la fecha superior para no traer tareas del futuro lejano
       query = query.lte('fecha_programada', dateTo);
+
+      // 2. Traemos:
+      //    a) Tareas dentro del rango seleccionado (fecha >= dateFrom)
+      //    b) Tareas antiguas que siguen pendientes (estado = pendiente/en_proceso)
+      // Esto permite que una tarea mensual del día 1 siga visible el día 20 si no se ha hecho.
+      query = query.or(`fecha_programada.gte.${dateFrom},estado.eq.pendiente,estado.eq.en_proceso`);
       
       // --- RESTRICCIÓN DE SEGURIDAD (Tenant & Role) ---
       if (profile?.role === 'administrador') {
