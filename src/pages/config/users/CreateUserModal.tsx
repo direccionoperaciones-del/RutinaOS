@@ -6,10 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Mail, Lock, UserPlus, ArrowRight } from "lucide-react";
+import { Loader2, Mail, Lock, UserPlus, ArrowRight, User } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 const createUserSchema = z.object({
@@ -55,22 +55,17 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
           ...values,
-          tenant_id: tenantId // Enviamos el tenant explícitamente (vital para superadmin)
+          tenant_id: tenantId
         }
       });
 
       if (error) {
-        // Intentar parsear el cuerpo del error si viene como string JSON
         let errorMessage = error.message;
         try {
-          if (error instanceof  Error && 'context' in error) {
              // @ts-ignore
              const body = await error.context.json();
-             if (body.error) errorMessage = body.error;
-          }
-        } catch (e) {
-          // Fallback al mensaje original
-        }
+             if (body && body.error) errorMessage = body.error;
+        } catch (e) {}
         throw new Error(errorMessage || "Error al conectar con el servidor");
       }
 
@@ -79,8 +74,8 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
       }
 
       toast({ 
-        title: "Usuario creado", 
-        description: `Se ha creado la cuenta para ${values.nombre}. Ya puede iniciar sesión.` 
+        title: "Usuario Creado", 
+        description: `Cuenta activa para ${values.nombre}. Entrega las credenciales al usuario.` 
       });
       
       form.reset();
@@ -102,7 +97,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
             <UserPlus className="w-5 h-5 text-primary" /> Nuevo Usuario
           </DialogTitle>
           <DialogDescription>
-            Registra un nuevo empleado en tu organización. Podrá acceder inmediatamente.
+            Crea el usuario directamente. Deberás entregarle la contraseña manualmente.
           </DialogDescription>
         </DialogHeader>
         
@@ -116,7 +111,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Nombre</FormLabel>
-                    <FormControl><Input placeholder="Juan" {...field} /></FormControl>
+                    <FormControl><Input placeholder="Ej: Juan" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -127,7 +122,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Apellido</FormLabel>
-                    <FormControl><Input placeholder="Pérez" {...field} /></FormControl>
+                    <FormControl><Input placeholder="Ej: Pérez" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -139,11 +134,11 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Correo Electrónico</FormLabel>
+                  <FormLabel>Correo Electrónico (Login)</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input placeholder="empleado@empresa.com" className="pl-9" {...field} />
+                      <Input placeholder="usuario@empresa.com" className="pl-9" {...field} />
                     </div>
                   </FormControl>
                   <FormMessage />
@@ -157,13 +152,14 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
                 name="password"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>Contraseña Inicial</FormLabel>
+                    <FormLabel>Asignar Contraseña</FormLabel>
                     <FormControl>
                         <div className="relative">
                         <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input type="password" placeholder="******" className="pl-9" {...field} />
+                        <Input type="text" placeholder="Ej: Clave123*" className="pl-9" {...field} />
                         </div>
                     </FormControl>
+                    <FormDescription className="text-[10px]">Mínimo 6 caracteres</FormDescription>
                     <FormMessage />
                     </FormItem>
                 )}
@@ -174,7 +170,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
                 name="role"
                 render={({ field }) => (
                     <FormItem>
-                    <FormLabel>Rol</FormLabel>
+                    <FormLabel>Rol / Permisos</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                         <SelectTrigger>
@@ -197,7 +193,7 @@ export function CreateUserModal({ open, onOpenChange, onSuccess }: CreateUserMod
             <DialogFooter className="mt-4">
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
               <Button type="submit" disabled={isLoading}>
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <span className="flex items-center">Registrar <ArrowRight className="ml-2 h-4 w-4"/></span>}
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <span className="flex items-center">Crear Usuario <ArrowRight className="ml-2 h-4 w-4"/></span>}
               </Button>
             </DialogFooter>
           </form>

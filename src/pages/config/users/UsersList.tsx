@@ -6,11 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus, Mail } from "lucide-react";
+import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { EditUserModal } from "../personnel/EditUserModal";
 import { CreateUserModal } from "./CreateUserModal";
-import { InviteUserModal } from "./InviteUserModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function UsersList() {
@@ -22,7 +21,6 @@ export default function UsersList() {
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const fetchUsers = async () => {
@@ -77,19 +75,13 @@ export default function UsersList() {
           <h2 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h2>
           <p className="text-muted-foreground">Administra roles, accesos y permisos del equipo.</p>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto flex-wrap">
+        <div className="flex gap-2 w-full sm:w-auto">
             <Button variant="outline" size="icon" onClick={fetchUsers} title="Recargar lista">
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
             
-            {/* Botón Invitar */}
-            <Button variant="secondary" onClick={() => setIsInviteModalOpen(true)} className="flex-1 sm:flex-none bg-blue-100 text-blue-800 hover:bg-blue-200 border border-blue-200">
-              <Mail className="w-4 h-4 mr-2" /> Invitar Usuario
-            </Button>
-            
-            {/* Botón Crear Manual */}
             <Button onClick={() => setIsCreateModalOpen(true)} className="flex-1 sm:flex-none">
-              <UserPlus className="w-4 h-4 mr-2" /> Nuevo Manual
+              <UserPlus className="w-4 h-4 mr-2" /> Nuevo Usuario
             </Button>
         </div>
       </div>
@@ -190,7 +182,7 @@ export default function UsersList() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => handleEditUser(user)} title="Gestionar Rol y Estado">
+                        <Button variant="outline" size="sm" onClick={() => handleEditUser(user)} title="Gestionar Rol y Contraseña">
                           <UserCog className="w-4 h-4 mr-2" />
                           Editar
                         </Button>
@@ -228,12 +220,6 @@ export default function UsersList() {
       <CreateUserModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
-        onSuccess={fetchUsers}
-      />
-
-      <InviteUserModal
-        open={isInviteModalOpen}
-        onOpenChange={setIsInviteModalOpen}
         onSuccess={fetchUsers}
       />
     </div>
