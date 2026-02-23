@@ -7,6 +7,7 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // Manejo de Preflight (CORS)
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -16,21 +17,21 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Server configuration error.')
+      throw new Error('Configuración del servidor incompleta (Variables de entorno).')
     }
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    // 1. Authenticate the admin making the request
+    // 1. Autenticar al administrador que hace la petición
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) throw new Error('Auth header missing')
+    if (!authHeader) throw new Error('Falta cabecera de autorización')
     
     const token = authHeader.replace('Bearer ', '')
     const { data: { user: adminUser }, error: authError } = await supabaseAdmin.auth.getUser(token)
     
-    if (authError || !adminUser) throw new Error('Invalid session.')
+    if (authError || !adminUser) throw new Error('Sesión inválida o expirada.')
 
-    // 2. Check admin's role for permission
+    // 2. Verificar rol del administrador (Permisos)
     const { data: adminProfile } = await supabaseAdmin
       .from('profiles')
       .select('role')
@@ -38,47 +39,61 @@ serve(async (req) => {
       .single()
 
     if (!adminProfile || !['director', 'superadmin'].includes(adminProfile.role)) {
-      return new Response(JSON.stringify({ error: 'Permission denied.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(
+        JSON.stringify({ error: 'Permiso denegado. Solo directores pueden realizar esta acción.' }), 
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
-    // 3. Get request body
-    const { action, email, password } = await req.json()
+    // 3. Obtener datos del cuerpo
+    const { action, email, userId, password } = await req.json()
 
     if (action === 'reset_password') {
-      if (!email || !password) {
-        throw new Error('Email and new password are required.')
+      if (!password || password.length < 6) {
+        throw new Error('La contraseña es requerida y debe tener al menos 6 caracteres.')
       }
 
-      // 4. Find the target user by email
-      const { data: { user: targetUser }, error: findError } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-      
-      if (findError || !targetUser) {
-        return new Response(JSON.stringify({ error: 'User not found.' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      let targetUserId = userId;
+
+      // Si no viene ID pero viene email, buscamos el ID (Retrocompatibilidad)
+      if (!targetUserId && email) {
+        const { data: { user: targetUser }, error: findError } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+        if (findError || !targetUser) {
+          return new Response(
+            JSON.stringify({ error: `Usuario no encontrado con el email: ${email}` }), 
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        targetUserId = targetUser.id;
       }
 
-      // 5. Update the user's password
+      if (!targetUserId) {
+        throw new Error('Se requiere userId o email para identificar al usuario.')
+      }
+
+      // 4. Actualizar contraseña directamente por ID
       const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-        targetUser.id,
+        targetUserId,
         { password: password }
       )
 
       if (updateError) throw updateError
 
       return new Response(
-        JSON.stringify({ success: true, message: 'Password updated.' }),
+        JSON.stringify({ success: true, message: 'Contraseña actualizada correctamente.' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       )
     }
 
     return new Response(
-      JSON.stringify({ error: 'Invalid action.' }),
+      JSON.stringify({ error: 'Acción no válida.' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
     )
 
   } catch (error: any) {
     console.error("[admin-update-user] Error:", error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message || 'Error interno del servidor.' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }

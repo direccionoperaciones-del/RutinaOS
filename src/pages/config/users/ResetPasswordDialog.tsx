@@ -28,19 +28,34 @@ export function ResetPasswordDialog({ open, onOpenChange, user }: ResetPasswordD
       const { data, error } = await supabase.functions.invoke('admin-update-user', {
         body: {
           action: 'reset_password',
-          email: user.email,
+          userId: user.id, // Enviamos ID directamente para evitar errores de búsqueda por email
+          email: user.email, // Enviamos email como respaldo/log
           password: newPassword
         }
       });
 
-      if (error) throw new Error(error.message);
-      if (data.error) throw new Error(data.error);
+      if (error) {
+        // Intenta extraer mensaje de error del cuerpo si existe
+        let msg = error.message;
+        try {
+            // @ts-ignore
+            if(error.context && error.context.json) {
+                // @ts-ignore
+                const body = await error.context.json();
+                if(body.error) msg = body.error;
+            }
+        } catch(e) {}
+        throw new Error(msg);
+      }
+
+      if (data && data.error) throw new Error(data.error);
 
       toast({ title: "Éxito", description: `Contraseña actualizada para ${user.nombre}.` });
       onOpenChange(false);
       setNewPassword("");
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      console.error(err);
+      toast({ variant: "destructive", title: "Error al guardar", description: err.message || "Error de conexión con el servidor." });
     } finally {
       setIsResetting(false);
     }
