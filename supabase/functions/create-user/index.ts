@@ -101,41 +101,78 @@ serve(async (req) => {
         }
         finalTenantId = tenant_id;
     } 
-    // Si es Director, ignoramos body.tenant_id por seguridad y usamos el suyo propio.
-
-    // 6. LÓGICA MEJORADA: Buscar si el usuario ya existe
-    const { data: existingUserData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+    
+    // 6. LÓGICA MEJORADA: Crear o Actualizar usuario
+    // FIX: Reemplazo de getUserByEmail que no existe
     let finalUser;
+    let targetUserId;
 
-    if (existingUserData && existingUserData.user) {
-        // Usuario existe: Actualizar contraseña y metadatos
-        console.log(`[create-user] User ${email} exists. Updating password and metadata.`);
+    // A. Buscar en tabla profiles primero (más eficiente para saber ID si ya existe en el sistema)
+    const { data: profileData } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+
+    if (profileData) {
+        targetUserId = profileData.id;
+    }
+
+    // B. Si no está en perfiles, intentamos crearlo
+    if (!targetUserId) {
+        console.log(`[create-user] Intentando crear usuario ${email}...`);
+        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+            email: email,
+            password: password,
+            email_confirm: true, // Auto-confirmar
+            user_metadata: { nombre, apellido, tenant_id: finalTenantId, role }
+        });
+
+        if (createError) {
+            // C. Si falla porque ya existe en Auth (pero no tenía perfil), buscamos su ID
+            // Esto sucede si hubo un registro fallido anterior o importación manual
+            if (createError.message?.toLowerCase().includes("already registered") || createError.status === 422) {
+                console.log("[create-user] Usuario existe en Auth. Buscando ID...");
+                
+                // listUsers trae paginado (default 50). Pedimos más para asegurar encontrarlo en tenant pequeños/medianos.
+                // En un sistema masivo esto debería optimizarse, pero Auth API no tiene búsqueda por email directa expuesta en esta versión del cliente.
+                const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+                
+                if (listError) throw listError;
+                
+                const existingAuthUser = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                if (existingAuthUser) {
+                    targetUserId = existingAuthUser.id;
+                } else {
+                    throw new Error(`El correo ${email} está registrado en el sistema pero no se pudo recuperar para actualizar.`);
+                }
+            } else {
+                throw new Error(`Error creando usuario: ${createError.message}`);
+            }
+        } else {
+            finalUser = newUser.user;
+        }
+    }
+
+    // D. Si encontramos un ID existente (targetUserId), actualizamos sus datos
+    if (targetUserId) {
+        console.log(`[create-user] Actualizando usuario existente ${targetUserId}...`);
         const { data: updatedUser, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-            existingUserData.user.id,
+            targetUserId,
             {
                 password: password,
-                user_metadata: { nombre, apellido, tenant_id: finalTenantId, role }
+                user_metadata: { nombre, apellido, tenant_id: finalTenantId, role },
+                email_confirm: true
             }
         );
         if (updateError) throw new Error(`Error actualizando usuario existente: ${updateError.message}`);
         finalUser = updatedUser.user;
-    } else {
-        // Usuario no existe: Crear nuevo
-        console.log(`[create-user] User ${email} does not exist. Creating new user.`);
-        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-            email: email,
-            password: password,
-            email_confirm: true, // Auto-confirmar ya que es una acción de admin
-            user_metadata: { nombre, apellido, tenant_id: finalTenantId, role }
-        });
-        if (createError) throw new Error(`Error creando usuario: ${createError.message}`);
-        finalUser = newUser.user;
     }
 
-    if (!finalUser) throw new Error('No se pudo crear o actualizar el usuario.');
+    if (!finalUser) throw new Error('No se pudo procesar la creación/actualización del usuario.');
 
     // 7. Asegurar que el perfil exista y esté correcto (UPSERT)
-    console.log(`[create-user] Upserting profile for user ${finalUser.id}`);
+    console.log(`[create-user] Sincronizando perfil para ${finalUser.id}`);
     const { error: profileUpsertError } = await supabaseAdmin
         .from('profiles')
         .upsert({ 
@@ -149,8 +186,8 @@ serve(async (req) => {
         });
 
     if (profileUpsertError) {
-        // No lanzar error, solo loguear. La creación del usuario de auth es lo más importante.
-        console.error("Error en upsert de perfil (no crítico):", profileUpsertError);
+        console.error("Error en upsert de perfil:", profileUpsertError);
+        // No bloqueamos la respuesta exitosa del auth user, pero logueamos el error.
     }
 
     // 8. Éxito
