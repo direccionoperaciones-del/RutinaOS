@@ -54,7 +54,6 @@ const Login = () => {
   const onLogin = async (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
     try {
-      // Default persistence is used automatically by the Supabase client.
       const { data, error } = await supabase.auth.signInWithPassword({
         email: values.email,
         password: values.password,
@@ -125,15 +124,22 @@ const Login = () => {
     }
     setIsResetting(true);
     try {
+      // AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Redirigir a /update-password
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: `${window.location.origin}/settings`,
+        redirectTo: `${window.location.origin}/update-password`,
       });
       if (error) throw error;
-      toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada." });
+      toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada (y Spam)." });
       setIsResetOpen(false);
       setResetEmail("");
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
+      console.error(error);
+      // Supabase limita a 3 correos por hora en el plan gratuito.
+      if (error.message.includes("rate limit")) {
+        toast({ variant: "destructive", title: "Límite Excedido", description: "Has pedido muchos correos. Espera un momento." });
+      } else {
+        toast({ variant: "destructive", title: "Error", description: error.message });
+      }
     } finally {
       setIsResetting(false);
     }

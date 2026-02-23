@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import DashboardLayout from "./components/layouts/DashboardLayout";
 import Login from "./pages/Login";
+import UpdatePassword from "./pages/UpdatePassword"; // Nueva importación
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PDVList from "./pages/config/pdv/PDVList";
@@ -23,7 +24,7 @@ import MessageList from "./pages/ops/messages/MessageList";
 import GalleryPage from "./pages/control/gallery/GalleryPage";
 import ReportsPage from "./pages/control/reports/ReportsPage";
 import SettingsPage from "./pages/config/SettingsPage";
-import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard"; // Nueva Página
+import SuperAdminDashboard from "./pages/admin/SuperAdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ const App = () => (
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
+          <Route path="/update-password" element={<UpdatePassword />} /> {/* Nueva ruta pública */}
 
           {/* Protected Routes */}
           <Route path="/" element={<DashboardLayout />}>
