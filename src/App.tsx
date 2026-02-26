@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import DashboardLayout from "./components/layouts/DashboardLayout";
 import Login from "./pages/Login";
-import UpdatePassword from "./pages/UpdatePassword"; // Nueva importación
+import UpdatePassword from "./pages/UpdatePassword";
+import RegisterComplete from "./pages/RegisterComplete"; // Nueva ruta
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PDVList from "./pages/config/pdv/PDVList";
@@ -37,7 +38,8 @@ const App = () => (
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
-          <Route path="/update-password" element={<UpdatePassword />} /> {/* Nueva ruta pública */}
+          <Route path="/update-password" element={<UpdatePassword />} />
+          <Route path="/register-complete" element={<RegisterComplete />} /> {/* Nueva ruta pública */}
 
           {/* Protected Routes */}
           <Route path="/" element={<DashboardLayout />}>
