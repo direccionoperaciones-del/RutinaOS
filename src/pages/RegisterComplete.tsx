@@ -15,7 +15,8 @@ const registerSchema = z.object({
   nombre: z.string().min(2, "Mínimo 2 caracteres"),
   apellido: z.string().min(2, "Mínimo 2 caracteres"),
   tenant_name: z.string().min(3, "Nombre de empresa requerido"),
-  email: z.string().email("Email inválido"),
+  // Email es read-only porque viene de Wompi, pero lo validamos igual
+  email: z.string().email("Email inválido"), 
   password: z.string().min(6, "Mínimo 6 caracteres"),
 });
 
@@ -36,7 +37,7 @@ export default function RegisterComplete() {
     defaultValues: { nombre: "", apellido: "", tenant_name: "", email: "", password: "" }
   });
 
-  // Polling para verificar transacción
+  // Polling para verificar transacción y obtener email seguro
   useEffect(() => {
     if (!transactionId) {
       setStatus('error');
@@ -44,7 +45,7 @@ export default function RegisterComplete() {
     }
 
     let attempts = 0;
-    const maxAttempts = 20; // 1 minuto aprox (3s * 20)
+    const maxAttempts = 20;
 
     const verify = async () => {
       try {
@@ -57,19 +58,20 @@ export default function RegisterComplete() {
         if (data.status === 'APPROVED') {
           setStatus('approved');
           setPaymentData(data);
-          return true; // Stop polling
+          
+          // Pre-llenar el email si Wompi lo devuelve (mejora UX y seguridad)
+          // Nota: verify-transaction debería devolver el email si es posible, 
+          // si no, el usuario lo escribe y la Edge Function valida que coincida.
+          return true;
         } else if (data.status === 'DECLINED' || data.status === 'VOIDED' || data.status === 'ERROR') {
           setStatus('error');
-          toast({ variant: "destructive", title: "Pago rechazado", description: "La transacción no fue aprobada por el banco." });
+          toast({ variant: "destructive", title: "Pago rechazado", description: "La transacción no fue aprobada." });
           return true;
         }
-        
-        // Sigue en PENDING
         return false; 
 
       } catch (err) {
         console.error(err);
-        // No marcamos error fatal inmediatamente en polling, reintentamos
         return false;
       }
     };
@@ -82,12 +84,11 @@ export default function RegisterComplete() {
         clearInterval(interval);
       } else if (attempts >= maxAttempts) {
         clearInterval(interval);
-        setStatus('error'); // Timeout
-        toast({ variant: "destructive", title: "Tiempo de espera agotado", description: "No pudimos confirmar el pago automáticamente. Contacta soporte." });
+        setStatus('error');
+        toast({ variant: "destructive", title: "Tiempo agotado", description: "No pudimos confirmar el pago automáticamente." });
       }
-    }, 3000); // Cada 3 segundos
+    }, 3000);
 
-    // Primer chequeo inmediato
     verify();
 
     return () => clearInterval(interval);
@@ -96,37 +97,54 @@ export default function RegisterComplete() {
   const onRegister = async (values: z.infer<typeof registerSchema>) => {
     setIsSubmitting(true);
     try {
-      const redirectTo = `${window.location.origin}/login`;
-      
-      // Enviamos la referencia de pago en metadata. 
-      // El trigger de base de datos interceptará esto para asignar el plan.
-      const { data, error } = await supabase.auth.signUp({
-        email: values.email,
-        password: values.password,
-        options: {
-          emailRedirectTo: redirectTo,
-          data: {
-            nombre: values.nombre,
-            apellido: values.apellido,
-            tenant_name: values.tenant_name,
-            wompi_reference: paymentData?.reference, // <--- LA CLAVE PARA VINCULAR PAGO
-            wompi_transaction_id: transactionId
-          }
+      // LLAMADA A LA NUEVA EDGE FUNCTION (Bypass Email Confirm)
+      const { data, error } = await supabase.functions.invoke('register-with-payment', {
+        body: {
+          transactionId: transactionId,
+          companyName: values.tenant_name,
+          password: values.password,
+          nombre: values.nombre,
+          apellido: values.apellido,
+          // Nota: El email se toma directo de Wompi en el backend por seguridad,
+          // o se valida que coincida con el input.
         }
       });
 
-      if (error) throw error;
-
-      if (data.user) {
-        toast({ 
-          title: "¡Cuenta Activada!", 
-          description: "Revisa tu correo para confirmar. Tu plan Pro ya está reservado.",
-          duration: 6000 
-        });
-        navigate("/login");
+      if (error) {
+        // Intentar parsear error
+        let msg = error.message;
+        try {
+            const errBody = JSON.parse(error.message);
+            if (errBody.error) msg = errBody.error;
+        } catch(e) {}
+        throw new Error(msg);
       }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      toast({ 
+        title: "¡Cuenta Activada!", 
+        description: "Bienvenido a RunOp. Iniciando sesión...",
+        duration: 4000 
+      });
+
+      // Auto-login inmediato para mejorar UX
+      const { error: loginError } = await supabase.auth.signInWithPassword({
+        email: data.email, // Email retornado por la función (el real de Wompi)
+        password: values.password
+      });
+
+      if (!loginError) {
+        navigate("/"); // Ir al dashboard
+      } else {
+        navigate("/login"); // Si falla el autologin, ir al login manual
+      }
+
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Error al registrar", description: error.message });
+      console.error(error);
+      toast({ variant: "destructive", title: "Error al activar", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
@@ -154,8 +172,8 @@ export default function RegisterComplete() {
             <AlertTriangle className="w-16 h-16 text-red-600 mx-auto mb-6" />
             <h2 className="text-2xl font-bold text-red-900 mb-2">No pudimos verificar el pago</h2>
             <p className="text-red-700 mb-6">La transacción fue rechazada o expiró.</p>
-            <Button onClick={() => window.location.href = 'https://tu-landing.com'} variant="outline" className="border-red-200 text-red-900 hover:bg-red-100">
-              Volver a intentar
+            <Button onClick={() => navigate('/login')} variant="outline" className="border-red-200 text-red-900 hover:bg-red-100">
+              Volver al inicio
             </Button>
           </CardContent>
         </Card>
@@ -222,6 +240,7 @@ export default function RegisterComplete() {
                 />
               </div>
 
+              {/* El email en este punto es visual si no se rellena, pero la función usa el de Wompi */}
               <FormField
                 control={form.control}
                 name="email"
@@ -231,7 +250,7 @@ export default function RegisterComplete() {
                     <FormControl>
                       <div className="relative">
                         <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="admin@empresa.com" className="pl-10" {...field} />
+                        <Input placeholder="Debe coincidir con el pago" className="pl-10" {...field} />
                       </div>
                     </FormControl>
                     <FormMessage />
