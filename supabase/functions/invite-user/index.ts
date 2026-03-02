@@ -70,7 +70,7 @@ serve(async (req) => {
       });
 
       if (inviteErr) {
-        // Si falla porque ya existe, intentamos flujo de recuperación (que también envía correo)
+        // Si falla porque ya existe, intentamos flujo de recuperación
         const msg = inviteErr.message?.toLowerCase() || '';
         if (msg.includes('already registered') || msg.includes('already exists') || inviteErr.status === 422) {
           
@@ -85,9 +85,8 @@ serve(async (req) => {
           if (linkErr) throw linkErr;
           
           targetUser = linkData.user;
-          // Nota: generateLink devuelve action_link, pero el correo ya se debería haber enviado si no hay error SMTP.
-          // Si queremos asegurar el link manual en caso de fallo silencioso de correo, lo guardamos.
-          // Pero para este flujo, asumimos que si no hay error, el correo salió.
+          // Si el usuario ya existe, no forzamos modo manual a menos que falle el envío de correo de recuperación, 
+          // pero generateLink devuelve el link.
         } else {
           throw inviteErr; // Otro error, lanzar al catch general
         }
@@ -148,7 +147,6 @@ serve(async (req) => {
       
       if (profileError) {
         console.error("[invite-user] Error actualizando perfil:", profileError.message);
-        // No lanzamos error aquí para no romper el flujo si el usuario ya se creó/invitó
       }
     }
 
