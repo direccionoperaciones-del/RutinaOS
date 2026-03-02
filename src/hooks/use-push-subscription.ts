@@ -44,8 +44,6 @@ export function usePushSubscription() {
     const subJSON = subscription.toJSON();
     
     if (subJSON.keys?.p256dh && subJSON.keys?.auth && subJSON.endpoint) {
-       // Usamos upsert basado en el endpoint. 
-       // Las nuevas políticas permiten "reclamar" el endpoint si estaba huérfano.
        return await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
           endpoint: subJSON.endpoint,
@@ -64,13 +62,13 @@ export function usePushSubscription() {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         setIsSubscribed(true);
-        // Sincronización silenciosa al cargar
+        // Sincronización silenciosa
         updateSubscriptionInDb(subscription);
       } else {
         setIsSubscribed(false);
       }
     } catch (e) {
-      console.error("[PushHook] Error checkSubscription:", e);
+      console.warn("[PushHook] No se pudo verificar suscripción:", e);
     }
   };
 
@@ -80,20 +78,29 @@ export function usePushSubscription() {
     setError(null);
 
     try {
+      // 1. Pedir permisos explícitamente
       const permission = await Notification.requestPermission();
-      if (permission !== 'granted') throw new Error("Permiso denegado.");
+      if (permission !== 'granted') throw new Error("Permiso de notificaciones denegado.");
 
+      // 2. Obtener VAPID key
       const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
-      if (keyError || !keyData?.publicKey) throw new Error("Error obteniendo llave pública.");
+      if (keyError || !keyData?.publicKey) throw new Error("No se pudo obtener la configuración del servidor (VAPID).");
 
       const applicationServerKey = urlBase64ToUint8Array(keyData.publicKey);
+      
+      // 3. Obtener SW y Suscribir
       const registration = await navigator.serviceWorker.ready;
       
+      // Limpiar suscripción vieja para evitar problemas de caché de token
+      const oldSub = await registration.pushManager.getSubscription();
+      if (oldSub) await oldSub.unsubscribe();
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey
       });
 
+      // 4. Guardar en DB
       const { error: dbError } = await updateSubscriptionInDb(subscription);
       if (dbError) throw dbError;
       
@@ -102,7 +109,7 @@ export function usePushSubscription() {
 
     } catch (err: any) {
       console.error("[PushHook] Error:", err);
-      setError(err.message || "Error al suscribirse.");
+      setError(err.message || "Error al activar las notificaciones.");
       return false;
     } finally {
       setLoading(false);
@@ -113,36 +120,50 @@ export function usePushSubscription() {
     const logs: string[] = [];
     const log = (msg: string) => { logs.push(msg); };
     
-    log("=== DIAGNÓSTICO V4 (RLS FIX) ===");
+    log("=== DIAGNÓSTICO AVANZADO ===");
     
     try {
-        if (!('serviceWorker' in navigator)) throw new Error("Sin soporte SW");
+        log(`📍 Navegador: ${navigator.userAgent.slice(0, 50)}...`);
+        log(`📍 Contexto Seguro: ${window.isSecureContext ? 'SÍ' : 'NO'}`);
+        log(`📍 Permiso Actual: ${Notification.permission}`);
+
+        if (!('serviceWorker' in navigator)) throw new Error("Sin soporte SW.");
         
         const reg = await navigator.serviceWorker.ready;
         log(`✅ SW Estado: ${reg.active ? 'Activo' : 'Inactivo'}`);
         
         const sub = await reg.pushManager.getSubscription();
-        if (!sub) throw new Error("❌ Sin suscripción local. Actívala primero.");
+        if (!sub) {
+          log("❌ Sin suscripción local.");
+          log("💡 Debes hacer clic en 'Activar Notificaciones' primero.");
+          return logs;
+        }
         
-        log("✅ Suscripción navegador OK.");
+        log("✅ Suscripción local detectada.");
 
-        log("💾 Sincronizando con Supabase...");
+        log("🔑 Verificando VAPID en servidor...");
+        const { data: keyData, error: keyError } = await supabase.functions.invoke('get-vapid-public-key');
+        if (keyError || !keyData?.publicKey) {
+          log(`❌ ERROR VAPID: ${keyError?.message || 'Llave vacía'}`);
+          return logs;
+        }
+        log("✅ Configuración VAPID correcta.");
+
+        log("💾 Sincronizando con base de datos...");
         const { error: dbError } = await updateSubscriptionInDb(sub);
         
         if (dbError) {
             log(`❌ ERROR DB: ${(dbError as any).message || JSON.stringify(dbError)}`);
-            log("⚠️ Revisa las políticas RLS en la tabla push_subscriptions.");
             return logs;
-        } else {
-            log("✅ DB Sincronizada correctamente.");
         }
+        log("✅ Base de datos sincronizada.");
 
         log("🚀 Enviando prueba de push...");
         const { data, error } = await supabase.functions.invoke('send-push', {
             body: {
                 user_id: user?.id,
                 title: "Test de Conexión",
-                body: "¡Las notificaciones vuelven a funcionar!",
+                body: "¡Las notificaciones funcionan correctamente!",
                 url: "/settings"
             }
         });
@@ -152,7 +173,7 @@ export function usePushSubscription() {
         if (data.success && data.sent > 0) {
             log(`✅ ENVÍO EXITOSO (Recibido por ${data.sent} dispositivo/s)`);
         } else {
-            log(`⚠️ El servidor aceptó la petición pero no encontró dispositivos activos.`);
+            log(`⚠️ El servidor aceptó la petición pero Wompi/Google rechazó el envío (Token inválido o expirado).`);
         }
 
     } catch (e: any) {

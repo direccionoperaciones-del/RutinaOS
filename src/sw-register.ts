@@ -1,6 +1,6 @@
 export function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    const register = () => {
       navigator.serviceWorker.register('/sw.js')
         .then(registration => {
           console.log('✅ ServiceWorker registrado con scope:', registration.scope);
@@ -14,7 +14,13 @@ export function registerServiceWorker() {
         .catch(registrationError => {
           console.error('❌ ServiceWorker falló:', registrationError);
         });
-    });
+    };
+
+    if (document.readyState === 'complete') {
+      register();
+    } else {
+      window.addEventListener('load', register);
+    }
   } else {
     console.warn('⚠️ ServiceWorker no soportado en este navegador');
   }
