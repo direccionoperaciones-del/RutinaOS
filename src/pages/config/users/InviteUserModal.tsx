@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Mail, Send, Copy, Check, AlertTriangle, Link, Info } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
+// Schema validación
 const inviteUserSchema = z.object({
   nombre: z.string().min(2, "Mínimo 2 caracteres"),
   apellido: z.string().min(2, "Mínimo 2 caracteres"),
