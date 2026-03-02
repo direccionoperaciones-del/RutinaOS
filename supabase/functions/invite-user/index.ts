@@ -33,58 +33,76 @@ serve(async (req) => {
       throw new Error('Permiso denegado')
     }
 
-    // 2. Payload & URL Config
+    // 2. Payload
     const { email: rawEmail, nombre, apellido, role, tenant_id } = await req.json()
     const email = rawEmail.toLowerCase().trim()
     const finalTenantId = profile.role === 'superadmin' ? (tenant_id || profile.tenant_id) : profile.tenant_id
 
-    // Detectar el origen de la petición de forma dinámica
-    const reqOrigin = req.headers.get('origin') || 'https://runop.app'
-    const redirectTo = `${reqOrigin}/update-password`
+    // URL de redirección (Asegúrate de que https://runop.app/* esté en Redirect URLs de Supabase)
+    const origin = req.headers.get('origin') || 'https://runop.app'
+    const redirectTo = `${origin}/update-password`
 
     let targetUser = null
     let manualLink = null
     let wasManual = false
+    let specificError = ""
 
-    const generateManualLink = async () => {
+    // Helper: genera link manual si todo lo demás falla
+    const generateManualLink = async (type: 'invite' | 'recovery' = 'invite') => {
       wasManual = true
-      // Intentar invite manual
-      const { data: invLink, error: invErr } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'invite',
+      const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+        type,
         email,
         options: { data: { nombre, apellido, tenant_id: finalTenantId, role }, redirectTo }
       })
+      if (error) return null
+      return { user: data.user, link: data.properties?.action_link }
+    }
 
-      if (!invErr && invLink) return { user: invLink.user, link: invLink.properties?.action_link }
-
-      // Fallback a recovery si el usuario ya existe
-      const { data: recLink, error: recErr } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
-        email,
-        options: { redirectTo }
+    // 3. Lógica de invitación robusta
+    try {
+      // Intentar invitación estándar
+      const { data: inviteData, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        data: { nombre, apellido, tenant_id: finalTenantId, role },
+        redirectTo
       })
 
-      if (recErr) throw new Error(`No se pudo generar el enlace: ${recErr.message}`)
-      return { user: recLink.user, link: recLink.properties?.action_link }
+      if (!inviteErr) {
+        targetUser = inviteData.user
+      } else {
+        const msg = inviteErr.message.toLowerCase()
+        specificError = inviteErr.message
+        
+        // Caso A: El usuario ya existe en Auth (pero quizás no en Profiles)
+        if (msg.includes('already registered') || msg.includes('already exists') || inviteErr.status === 422) {
+          console.log("[invite-user] El usuario ya existe. Intentando re-vincular...");
+          
+          // Generamos link de recuperación (que también sirve para activar)
+          const result = await generateManualLink('recovery')
+          if (result) {
+            targetUser = result.user
+            manualLink = result.link
+          }
+        } else {
+          // Caso B: Error de SMTP o Rate Limit
+          console.warn("[invite-user] Error SMTP/Supabase:", inviteErr.message)
+          const result = await generateManualLink('invite')
+          if (result) {
+            targetUser = result.user
+            manualLink = result.link
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[invite-user] Error inesperado en invite:", err)
+      const result = await generateManualLink('invite')
+      if (result) {
+        targetUser = result.user
+        manualLink = result.link
+      }
     }
 
-    // 3. Intentar invitación estándar (envío de email)
-    const { data: inviteData, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-      data: { nombre, apellido, tenant_id: finalTenantId, role },
-      redirectTo
-    })
-
-    if (!inviteErr) {
-      targetUser = inviteData.user
-    } else {
-      // Si falla el envío (SMTP no configurado o rate limit), generamos el link manual
-      console.warn("[invite-user] Error en envío automático:", inviteErr.message)
-      const result = await generateManualLink()
-      targetUser = result.user
-      manualLink = result.link
-    }
-
-    // 4. Sync Profile
+    // 4. Sincronizar Perfil
     if (targetUser) {
       await supabaseAdmin.from('profiles').upsert({
         id: targetUser.id,
@@ -100,7 +118,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       inviteLink: manualLink,
-      manualMode: wasManual
+      manualMode: wasManual,
+      debug: specificError
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
 
   } catch (error: any) {
