@@ -26,9 +26,7 @@ export default function RegisterComplete() {
   
   const transactionId = searchParams.get("id");
   
-  // Estados: 'validating' (esperando Wompi), 'approved' (Wompi OK), 'standard' (Registro sin pago), 'error'
   const [status, setStatus] = useState<'validating' | 'approved' | 'standard' | 'error'>(transactionId ? 'validating' : 'standard');
-  const [paymentData, setPaymentData] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<z.infer<typeof registerSchema>>({
@@ -37,13 +35,11 @@ export default function RegisterComplete() {
   });
 
   useEffect(() => {
-    // Si no hay ID de transacción, es un registro normal o invitación confirmada
     if (!transactionId) {
       setStatus('standard');
       return;
     }
 
-    // Lógica de Polling para Wompi (Solo si hay ID)
     let attempts = 0;
     const maxAttempts = 15;
 
@@ -56,7 +52,6 @@ export default function RegisterComplete() {
 
         if (data.status === 'APPROVED') {
           setStatus('approved');
-          setPaymentData(data);
           return true;
         } else if (['DECLINED', 'VOIDED', 'ERROR'].includes(data.status)) {
           setStatus('error');
@@ -76,7 +71,7 @@ export default function RegisterComplete() {
 
     verify();
     return () => clearInterval(interval);
-  }, [transactionId]);
+  }, [transactionId, status]);
 
   const onRegisterPayment = async (values: z.infer<typeof registerSchema>) => {
     setIsSubmitting(true);
@@ -87,7 +82,7 @@ export default function RegisterComplete() {
       if (error || data?.error) throw new Error(error?.message || data?.error);
 
       toast({ title: "¡Cuenta Activada!", description: "Iniciando sesión..." });
-      await supabase.auth.signInWithPassword({ email: data.email || values.email, password: values.password });
+      await supabase.auth.signInWithPassword({ email: values.email, password: values.password });
       navigate("/");
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -96,7 +91,6 @@ export default function RegisterComplete() {
     }
   };
 
-  // Render para flujo estándar (Confirmación de email normal)
   if (status === 'standard') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4 text-center">
@@ -143,7 +137,6 @@ export default function RegisterComplete() {
     );
   }
 
-  // Render para completar registro tras pago aprobado
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-[500px] shadow-xl border-t-4 border-t-green-500">
@@ -165,7 +158,7 @@ export default function RegisterComplete() {
                   <FormItem><FormLabel>Nombre</FormLabel><FormControl><Input {...field}/></FormControl><FormMessage/></FormItem>
                 )}/>
                 <FormField control={form.control} name="apellido" render={({ field }) => (
-                  <FormItem><FormLabel>Apellido</FormLabel><FormControl><Input {...field}/></FormControl><FormMessage/></FormMessage/></FormItem>
+                  <FormItem><FormLabel>Apellido</FormLabel><FormControl><Input {...field}/></FormControl><FormMessage/></FormItem>
                 )}/>
               </div>
               <FormField control={form.control} name="email" render={({ field }) => (

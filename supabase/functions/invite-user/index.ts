@@ -1,4 +1,3 @@
-Recovery (si existe) -> Link Manual (si falla SMTP o el resto).">
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
@@ -120,9 +119,9 @@ serve(async (req) => {
         if (!recErr && recData) {
           targetUser = recData.user
           manualLink = recData.properties?.action_link
-          wasManual = true // Marcamos como manual para mostrar el link, ya que generateLink no envía email automáticamente
+          wasManual = true // Marcamos como manual para mostrar el link
         } else {
-          // Si el recovery falla por cualquier razón, forzar helper manual
+          // Si el recovery falla, forzar helper manual
           const result = await generateManualLink()
           targetUser = result.user
           manualLink = result.link
@@ -137,7 +136,7 @@ serve(async (req) => {
       }
     }
 
-    // 4. Sync Profile (Upsert siempre para asegurar consistencia)
+    // 4. Sync Profile
     if (targetUser) {
       const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
         id: targetUser.id,
