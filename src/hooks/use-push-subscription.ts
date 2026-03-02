@@ -44,6 +44,8 @@ export function usePushSubscription() {
     const subJSON = subscription.toJSON();
     
     if (subJSON.keys?.p256dh && subJSON.keys?.auth && subJSON.endpoint) {
+       // Usamos upsert basado en el endpoint. 
+       // Las nuevas políticas permiten "reclamar" el endpoint si estaba huérfano.
        return await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
           endpoint: subJSON.endpoint,
@@ -93,7 +95,7 @@ export function usePushSubscription() {
       });
 
       const { error: dbError } = await updateSubscriptionInDb(subscription);
-      if (dbError) console.error("Error guardando suscripción:", dbError);
+      if (dbError) throw dbError;
       
       setIsSubscribed(true);
       return true;
@@ -107,12 +109,11 @@ export function usePushSubscription() {
     }
   };
 
-  // --- DIAGNÓSTICO MEJORADO ---
   const runDiagnostics = async () => {
     const logs: string[] = [];
-    const log = (msg: string) => { logs.push(msg); }; // Solo guarda en array para UI
+    const log = (msg: string) => { logs.push(msg); };
     
-    log("=== DIAGNÓSTICO V3 (DB CHECK) ===");
+    log("=== DIAGNÓSTICO V4 (RLS FIX) ===");
     
     try {
         if (!('serviceWorker' in navigator)) throw new Error("Sin soporte SW");
@@ -125,49 +126,37 @@ export function usePushSubscription() {
         
         log("✅ Suscripción navegador OK.");
 
-        // 1. INTENTO DE GUARDADO EN DB CON REPORTE
         log("💾 Sincronizando con Supabase...");
         const { error: dbError } = await updateSubscriptionInDb(sub);
         
         if (dbError) {
-            log(`❌ ERROR DB: ${(dbError as any).message || dbError}`);
-            log("⚠️ Faltan políticas RLS en tabla push_subscriptions.");
-            return logs; // Detener si falla la DB
+            log(`❌ ERROR DB: ${(dbError as any).message || JSON.stringify(dbError)}`);
+            log("⚠️ Revisa las políticas RLS en la tabla push_subscriptions.");
+            return logs;
         } else {
-            log("✅ DB Sincronizada (RLS Correcto).");
+            log("✅ DB Sincronizada correctamente.");
         }
 
-        // 2. PRUEBA DE ENVÍO
-        log("🚀 Enviando prueba...");
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        const PROJECT_URL = "https://lrnzxrrjcwkmwwldfdaq.supabase.co";
-        const functionUrl = `${PROJECT_URL}/functions/v1/send-push`;
-
-        const response = await fetch(functionUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token}`
-            },
-            body: JSON.stringify({
+        log("🚀 Enviando prueba de push...");
+        const { data, error } = await supabase.functions.invoke('send-push', {
+            body: {
                 user_id: user?.id,
-                title: "Test Exitoso",
-                body: "Conexión DB <-> Navegador establecida.",
-                url: "/settings?success=true"
-            })
+                title: "Test de Conexión",
+                body: "¡Las notificaciones vuelven a funcionar!",
+                url: "/settings"
+            }
         });
 
-        const jsonResult = await response.json();
+        if (error) throw error;
         
-        if (jsonResult.success && jsonResult.sent > 0) {
-            log(`✅ ENVÍO EXITOSO (Sent: ${jsonResult.sent})`);
+        if (data.success && data.sent > 0) {
+            log(`✅ ENVÍO EXITOSO (Recibido por ${data.sent} dispositivo/s)`);
         } else {
-            log(`⚠️ Backend respondió: ${JSON.stringify(jsonResult)}`);
+            log(`⚠️ El servidor aceptó la petición pero no encontró dispositivos activos.`);
         }
 
     } catch (e: any) {
-        log(`❌ CRITICAL: ${e.message}`);
+        log(`❌ ERROR CRÍTICO: ${e.message}`);
     }
 
     return logs;
