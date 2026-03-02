@@ -6,22 +6,26 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus } from "lucide-react";
+import { Search, UserCog, CheckCircle2, XCircle, RefreshCw, UserPlus, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { EditUserModal } from "../personnel/EditUserModal";
 import { CreateUserModal } from "./CreateUserModal";
+import { InviteUserModal } from "./InviteUserModal";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function UsersList() {
   const { toast } = useToast();
-  const { tenantId } = useCurrentUser();
+  const { tenantId, profile } = useCurrentUser();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
+
+  const isDirector = profile?.role === 'director' || profile?.role === 'superadmin';
 
   const fetchUsers = async () => {
     if (!tenantId) return;
@@ -75,12 +79,18 @@ export default function UsersList() {
           <h2 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h2>
           <p className="text-muted-foreground">Administra roles, accesos y permisos del equipo.</p>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-            <Button variant="outline" size="icon" onClick={fetchUsers} title="Recargar lista">
+        <div className="flex gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+            <Button variant="outline" size="icon" onClick={fetchUsers} title="Recargar lista" className="shrink-0">
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
             
-            <Button onClick={() => setIsCreateModalOpen(true)} className="flex-1 sm:flex-none">
+            {isDirector && (
+              <Button variant="outline" onClick={() => setIsInviteModalOpen(true)} className="whitespace-nowrap border-primary text-primary hover:bg-primary/5">
+                <Mail className="w-4 h-4 mr-2" /> Invitar vía Email
+              </Button>
+            )}
+
+            <Button onClick={() => setIsCreateModalOpen(true)} className="whitespace-nowrap">
               <UserPlus className="w-4 h-4 mr-2" /> Nuevo Usuario
             </Button>
         </div>
@@ -220,6 +230,12 @@ export default function UsersList() {
       <CreateUserModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
+        onSuccess={fetchUsers}
+      />
+
+      <InviteUserModal
+        open={isInviteModalOpen}
+        onOpenChange={setIsInviteModalOpen}
         onSuccess={fetchUsers}
       />
     </div>
