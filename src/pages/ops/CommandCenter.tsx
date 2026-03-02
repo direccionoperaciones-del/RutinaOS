@@ -142,20 +142,21 @@ export default function CommandCenter() {
   const runDayClose = async () => {
     if (!closeDate || !tenantId) return;
     const simpleDate = format(closeDate, "yyyy-MM-dd");
-    if (!confirm(`¿Cerrar operación del día ${simpleDate}?`)) return;
+    if (!confirm(`¿Cerrar operación del día ${simpleDate}? Esto marcará TODAS las pendientes (incluyendo mensuales) como INCUMPLIDAS.`)) return;
     
     setIsLoadingClose(true);
     try {
       const { data, error } = await supabase.functions.invoke('mark-missed-tasks', {
         body: { 
           date: simpleDate,
-          tenant_id: tenantId 
+          tenant_id: tenantId,
+          force_all: true // Forzar el cierre de todo lo que esté pendiente
         }
       });
 
       if (error) throw new Error(error.message);
       
-      toast({ title: "Cierre Completado", description: data.message || "Tareas vencidas marcadas." });
+      toast({ title: "Cierre Completado", description: `Se cerraron ${data.updated} tareas para la fecha seleccionada.` });
       fetchAllData();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Error al cerrar", description: error.message });
@@ -292,7 +293,7 @@ export default function CommandCenter() {
                   Cerrar
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">Marca como <strong>incumplidas</strong> las pendientes.</p>
+              <p className="text-xs text-muted-foreground mt-1">Marca como <strong>incumplidas</strong> todas las pendientes de este día.</p>
             </div>
           </CardContent>
         </Card>

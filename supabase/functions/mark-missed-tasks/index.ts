@@ -15,18 +15,16 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     
-    // Parse body primero para tener acceso a los parámetros
     const body = await req.json().catch(() => ({}))
     const requestedTenantId = body.tenant_id;
+    const forceAll = body.force_all === true; // Nuevo parámetro para cierre manual forzoso
 
-    // Header de autorización
     const authHeader = req.headers.get('Authorization')
     const token = authHeader?.replace('Bearer ', '') ?? ''
     
     let isAuthorized = false
     let targetTenantId: string | null = null;
 
-    // 1. Autorización
     if (token === supabaseServiceKey) {
       isAuthorized = true;
       targetTenantId = requestedTenantId;
@@ -55,7 +53,6 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
     
-    // Configuración de fecha
     let targetDateStr = body.date;
     const now = new Date();
     
@@ -69,7 +66,6 @@ serve(async (req) => {
     const todayDateObj = new Date(targetDateStr);
     const dayOfMonth = todayDateObj.getDate();
 
-    // 2. Obtener tareas candidatas a vencer (Pendientes con fecha <= hoy)
     let query = supabase.from('task_instances')
       .select(`
         id, 
@@ -86,37 +82,31 @@ serve(async (req) => {
     const { data: candidates, error: fetchError } = await query;
     if (fetchError) throw fetchError;
 
-    // 3. Filtrar cuáles REALMENTE deben vencerse
     const tasksToFail: string[] = [];
 
     candidates?.forEach((task: any) => {
       const routine = task.routine_templates;
       let shouldFail = true;
 
-      // LÓGICA DE EXCEPCIÓN MENSUAL/QUINCENAL
-      if (routine) {
+      // Si NO es un cierre forzoso (es decir, es el cron automático), respetamos los plazos extendidos
+      if (!forceAll && routine) {
         const programada = new Date(task.fecha_programada);
-        // Solo aplicar lógica de preservación si la tarea es del mes actual o anterior pero dentro de rango
-        // Para simplificar: Si es mensual, miramos el día de vencimiento.
         
         if (routine.frecuencia === 'mensual' && routine.vencimiento_dia_mes) {
-          // Si hoy es día 6, y vence el 20, NO debe fallar.
-          // Si hoy es día 21, y vencía el 20, SÍ debe fallar.
-          // Nota: targetDateStr es "hoy".
-          
-          // Asumimos que la tarea es del mismo mes que "hoy". 
-          // Si la tarea es del mes pasado (fecha_programada muy vieja), sí debería vencerse.
           const isSameMonth = programada.getMonth() === todayDateObj.getMonth();
-          
-          if (isSameMonth) {
-             if (dayOfMonth <= routine.vencimiento_dia_mes) {
-               shouldFail = false; // Aún tiene tiempo
-             }
+          if (isSameMonth && dayOfMonth <= routine.vencimiento_dia_mes) {
+            shouldFail = false; 
           }
         }
         
-        // Lógica similar podría aplicar para Quincenal si se quisiera extender, 
-        // pero por ahora nos enfocamos en el requerimiento Mensual.
+        if (routine.frecuencia === 'quincenal') {
+           const pDay = programada.getDate();
+           if (pDay <= 15 && dayOfMonth <= (routine.corte_1_limite || 15)) {
+             shouldFail = false;
+           } else if (pDay > 15 && dayOfMonth <= (routine.corte_2_limite || 30)) {
+             shouldFail = false;
+           }
+        }
       }
 
       if (shouldFail) {
@@ -124,7 +114,6 @@ serve(async (req) => {
       }
     });
 
-    // 4. Actualizar masivamente solo las filtradas
     let updatedCount = 0;
     if (tasksToFail.length > 0) {
       const { error: updateError, count } = await supabase
@@ -143,6 +132,7 @@ serve(async (req) => {
         updated: updatedCount, 
         processed: candidates?.length || 0,
         preserved: (candidates?.length || 0) - updatedCount,
+        mode: forceAll ? 'FORCE_CLOSE' : 'NORMAL',
         date: targetDateStr 
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
