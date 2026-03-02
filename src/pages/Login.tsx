@@ -27,6 +27,17 @@ const registerSchema = z.object({
   password: z.string().min(6, "Mínimo 6 caracteres"),
 });
 
+// Helper para garantizar el dominio correcto
+const getRedirectUrl = (path: string) => {
+  const origin = window.location.origin;
+  // Si estamos en producción (no localhost), forzamos el dominio correcto
+  // Esto corrige el error si el usuario entró por un dominio con typo (ej: runopp.app)
+  if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+    return `https://runop.app${path}`;
+  }
+  return `${origin}${path}`;
+};
+
 const Login = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -85,7 +96,9 @@ const Login = () => {
   const onRegister = async (values: z.infer<typeof registerSchema>) => {
     setIsLoading(true);
     try {
-      const redirectTo = `${window.location.origin}/login`;
+      // Usar URL segura
+      const redirectTo = getRedirectUrl('/login');
+      
       const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
@@ -124,17 +137,19 @@ const Login = () => {
     }
     setIsResetting(true);
     try {
-      // AQUÍ ESTÁ EL CAMBIO IMPORTANTE: Redirigir a /update-password
+      // Usar URL segura para el reset
+      const redirectTo = getRedirectUrl('/update-password');
+      
       const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: `${window.location.origin}/update-password`,
+        redirectTo: redirectTo,
       });
+      
       if (error) throw error;
       toast({ title: "Correo enviado", description: "Revisa tu bandeja de entrada (y Spam)." });
       setIsResetOpen(false);
       setResetEmail("");
     } catch (error: any) {
       console.error(error);
-      // Supabase limita a 3 correos por hora en el plan gratuito.
       if (error.message.includes("rate limit")) {
         toast({ variant: "destructive", title: "Límite Excedido", description: "Has pedido muchos correos. Espera un momento." });
       } else {

@@ -26,9 +26,15 @@ serve(async (req) => {
     const { email, nombre, apellido, role, tenant_id } = await req.json()
     const finalTenantId = profile.role === 'superadmin' ? (tenant_id || profile.tenant_id) : profile.tenant_id
     
-    // IMPORTANTE: Definir la URL de retorno explícitamente basada en el origen del request
-    const origin = req.headers.get('origin') || 'https://runop.app'
-    const redirectTo = `${origin}/tasks` // Redirigir a tareas después de activar cuenta
+    // IMPORTANTE: Definir la URL de retorno explícitamente para evitar typos
+    let origin = req.headers.get('origin') || 'https://runop.app';
+    
+    // Si no es localhost, forzamos runop.app para evitar errores de dominio (ej: runopp.app)
+    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      origin = 'https://runop.app';
+    }
+    
+    const redirectTo = `${origin}/tasks`;
 
     let targetUser;
     let manualLink = null;
