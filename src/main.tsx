@@ -7,6 +7,7 @@ import { registerServiceWorker } from "./sw-register";
 registerServiceWorker();
 
 // Log de versión para confirmar despliegue
-console.log("Movacheck App v1.0.1 - Push Notification Update");
+// v1.0.2 - SMTP & Email Template Update
+console.log("RunOp App v1.0.2 - SMTP & UI refinement");
 
 createRoot(document.getElementById("root")!).render(<App />);
