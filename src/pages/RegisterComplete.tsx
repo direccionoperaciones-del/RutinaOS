@@ -8,14 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, CheckCircle2, AlertTriangle, Lock, Building, User } from "lucide-react";
+import { Loader2, CheckCircle2, AlertTriangle, Lock, Building, User, ArrowRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const registerSchema = z.object({
   nombre: z.string().min(2, "Mínimo 2 caracteres"),
   apellido: z.string().min(2, "Mínimo 2 caracteres"),
   tenant_name: z.string().min(3, "Nombre de empresa requerido"),
-  // Email es read-only porque viene de Wompi, pero lo validamos igual
   email: z.string().email("Email inválido"), 
   password: z.string().min(6, "Mínimo 6 caracteres"),
 });
@@ -27,138 +26,105 @@ export default function RegisterComplete() {
   
   const transactionId = searchParams.get("id");
   
-  const [status, setStatus] = useState<'validating' | 'approved' | 'pending' | 'error'>('validating');
+  // Estados: 'validating' (esperando Wompi), 'approved' (Wompi OK), 'standard' (Registro sin pago), 'error'
+  const [status, setStatus] = useState<'validating' | 'approved' | 'standard' | 'error'>(transactionId ? 'validating' : 'standard');
   const [paymentData, setPaymentData] = useState<any>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Formulario
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
     defaultValues: { nombre: "", apellido: "", tenant_name: "", email: "", password: "" }
   });
 
-  // Polling para verificar transacción y obtener email seguro
   useEffect(() => {
+    // Si no hay ID de transacción, es un registro normal o invitación confirmada
     if (!transactionId) {
-      setStatus('error');
+      setStatus('standard');
       return;
     }
 
+    // Lógica de Polling para Wompi (Solo si hay ID)
     let attempts = 0;
-    const maxAttempts = 20;
+    const maxAttempts = 15;
 
     const verify = async () => {
       try {
         const { data, error } = await supabase.functions.invoke('verify-transaction', {
           body: { id: transactionId }
         });
-
         if (error) throw error;
 
         if (data.status === 'APPROVED') {
           setStatus('approved');
           setPaymentData(data);
-          
-          // Pre-llenar el email si Wompi lo devuelve (mejora UX y seguridad)
-          // Nota: verify-transaction debería devolver el email si es posible, 
-          // si no, el usuario lo escribe y la Edge Function valida que coincida.
           return true;
-        } else if (data.status === 'DECLINED' || data.status === 'VOIDED' || data.status === 'ERROR') {
+        } else if (['DECLINED', 'VOIDED', 'ERROR'].includes(data.status)) {
           setStatus('error');
-          toast({ variant: "destructive", title: "Pago rechazado", description: "La transacción no fue aprobada." });
           return true;
         }
         return false; 
-
       } catch (err) {
-        console.error(err);
         return false;
       }
     };
 
     const interval = setInterval(async () => {
       attempts++;
-      const stop = await verify();
-      
-      if (stop) {
-        clearInterval(interval);
-      } else if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        setStatus('error');
-        toast({ variant: "destructive", title: "Tiempo agotado", description: "No pudimos confirmar el pago automáticamente." });
-      }
+      if (await verify() || attempts >= maxAttempts) clearInterval(interval);
+      if (attempts >= maxAttempts && status === 'validating') setStatus('error');
     }, 3000);
 
     verify();
-
     return () => clearInterval(interval);
   }, [transactionId]);
 
-  const onRegister = async (values: z.infer<typeof registerSchema>) => {
+  const onRegisterPayment = async (values: z.infer<typeof registerSchema>) => {
     setIsSubmitting(true);
     try {
-      // LLAMADA A LA NUEVA EDGE FUNCTION (Bypass Email Confirm)
       const { data, error } = await supabase.functions.invoke('register-with-payment', {
-        body: {
-          transactionId: transactionId,
-          companyName: values.tenant_name,
-          password: values.password,
-          nombre: values.nombre,
-          apellido: values.apellido,
-          // Nota: El email se toma directo de Wompi en el backend por seguridad,
-          // o se valida que coincida con el input.
-        }
+        body: { transactionId, companyName: values.tenant_name, password: values.password, nombre: values.nombre, apellido: values.apellido }
       });
+      if (error || data?.error) throw new Error(error?.message || data?.error);
 
-      if (error) {
-        // Intentar parsear error
-        let msg = error.message;
-        try {
-            const errBody = JSON.parse(error.message);
-            if (errBody.error) msg = errBody.error;
-        } catch(e) {}
-        throw new Error(msg);
-      }
-
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      toast({ 
-        title: "¡Cuenta Activada!", 
-        description: "Bienvenido a RunOp. Iniciando sesión...",
-        duration: 4000 
-      });
-
-      // Auto-login inmediato para mejorar UX
-      const { error: loginError } = await supabase.auth.signInWithPassword({
-        email: data.email, // Email retornado por la función (el real de Wompi)
-        password: values.password
-      });
-
-      if (!loginError) {
-        navigate("/"); // Ir al dashboard
-      } else {
-        navigate("/login"); // Si falla el autologin, ir al login manual
-      }
-
+      toast({ title: "¡Cuenta Activada!", description: "Iniciando sesión..." });
+      await supabase.auth.signInWithPassword({ email: data.email || values.email, password: values.password });
+      navigate("/");
     } catch (error: any) {
-      console.error(error);
-      toast({ variant: "destructive", title: "Error al activar", description: error.message });
+      toast({ variant: "destructive", title: "Error", description: error.message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (status === 'validating' || status === 'pending') {
+  // Render para flujo estándar (Confirmación de email normal)
+  if (status === 'standard') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/40 p-4">
-        <Card className="w-full max-w-md text-center py-10">
-          <CardContent>
-            <Loader2 className="w-16 h-16 text-blue-600 animate-spin mx-auto mb-6" />
-            <h2 className="text-2xl font-bold mb-2">Confirmando Pago...</h2>
-            <p className="text-muted-foreground">Estamos comunicándonos con el banco.<br/>Por favor no cierres esta ventana.</p>
-          </CardContent>
+      <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4 text-center">
+        <Card className="w-full max-w-md shadow-xl border-t-4 border-t-primary">
+          <CardHeader>
+            <div className="mx-auto bg-primary/10 p-3 rounded-full w-fit mb-4">
+              <CheckCircle2 className="w-10 h-10 text-primary" />
+            </div>
+            <CardTitle className="text-2xl font-bold">¡Email Confirmado!</CardTitle>
+            <CardDescription>Tu cuenta ha sido verificada con éxito. Ya puedes ingresar a la plataforma.</CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button className="w-full h-11 text-base font-bold" onClick={() => navigate('/login')}>
+              Ir al Inicio de Sesión <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
+  if (status === 'validating') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
+        <Card className="w-full max-w-md text-center py-12">
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-6" />
+          <h2 className="text-xl font-bold">Verificando pago...</h2>
+          <p className="text-muted-foreground mt-2">No cierres esta ventana.</p>
         </Card>
       </div>
     );
@@ -166,124 +132,54 @@ export default function RegisterComplete() {
 
   if (status === 'error') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/40 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
         <Card className="w-full max-w-md text-center py-10 border-red-200 bg-red-50">
-          <CardContent>
-            <AlertTriangle className="w-16 h-16 text-red-600 mx-auto mb-6" />
-            <h2 className="text-2xl font-bold text-red-900 mb-2">No pudimos verificar el pago</h2>
-            <p className="text-red-700 mb-6">La transacción fue rechazada o expiró.</p>
-            <Button onClick={() => navigate('/login')} variant="outline" className="border-red-200 text-red-900 hover:bg-red-100">
-              Volver al inicio
-            </Button>
-          </CardContent>
+          <AlertTriangle className="w-12 h-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-red-900">Pago no confirmado</h2>
+          <p className="text-red-700 mb-6 px-6">La transacción no pudo ser verificada. Si el dinero fue descontado, contacta a soporte.</p>
+          <Button onClick={() => navigate('/login')} variant="outline" className="border-red-200 text-red-900">Volver al Inicio</Button>
         </Card>
       </div>
     );
   }
 
+  // Render para completar registro tras pago aprobado
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-[500px] shadow-xl border-t-4 border-t-green-500 animate-in fade-in zoom-in duration-300">
+      <Card className="w-full max-w-[500px] shadow-xl border-t-4 border-t-green-500">
         <CardHeader className="text-center pb-6">
           <div className="mx-auto bg-green-100 p-3 rounded-full w-fit mb-4">
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
-          <CardTitle className="text-2xl font-bold text-foreground">¡Pago Exitoso!</CardTitle>
-          <CardDescription className="text-base text-green-700 font-medium">
-            Tu plan <strong>{paymentData?.plan?.toUpperCase()}</strong> está listo. <br/>
-            Completa tus datos para activar la cuenta.
-          </CardDescription>
+          <CardTitle className="text-2xl font-bold">¡Pago Exitoso!</CardTitle>
+          <CardDescription className="text-green-700 font-medium">Completa tus datos para activar tu empresa.</CardDescription>
         </CardHeader>
-        
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onRegister)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="tenant_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nombre de tu Empresa</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Building className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Mi Negocio S.A.S" className="pl-10" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
+            <form onSubmit={form.handleSubmit(onRegisterPayment)} className="space-y-4">
+              <FormField control={form.control} name="tenant_name" render={({ field }) => (
+                <FormItem><FormLabel>Nombre de la Empresa</FormLabel><FormControl><div className="relative"><Building className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input placeholder="Mi Negocio S.A.S" className="pl-10" {...field}/></div></FormControl><FormMessage/></FormItem>
+              )}/>
               <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="nombre"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nombre</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="apellido"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Apellido</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <FormField control={form.control} name="nombre" render={({ field }) => (
+                  <FormItem><FormLabel>Nombre</FormLabel><FormControl><Input {...field}/></FormControl><FormMessage/></FormItem>
+                )}/>
+                <FormField control={form.control} name="apellido" render={({ field }) => (
+                  <FormItem><FormLabel>Apellido</FormLabel><FormControl><Input {...field}/></FormControl><FormMessage/></FormMessage/></FormItem>
+                )}/>
               </div>
-
-              {/* El email en este punto es visual si no se rellena, pero la función usa el de Wompi */}
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Corporativo</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input placeholder="Debe coincidir con el pago" className="pl-10" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Crear Contraseña</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Input type="password" placeholder="******" className="pl-10" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem><FormLabel>Email Corporativo</FormLabel><FormControl><div className="relative"><User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input placeholder="Debe coincidir con el pago" className="pl-10" {...field}/></div></FormControl><FormMessage/></FormItem>
+              )}/>
+              <FormField control={form.control} name="password" render={({ field }) => (
+                <FormItem><FormLabel>Crear Contraseña</FormLabel><FormControl><div className="relative"><Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground"/><Input type="password" placeholder="******" className="pl-10" {...field}/></div></FormControl><FormMessage/></FormItem>
+              )}/>
               <Button type="submit" className="w-full h-11 text-lg font-bold bg-green-600 hover:bg-green-700 mt-4" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Activar Cuenta"}
+                {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin"/> : "Activar Cuenta"}
               </Button>
             </form>
           </Form>
         </CardContent>
-        <CardFooter className="justify-center py-4 bg-muted/20 text-xs text-muted-foreground">
-          ID Transacción: {transactionId}
-        </CardFooter>
       </Card>
     </div>
   );

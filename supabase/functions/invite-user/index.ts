@@ -26,15 +26,14 @@ serve(async (req) => {
     const { email, nombre, apellido, role, tenant_id } = await req.json()
     const finalTenantId = profile.role === 'superadmin' ? (tenant_id || profile.tenant_id) : profile.tenant_id
     
-    // IMPORTANTE: Definir la URL de retorno explícitamente para evitar typos
-    let origin = req.headers.get('origin') || 'https://runop.app';
-    
-    // Si no es localhost, forzamos runop.app para evitar errores de dominio (ej: runopp.app)
-    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-      origin = 'https://runop.app';
+    // REDIRECCIÓN ESTRATÉGICA: Los invitados deben ir a update-password para crear su clave
+    let origin = 'https://runop.app';
+    const reqOrigin = req.headers.get('origin');
+    if (reqOrigin && (reqOrigin.includes('localhost') || reqOrigin.includes('127.0.0.1'))) {
+      origin = reqOrigin;
     }
     
-    const redirectTo = `${origin}/tasks`;
+    const redirectTo = `${origin}/update-password`;
 
     let targetUser;
     let manualLink = null;
@@ -48,15 +47,16 @@ serve(async (req) => {
       });
 
       if (inviteErr) {
-        // Si ya existe, enviamos Magic Link (Enlace de acceso)
         if (inviteErr.message?.includes('already registered') || inviteErr.message?.includes('already exists')) {
-          await supabaseAdmin.auth.admin.signInWithOtp({
-            email,
-            options: { emailRedirectTo: redirectTo }
+          // Si ya existe, enviamos un link de recuperación (que también va a update-password)
+          const { data: linkData } = await supabaseAdmin.auth.admin.generateLink({
+            type: 'recovery',
+            email: email,
+            options: { redirectTo: redirectTo }
           });
-          // Buscamos el ID para sincronizar perfil
-          const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
-          targetUser = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+          targetUser = linkData?.user;
+          manualLink = linkData?.properties?.action_link;
+          wasManual = !manualLink; // Si no hay link, falló SMTP
         } else {
           throw inviteErr;
         }
@@ -67,34 +67,29 @@ serve(async (req) => {
       console.error("[SMTP ERROR]:", smtpError.message);
       wasManual = true;
       
-      // --- PASO 4: GENERAR LINK MANUAL ROBUSTO ---
-      const { data: { users } } = await supabaseAdmin.auth.admin.listUsers();
-      const existing = users.find(u => u.email?.toLowerCase() === email.toLowerCase());
-      
       const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
-        type: existing ? 'magiclink' : 'invite',
+        type: 'invite',
         email: email,
         options: {
-          data: !existing ? { nombre, apellido, tenant_id: finalTenantId, role } : undefined,
+          data: { nombre, apellido, tenant_id: finalTenantId, role },
           redirectTo: redirectTo
         }
       });
 
       if (linkErr) throw linkErr;
       targetUser = linkData.user;
-      // @ts-ignore
       manualLink = linkData.properties?.action_link;
     }
 
-    // 5. Sincronizar Perfil en DB
+    // 5. Sincronizar Perfil
     if (targetUser) {
       await supabaseAdmin.from('profiles').upsert({ 
         id: targetUser.id,
         tenant_id: finalTenantId,
         email: email,
-        nombre: nombre || targetUser.user_metadata?.nombre,
-        apellido: apellido || targetUser.user_metadata?.apellido,
-        role: role || targetUser.user_metadata?.role,
+        nombre: nombre,
+        apellido: apellido,
+        role: role,
         activo: true
       });
     }
