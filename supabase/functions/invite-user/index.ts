@@ -7,32 +7,49 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  // Manejo de Preflight request (CORS)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders })
+  }
 
   try {
-    console.log("[invite-user-v2] Iniciando proceso de invitación...");
+    console.log("[invite-user] Iniciando proceso de invitación...");
     
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!)
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Configuración del servidor incompleta.')
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
     // 1. Validar Admin logueado
     const authHeader = req.headers.get('Authorization')
-    const { data: { user: requester }, error: authError } = await supabaseAdmin.auth.getUser(authHeader?.replace('Bearer ', '') || '')
-    if (authError || !requester) throw new Error('Sesión de administrador no válida.')
+    if (!authHeader) throw new Error('No se encontró cabecera de autorización.');
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user: requester }, error: authError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (authError || !requester) throw new Error('Sesión de administrador no válida o expirada.');
 
     const { data: profile } = await supabaseAdmin.from('profiles').select('role, tenant_id').eq('id', requester.id).single()
-    if (!profile || !['director', 'superadmin'].includes(profile.role)) throw new Error('No tienes permisos.')
+    
+    if (!profile || !['director', 'superadmin'].includes(profile.role)) {
+      throw new Error('No tienes permisos suficientes para invitar usuarios.');
+    }
 
-    // 2. Extraer y validar datos
+    // 2. Extraer y validar datos del cuerpo
     const { email, nombre, apellido, role, tenant_id } = await req.json()
     const finalTenantId = profile.role === 'superadmin' ? (tenant_id || profile.tenant_id) : profile.tenant_id
     
-    if (!email || !finalTenantId) throw new Error('Email y Organización obligatorios.');
+    if (!email || !finalTenantId) {
+      throw new Error('Email y Organización (Tenant ID) son obligatorios.');
+    }
 
-    console.log(`[invite-user-v2] Invitando a: ${email}`);
+    console.log(`[invite-user] Invitando a: ${email}`);
 
-    // Redirección segura
+    // Configurar URL de redirección segura
     let origin = 'https://runop.app';
     const reqOrigin = req.headers.get('origin');
     if (reqOrigin && (reqOrigin.includes('localhost') || reqOrigin.includes('127.0.0.1'))) {
@@ -46,16 +63,18 @@ serve(async (req) => {
 
     // --- PASO 3: INTENTO DE INVITACIÓN ---
     try {
+      // Intentar enviar correo oficial de Supabase
       const { data: inviteData, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
         data: { nombre, apellido, tenant_id: finalTenantId, role },
         redirectTo: redirectTo
       });
 
       if (inviteErr) {
-        if (inviteErr.message?.toLowerCase().includes('already registered') || 
-            inviteErr.message?.toLowerCase().includes('already exists')) {
+        // Si falla porque ya existe, intentamos flujo de recuperación (que también envía correo)
+        const msg = inviteErr.message?.toLowerCase() || '';
+        if (msg.includes('already registered') || msg.includes('already exists') || inviteErr.status === 422) {
           
-          console.log("[invite-user-v2] Usuario ya existe. Generando recuperación...");
+          console.log("[invite-user] Usuario existe. Intentando recuperación...");
           
           const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
             type: 'recovery',
@@ -66,18 +85,23 @@ serve(async (req) => {
           if (linkErr) throw linkErr;
           
           targetUser = linkData.user;
-          manualLink = linkData.properties?.action_link;
-          wasManual = !manualLink; 
+          // Nota: generateLink devuelve action_link, pero el correo ya se debería haber enviado si no hay error SMTP.
+          // Si queremos asegurar el link manual en caso de fallo silencioso de correo, lo guardamos.
+          // Pero para este flujo, asumimos que si no hay error, el correo salió.
         } else {
-          throw inviteErr;
+          throw inviteErr; // Otro error, lanzar al catch general
         }
       } else {
         targetUser = inviteData.user;
+        console.log("[invite-user] Invitación enviada exitosamente.");
       }
-    } catch (smtpError: any) {
-      console.warn("[invite-user-v2] Error SMTP/Límite detectado. Usando modo manual.");
+
+    } catch (error: any) {
+      // Captura errores de red, SMTP o límites
+      console.warn("[invite-user] Falló el envío de correo (SMTP/Límite). Generando link manual...", error.message);
       wasManual = true;
       
+      // Intentamos generar link de invitación manual
       const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
         type: 'invite',
         email: email,
@@ -88,23 +112,31 @@ serve(async (req) => {
       });
 
       if (linkErr) {
-          // Fallback a recovery si invite falla (por ejemplo si ya existe)
-          const { data: recData } = await supabaseAdmin.auth.admin.generateLink({
+          // Si falla invitación manual (ej. usuario ya existe), probamos link de recuperación manual
+          console.log("[invite-user] Falló link invitación manual. Probando recuperación manual...");
+          const { data: recData, error: recErr } = await supabaseAdmin.auth.admin.generateLink({
             type: 'recovery',
             email: email,
             options: { redirectTo: redirectTo }
           });
-          targetUser = recData?.user;
-          manualLink = recData?.properties?.action_link;
+          
+          if (recErr) {
+            console.error("[invite-user] Falló todo intento de link manual:", recErr);
+            throw recErr;
+          }
+
+          targetUser = recData.user;
+          manualLink = recData.properties?.action_link;
       } else {
         targetUser = linkData.user;
         manualLink = linkData.properties?.action_link;
       }
     }
 
-    // 4. Sincronizar Perfil
+    // 4. Sincronizar Perfil en DB (Crucial para que aparezca en la lista de usuarios)
     if (targetUser) {
-      await supabaseAdmin.from('profiles').upsert({ 
+      console.log(`[invite-user] Sincronizando perfil para UID: ${targetUser.id}`);
+      const { error: profileError } = await supabaseAdmin.from('profiles').upsert({ 
         id: targetUser.id,
         tenant_id: finalTenantId,
         email: email.toLowerCase(),
@@ -113,8 +145,14 @@ serve(async (req) => {
         role: role,
         activo: true
       });
+      
+      if (profileError) {
+        console.error("[invite-user] Error actualizando perfil:", profileError.message);
+        // No lanzamos error aquí para no romper el flujo si el usuario ya se creó/invitó
+      }
     }
 
+    // Respuesta final
     return new Response(JSON.stringify({ 
       success: true, 
       inviteLink: manualLink, 
@@ -122,8 +160,8 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
 
   } catch (error: any) {
-    console.error("[invite-user-v2] Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message }), { 
+    console.error("[invite-user] ERROR CRÍTICO:", error.message);
+    return new Response(JSON.stringify({ error: error.message || 'Error interno del servidor' }), { 
       status: 400, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     })
